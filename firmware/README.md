@@ -12,15 +12,22 @@ Une table de brochage par cible dans `luciole.h` (`L2_BOARD`, broches du bouton,
 
 Le nombre de LED du ruban est une configuration en NVS (espace `luciole`, clé `leds`, 10 par défaut, 144 au plus), écrite par la page de flashage ou par la commande série `leds N`. Le plafond de luminosité en découle : `L2_STRIP_MAX_BRIGHTNESS` (47 %) ou moins pour que le ruban tout blanc reste sous `L2_STRIP_BUDGET_MA` (300 mA).
 
-Console série (USB, 115200 bauds), une commande par ligne :
+Les réglages (seuils RSSI, constantes de temps, souffle, onde, débit de balises, plafond du ruban : 28 paramètres) sont des variables modifiées en direct par la console et enregistrées en NVS sous leur nom de clé ; les valeurs par défaut restent celles de `luciole.h`. Page web de mise au point : https://lucioles.limn-labs.xyz/luciole/.
+
+Console série (USB, 115200 bauds), une commande par ligne, réponses en JSON sur une ligne :
 
 ```
-version       fw, carte, protocole, MAC, nombre de LED
-leds          nombre de LED et plafond courants
-leds 30       enregistre 30 LED et redémarre
-onde          lance une onde, comme un appui sur le bouton
-restart
-help
+version              fw, carte, protocole, MAC, nombre de LED
+get                  tous les paramètres : [{"k","v","def","min","max","d"}, …]
+get rssi_near        un paramètre
+set rssi_near -85    applique et enregistre (refusé hors limites)
+reset [rssi_near]    retour au défaut, pour un paramètre ou tous
+status               état complet : cohésion, teinte, foule, voisines (RSSI, proximité, teinte, cohésion, âge)…
+stream 500 | off     même état toutes les 500 ms (100 au moins)
+log off | on         coupe ou rétablit le journal humain (utile pendant un flux)
+leds [N]             nombre de LED ; avec N : enregistre et redémarre
+onde                 lance une onde, comme un appui sur le bouton
+restart, help
 ```
 
 ## Comportement (firmware 6)

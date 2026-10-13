@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luciole² — mise au point par USB</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0d12">
+<style>
+  :root { --bg:#0b0d12; --panel:#151923; --ink:#d8dde8; --dim:#8a93a6; --line:#242a38; --acc:#ffd166; --ok:#7bd88f; --warn:#ff8f6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
+  header h1 { font-size:17px; margin:0; } header a { color:var(--dim); font-size:13px; }
+  #id { color:var(--dim); font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:14px 16px 40px; display:grid; gap:14px; grid-template-columns:1fr; }
+  @media (min-width:900px) { main { grid-template-columns:1fr 1fr; } .wide { grid-column:1 / -1; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:0 0 10px; }
+  button { background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; font:inherit; }
+  button:hover { border-color:var(--acc); } button.acc { background:var(--acc); color:#1a1400; border-color:var(--acc); font-weight:600; }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=number], input[type=text] { font:inherit; background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 10px; width:110px; }
+  input[type=text] { width:100%; }
+  .warn { border-color:var(--warn); color:var(--warn); }
+  .note { color:var(--dim); font-size:13px; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-variant-numeric:tabular-nums; }
+  .kv span:nth-child(odd) { color:var(--dim); }
+  .gauge { height:10px; background:#1f2533; border-radius:5px; overflow:hidden; margin:6px 0; }
+  .gauge i { display:block; height:100%; background:var(--acc); width:0; transition:width .2s; }
+  .strip { display:flex; gap:5px; margin:8px 0; } .strip i { width:22px; height:22px; border-radius:50%; display:block; background:#222; }
+  table { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  td, th { padding:4px 6px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--dim); font-weight:500; } td:first-child, th:first-child { text-align:left; }
+  .bar { display:inline-block; height:8px; background:var(--ok); border-radius:4px; vertical-align:middle; }
+  .params tr.changed td:first-child { color:var(--acc); }
+  .params input { width:96px; } .params td.d { text-align:left; color:var(--dim); white-space:normal; }
+  .params button { padding:2px 8px; font-size:12px; }
+  #log { height:220px; overflow:auto; background:#0b0d12; border:1px solid var(--line); border-radius:8px; padding:8px; font:12px/1.4 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; color:var(--dim); }
+  #log .json { color:#6fb3ff; } #log .tx { color:var(--acc); } #log .err { color:var(--warn); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#555; display:inline-block; } .dot.on { background:var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Luciole² — mise au point</h1>
+  <span class="dot" id="dot"></span>
+  <button class="acc" id="connect">Connecter</button>
+  <button id="disconnect" disabled>Déconnecter</button>
+  <span id="id"></span>
+  <a href="../">← site</a>
+</header>
+<main>
+  <div class="card warn wide" id="nosupport" hidden></div>
+  <div class="card wide" id="intro">
+    <p>Branchez une luciole en USB, cliquez sur <strong>Connecter</strong> et choisissez son port. La page lit son état en continu et permet de régler ses paramètres, sans réinstaller le firmware. Les réglages sont enregistrés dans la luciole.</p>
+    <p class="note">Ordinateur : Chrome ou Edge. Android : Chrome, avec un câble USB-C vers USB-C (le téléphone alimente la luciole). Pas d'iPhone. Sous Linux, groupe <code>dialout</code>. Fermez la console d'installation si elle est ouverte sur le même port.</p>
+  </div>
+
+  <div class="card">
+    <h2>État</h2>
+    <div class="kv">
+      <span>Cohésion</span><span><div class="gauge"><i id="g-coh"></i></div><b id="coh">–</b></span>
+      <span>Couleur commune</span><span><span id="hue-sw" style="display:inline-block;width:16px;height:16px;border-radius:4px;vertical-align:middle;background:#333"></span> <span id="hue">–</span></span>
+      <span>Foule entendue</span><span id="crowd">–</span>
+      <span>Balises entendues</span><span id="heard">–</span>
+      <span>Mes balises</span><span id="interval">–</span>
+      <span>Décalage de phase</span><span id="offset">–</span>
+      <span>Ondes en mémoire</span><span id="waves">–</span>
+      <span>Ruban</span><span id="leds">–</span>
+    </div>
+    <div class="strip" id="strip"></div>
+    <p class="note">Le ruban ci-dessus est une reconstitution : longueur unie = cohésion, couleur = couleur commune, pas le souffle.</p>
+    <div class="row"><button id="onde" disabled>Lancer une onde</button><button id="restart" disabled>Redémarrer</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Voisines</h2>
+    <table><thead><tr><th>Luciole</th><th>RSSI</th><th>lissé</th><th>proximité</th><th>teinte</th><th>cohésion</th><th>vue il y a</th></tr></thead><tbody id="nb"></tbody></table>
+    <p class="note" id="nb-note">–</p>
+  </div>
+
+  <div class="card wide">
+    <h2>Paramètres <span class="note">(modifiés en direct, enregistrés dans la luciole ; en jaune : différent du défaut)</span></h2>
+    <div class="row">
+      <label>Nombre de LED <input type="number" id="leds-in" min="1" max="144" step="1"></label>
+      <button id="leds-set" disabled>Appliquer (redémarre)</button>
+      <span style="flex:1"></span>
+      <button id="reset-all" disabled>Tout remettre par défaut</button>
+      <button id="export" disabled>Copier les réglages</button>
+    </div>
+    <table class="params"><thead><tr><th>Clé</th><th>Valeur</th><th>Défaut</th><th>Min</th><th>Max</th><th></th><th class="d">Description</th></tr></thead><tbody id="params"></tbody></table>
+  </div>
+
+  <div class="card wide">
+    <h2>Console</h2>
+    <div class="row"><input type="text" id="cmd" placeholder="commande (help, get, set rssi_near -85, status, stream 500, log off…)" disabled></div>
+    <div id="log"></div>
+  </div>
+</main>
+<script type="module">
+'use strict';
+const $ = id => document.getElementById(id);
+const hsv = h => { h = ((h % 360) + 360) % 360 / 60; const i = Math.floor(h), f = h - i, q = 1 - f;
+  const c = [[1,f,0],[q,1,0],[0,1,f],[0,q,1],[f,0,1],[1,0,q]][i]; return `rgb(${c.map(v => Math.round(40 + 215 * v)).join(',')})`; };
+
+/* ---------- Port série : Web Serial, ou WebUSB (Android) via le polyfill ---------- */
+let serialApi = navigator.serial;
+if (!serialApi && navigator.usb) {
+  try { const m = await import('https://unpkg.com/web-serial-polyfill@1.0.15/dist/serial.js'); serialApi = m.serial; }
+  catch (e) { console.warn('polyfill WebUSB indisponible', e); }
+}
+if (!serialApi) { $('nosupport').hidden = false; $('nosupport').textContent = 'Ce navigateur ne donne pas accès aux ports USB. Il faut Chrome ou Edge (ordinateur), ou Chrome sur Android.'; $('connect').disabled = true; }
+
+let port = null, reader = null, writer = null, params = {}, streaming = false;
+const enc = new TextEncoder(), dec = new TextDecoder();
+
+async function connect() {
+  try { port = await serialApi.requestPort(); await port.open({ baudRate: 115200 }); }
+  catch (e) { log('err', 'ouverture du port : ' + e.message); return; }
+  $('dot').classList.add('on'); $('connect').disabled = true;
+  for (const id of ['disconnect', 'onde', 'restart', 'leds-set', 'reset-all', 'export', 'cmd']) $(id).disabled = false;
+  $('intro').hidden = true;
+  writer = port.writable.getWriter();
+  readLoop();
+  await send('log off'); await send('version'); await send('get'); await send('stream 500'); streaming = true;
+}
+async function disconnect() {
+  try { if (streaming) await send('stream off'); } catch (e) {}
+  try { reader && await reader.cancel(); } catch (e) {}
+  try { writer && writer.releaseLock(); } catch (e) {}
+  try { port && await port.close(); } catch (e) {}
+  port = reader = writer = null; streaming = false;
+  $('dot').classList.remove('on'); $('connect').disabled = false;
+  for (const id of ['disconnect', 'onde', 'restart', 'leds-set', 'reset-all', 'export', 'cmd']) $(id).disabled = true;
+  $('id').textContent = '';
+}
+async function send(cmd) { if (!writer) return; log('tx', '> ' + cmd); await writer.write(enc.encode(cmd + '\n')); }
+
+async function readLoop() {
+  let buf = '';
+  while (port && port.readable) {
+    reader = port.readable.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i + 1); onLine(line); }
+      }
+    } catch (e) { log('err', 'lecture : ' + e.message); break; }
+    finally { reader.releaseLock(); }
+  }
+  if (port) disconnect();
+}
+
+/* ---------- Lignes reçues ---------- */
+function onLine(line) {
+  if (!line.trim()) return;
+  if (line[0] !== '{' && line[0] !== '[') { log('', line); return; }
+  let d; try { d = JSON.parse(line); } catch (e) { log('err', 'JSON illisible : ' + line.slice(0, 120)); return; }
+  if (Array.isArray(d)) { params = {}; for (const p of d) params[p.k] = p; renderParams(); log('json', 'paramètres : ' + d.length); return; }
+  if ('nb' in d) { renderStatus(d); return; }
+  log('json', line.length > 200 ? line.slice(0, 200) + '…' : line);
+  if (d.param) { params[d.param.k] = d.param; renderParam(d.param); }
+  if (d.reset === 'tous') send('get');
+  if (d.board) { $('id').textContent = `${d.mac} · ${d.board} · fw ${d.fw} · contrat ${d.proto}`; $('leds-in').value = d.leds; }
+  if (d.err) log('err', 'erreur : ' + d.err);
+}
+window.onLine = onLine;   /* pour les tests */
+
+function renderStatus(d) {
+  $('coh').textContent = d.coh.toFixed(2); $('g-coh').style.width = (100 * d.coh) + '%';
+  $('hue').textContent = d.hue.toFixed(0) + '°'; $('hue-sw').style.background = hsv(d.hue);
+  $('crowd').textContent = d.crowd + ' émettrice' + (d.crowd > 1 ? 's' : '') + ' (20 à 40 s)';
+  $('heard').textContent = d.heard.toFixed(1) + ' / s';
+  $('interval').textContent = 'toutes les ' + d.interval.toFixed(1) + ' s';
+  $('offset').textContent = d.offset_ms + ' ms';
+  $('waves').textContent = d.waves + (d.playing ? ' · onde en cours' : '');
+  $('leds').textContent = `${d.leds} LED, plafond ${d.strip_max}/255`;
+  if (!$('id').textContent) $('id').textContent = d.mac + ' · fw ' + d.fw;
+  const st = $('strip'); const n = Math.min(d.leds, 30); if (st.children.length !== n) { st.innerHTML = ''; for (let p = 0; p < n; p++) st.append(document.createElement('i')); }
+  const fill = d.coh * n;
+  for (let p = 0; p < n; p++) { const w = Math.min(1, Math.max(0, fill - (n - 1 - p))); st.children[p].style.background = w > 0.5 ? hsv(d.hue) : hsv(p * 360 / n); st.children[p].style.opacity = w > 0.5 ? 1 : 0.6; }
+  const nb = d.nb.slice().sort((a, b) => b.rssi_f - a.rssi_f);
+  $('nb').innerHTML = nb.map(n => `<tr style="opacity:${n.in ? 1 : .5}"><td>${n.id}${n.in ? '' : ' (loin)'}</td><td>${n.rssi} dBm</td><td>${n.rssi_f.toFixed(1)}</td>
+    <td><span class="bar" style="width:${Math.round(60 * n.prox)}px"></span> ${n.prox.toFixed(2)}</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${hsv(n.hue)}"></span> ${n.hue}°</td><td>${n.coh.toFixed(2)}</td><td>${(n.age / 1000).toFixed(1)} s</td></tr>`).join('');
+  $('nb-note').textContent = nb.length ? `${nb.length} voisine${nb.length > 1 ? 's' : ''} en table (16 au plus, les plus fortes)` : 'aucune voisine entendue';
+}
+
+/* ---------- Paramètres ---------- */
+function renderParams() {
+  $('params').innerHTML = Object.values(params).map(p => `<tr id="p-${p.k}"><td>${p.k}</td><td><input type="number" step="any" data-k="${p.k}"></td><td>${p.def}</td><td>${p.min}</td><td>${p.max}</td><td><button data-reset="${p.k}">défaut</button></td><td class="d">${p.d}</td></tr>`).join('');
+  for (const p of Object.values(params)) renderParam(p);
+  $('params').querySelectorAll('input').forEach(i => i.addEventListener('change', () => send(`set ${i.dataset.k} ${i.value}`)));
+  $('params').querySelectorAll('button[data-reset]').forEach(b => b.addEventListener('click', () => send(`reset ${b.dataset.reset}`)));
+}
+function renderParam(p) { const tr = $('p-' + p.k); if (!tr) return; tr.querySelector('input').value = p.v; tr.classList.toggle('changed', p.v !== p.def); }
+
+/* ---------- Journal et boutons ---------- */
+const lines = [];
+function log(cls, text) {
+  lines.push(`<span class="${cls}">${text.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</span>`); if (lines.length > 300) lines.shift();
+  const el = $('log'); const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 4; el.innerHTML = lines.join('\n'); if (stick) el.scrollTop = el.scrollHeight;
+}
+$('connect').onclick = connect; $('disconnect').onclick = disconnect;
+$('onde').onclick = () => send('onde');
+$('restart').onclick = () => send('restart');
+$('leds-set').onclick = () => send('leds ' + $('leds-in').value);
+$('reset-all').onclick = () => { if (confirm('Remettre tous les paramètres par défaut ?')) send('reset'); };
+$('export').onclick = () => { const txt = Object.values(params).filter(p => p.v !== p.def).map(p => `set ${p.k} ${p.v}`).join('\n') || '(tout est au défaut)'; navigator.clipboard.writeText(txt).then(() => log('json', 'copié :\n' + txt)); };
+$('cmd').addEventListener('keydown', e => { if (e.key === 'Enter' && $('cmd').value.trim()) { send($('cmd').value.trim()); $('cmd').value = ''; } });
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

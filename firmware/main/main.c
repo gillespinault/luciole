@@ -15,6 +15,7 @@
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stddef.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -104,6 +105,116 @@ static uint16_t s_wave_id = 0;
 static int64_t  s_play_start = -1;
 static float    s_play_hue = 0;
 static int64_t  s_last_play = -100000000, s_last_emit = -100000000, s_last_relay = -100000000;
+
+/* ------------------------------------------------------------------ */
+/* Paramètres réglables en direct (console « set »), persistants en NVS.  */
+/* Les valeurs par défaut sont celles de luciole.h ; les macros du code   */
+/* sont redirigées vers ces champs juste après la table.                  */
+typedef struct {
+    float rssi_near, rssi_far, rssi_enter, rssi_leave;
+    float coh_tau, coh_social, hue_tau, hue_drift, hue_wander, hue_wave;
+    float rainbow_b, rainbow_flow, solid_b, breath_min, breath_max;
+    float wave_sweep, wave_trail, wave_spread, wave_suppress, wave_relay_min, wave_min_play, wave_late, wave_min_emit, wave_max_hop;
+    float beacon_rate, phase_gain, nb_replace_db, strip_max;
+} l2_params_t;
+
+typedef struct { const char *key; size_t off; float def, min, max; const char *desc; } l2_param_desc_t;
+
+#define PD(field, def, min, max, desc) { #field, offsetof(l2_params_t, field), def, min, max, desc }
+static const l2_param_desc_t PARAMS[] = {
+    PD(rssi_near,      L2_RSSI_NEAR,        -100, -20,   "dBm : proximite pleine"),
+    PD(rssi_far,       L2_RSSI_FAR,         -110, -40,   "dBm : proximite nulle"),
+    PD(rssi_enter,     L2_RSSI_ENTER,       -110, -40,   "dBm : devient voisine"),
+    PD(rssi_leave,     L2_RSSI_LEAVE,       -115, -40,   "dBm : cesse d'etre voisine"),
+    PD(coh_tau,        L2_COH_TAU_S,        0.1,  30,    "s : cohesion vers la cible"),
+    PD(coh_social,     L2_COH_SOCIAL_TAU_S, 0.1,  60,    "s : cohesion vers la moyenne des voisines"),
+    PD(hue_tau,        L2_HUE_TAU_S,        0.1,  60,    "s : couleur vers la moyenne des voisines"),
+    PD(hue_drift,      L2_HUE_DRIFT_DPS,    0,    60,    "deg/s : derive commune de la couleur"),
+    PD(hue_wander,     L2_HUE_WANDER_DPS,   0,    60,    "deg/s : vagabondage seule"),
+    PD(hue_wave,       L2_HUE_WAVE_GAIN,    0,    1,     "0..1 : adoption de la couleur d'une onde"),
+    PD(rainbow_b,      L2_RAINBOW_B,        0,    1,     "0..1 : luminosite de l'arc-en-ciel"),
+    PD(rainbow_flow,   L2_RAINBOW_FLOW,     -2,   2,     "tours/s : defilement de l'arc-en-ciel"),
+    PD(solid_b,        L2_SOLID_B,          0,    1,     "0..1 : luminosite centrale de la zone unie"),
+    PD(breath_min,     L2_BREATH_MIN,       0,    1,     "0..1 : creux du souffle a cohesion pleine"),
+    PD(breath_max,     L2_BREATH_MAX,       0,    1,     "0..1 : sommet du souffle a cohesion pleine"),
+    PD(wave_sweep,     L2_WAVE_SWEEP_US / 1000,     50,   5000,   "ms : traversee du ruban"),
+    PD(wave_trail,     L2_WAVE_TRAIL_US / 1000,     0,    20000,  "ms : trainee apres le passage"),
+    PD(wave_spread,    L2_WAVE_SPREAD_US / 1000,    0,    10000,  "ms : etalement de la lecture selon la proximite"),
+    PD(wave_suppress,  L2_WAVE_SUPPRESS,            1,    20,     "copies entendues : plus de rediffusion"),
+    PD(wave_relay_min, L2_WAVE_RELAY_MIN_US / 1000, 0,    30000,  "ms : entre deux rediffusions"),
+    PD(wave_min_play,  L2_WAVE_MIN_PLAY_US / 1000,  0,    30000,  "ms : entre deux lectures"),
+    PD(wave_late,      L2_WAVE_LATE_US / 1000,      0,    60000,  "ms : retard au-dela duquel on abandonne"),
+    PD(wave_min_emit,  L2_WAVE_MIN_EMIT_US / 1000,  0,    120000, "ms : entre deux appuis"),
+    PD(wave_max_hop,   L2_WAVE_MAX_HOP,             0,    64,     "sauts radio au plus"),
+    PD(beacon_rate,    L2_BEACON_CHANNEL_RATE,      1,    400,    "trames/s visees sur le canal"),
+    PD(phase_gain,     L2_PHASE_GAIN,               0,    1,      "0..1 : correction de phase par balise"),
+    PD(nb_replace_db,  L2_NEIGHBOR_REPLACE_DB,      0,    30,     "dB : marge pour remplacer la voisine la plus faible"),
+    PD(strip_max,      L2_STRIP_MAX_BRIGHTNESS,     1,    255,    "plafond de luminosite du ruban (/255)"),
+};
+#define N_PARAMS (sizeof(PARAMS) / sizeof(PARAMS[0]))
+static l2_params_t P;
+static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((char *)&P + d->off); }
+
+/* Le corps du code garde les noms de luciole.h : on les redirige. */
+#undef L2_RSSI_NEAR
+#undef L2_RSSI_FAR
+#undef L2_RSSI_ENTER
+#undef L2_RSSI_LEAVE
+#undef L2_COH_TAU_S
+#undef L2_COH_SOCIAL_TAU_S
+#undef L2_HUE_TAU_S
+#undef L2_HUE_DRIFT_DPS
+#undef L2_HUE_WANDER_DPS
+#undef L2_HUE_WAVE_GAIN
+#undef L2_RAINBOW_B
+#undef L2_RAINBOW_FLOW
+#undef L2_SOLID_B
+#undef L2_BREATH_MIN
+#undef L2_BREATH_MAX
+#undef L2_WAVE_SWEEP_US
+#undef L2_WAVE_TRAIL_US
+#undef L2_WAVE_SPREAD_US
+#undef L2_WAVE_SUPPRESS
+#undef L2_WAVE_RELAY_MIN_US
+#undef L2_WAVE_MIN_PLAY_US
+#undef L2_WAVE_LATE_US
+#undef L2_WAVE_MIN_EMIT_US
+#undef L2_WAVE_MAX_HOP
+#undef L2_BEACON_CHANNEL_RATE
+#undef L2_PHASE_GAIN
+#undef L2_NEIGHBOR_REPLACE_DB
+#undef L2_STRIP_MAX_BRIGHTNESS
+#define L2_RSSI_NEAR          P.rssi_near
+#define L2_RSSI_FAR           P.rssi_far
+#define L2_RSSI_ENTER         P.rssi_enter
+#define L2_RSSI_LEAVE         P.rssi_leave
+#define L2_COH_TAU_S          P.coh_tau
+#define L2_COH_SOCIAL_TAU_S   P.coh_social
+#define L2_HUE_TAU_S          P.hue_tau
+#define L2_HUE_DRIFT_DPS      P.hue_drift
+#define L2_HUE_WANDER_DPS     P.hue_wander
+#define L2_HUE_WAVE_GAIN      P.hue_wave
+#define L2_RAINBOW_B          P.rainbow_b
+#define L2_RAINBOW_FLOW       P.rainbow_flow
+#define L2_SOLID_B            P.solid_b
+#define L2_BREATH_MIN         P.breath_min
+#define L2_BREATH_MAX         P.breath_max
+#define L2_WAVE_SWEEP_US      ((int64_t)(P.wave_sweep * 1000))
+#define L2_WAVE_TRAIL_US      ((int64_t)(P.wave_trail * 1000))
+#define L2_WAVE_SPREAD_US     ((int64_t)(P.wave_spread * 1000))
+#define L2_WAVE_SUPPRESS      ((int)P.wave_suppress)
+#define L2_WAVE_RELAY_MIN_US  ((int64_t)(P.wave_relay_min * 1000))
+#define L2_WAVE_MIN_PLAY_US   ((int64_t)(P.wave_min_play * 1000))
+#define L2_WAVE_LATE_US       ((int64_t)(P.wave_late * 1000))
+#define L2_WAVE_MIN_EMIT_US   ((int64_t)(P.wave_min_emit * 1000))
+#define L2_WAVE_MAX_HOP       ((int)P.wave_max_hop)
+#define L2_BEACON_CHANNEL_RATE P.beacon_rate
+#define L2_PHASE_GAIN         P.phase_gain
+#define L2_NEIGHBOR_REPLACE_DB P.nb_replace_db
+#define L2_STRIP_MAX_BRIGHTNESS ((int)P.strip_max)
+
+static bool    s_stream_on = false;      /* flux JSON périodique sur la console */
+static int64_t s_stream_period_us = 500000, s_stream_last = 0;
 
 /* ------------------------------------------------------------------ */
 static inline int64_t phase_at(int64_t now) { int64_t p = (now + s_offset_us) % L2_BAR_US; return p < 0 ? p + L2_BAR_US : p; }
@@ -429,15 +540,71 @@ static void strip_budget(void)
     s_strip_max = by_current < L2_STRIP_MAX_BRIGHTNESS ? by_current : L2_STRIP_MAX_BRIGHTNESS;
 }
 
+static void params_defaults(void)
+{
+    for (size_t i = 0; i < N_PARAMS; i++) *param_ptr(&PARAMS[i]) = PARAMS[i].def;
+}
+
 static void config_load(void)
 {
+    params_defaults();
     nvs_handle_t h;
     if (nvs_open(L2_NVS_NAMESPACE, NVS_READONLY, &h) == ESP_OK) {
         uint16_t v = 0;
         if (nvs_get_u16(h, L2_NVS_KEY_LEDS, &v) == ESP_OK && v >= 1 && v <= L2_STRIP_LEDS_MAX) s_leds = v;
+        for (size_t i = 0; i < N_PARAMS; i++) {
+            uint32_t bits; float f;
+            if (nvs_get_u32(h, PARAMS[i].key, &bits) == ESP_OK) {
+                memcpy(&f, &bits, 4);
+                if (f >= PARAMS[i].min && f <= PARAMS[i].max) *param_ptr(&PARAMS[i]) = f;
+            }
+        }
         nvs_close(h);
     }
     strip_budget();
+}
+
+/* Écrit un paramètre en NVS ; valeur NAN = effacer (retour au défaut). */
+static bool param_store(const l2_param_desc_t *d, float v)
+{
+    nvs_handle_t h;
+    if (nvs_open(L2_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return false;
+    esp_err_t e;
+    if (isnan(v)) { e = nvs_erase_key(h, d->key); if (e == ESP_ERR_NVS_NOT_FOUND) e = ESP_OK; }
+    else { uint32_t bits; memcpy(&bits, &v, 4); e = nvs_set_u32(h, d->key, bits); }
+    bool ok = e == ESP_OK && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    return ok;
+}
+
+static const l2_param_desc_t *param_find(const char *key)
+{
+    for (size_t i = 0; i < N_PARAMS; i++) if (strcmp(PARAMS[i].key, key) == 0) return &PARAMS[i];
+    return NULL;
+}
+
+static void param_print(const l2_param_desc_t *d)
+{
+    printf("{\"k\":\"%s\",\"v\":%g,\"def\":%g,\"min\":%g,\"max\":%g,\"d\":\"%s\"}", d->key, *param_ptr(d), d->def, d->min, d->max, d->desc);
+}
+
+/* État complet en une ligne JSON (commande « status » et flux « stream »). */
+static void status_print(int64_t now)
+{
+    printf("{\"t\":%lld,\"mac\":\"%s\",\"fw\":\"%s\",\"leds\":%d,\"strip_max\":%d,\"hue\":%.1f,\"coh\":%.3f,\"crowd\":%d,\"heard\":%.1f,\"interval\":%.2f,\"offset_ms\":%lld,\"phase\":%.3f,\"playing\":%s,\"nb\":[",
+           (long long)(now / 1000), s_name, L2_FW_VERSION, s_leds, s_strip_max, s_hue, s_coh, s_crowd, s_heard_rate,
+           beacon_interval_us() / 1000000.0f, (long long)(s_offset_us / 1000), phase_at(now) / (float)L2_BAR_US, s_play_start >= 0 ? "true" : "false");
+    bool first = true;
+    for (int i = 0; i < L2_MAX_NEIGHBORS; i++) {
+        l2_neighbor_t *n = &s_neighbors[i];
+        if (!n->used) continue;
+        printf("%s{\"id\":\"%02x%02x\",\"rssi\":%d,\"rssi_f\":%.1f,\"prox\":%.2f,\"hue\":%.0f,\"coh\":%.2f,\"in\":%s,\"age\":%lld}",
+               first ? "" : ",", n->mac[4], n->mac[5], n->last_rssi, n->rssi_f, proximity(n->rssi_f), n->hue * 360.0f / 255.0f, n->coh / 255.0f,
+               n->in_range ? "true" : "false", (long long)((now - n->last_seen_us) / 1000));
+        first = false;
+    }
+    int nw = 0; for (int i = 0; i < L2_WAVE_RECORDS; i++) if (s_waves[i].used) nw++;
+    printf("],\"waves\":%d}\n", nw);
 }
 
 static bool config_save_leds(int leds)
@@ -453,7 +620,7 @@ static bool config_save_leds(int leds)
  * de stdin dans la boucle de rendu. */
 static void console_help(void)
 {
-    printf("commandes : leds N (1..%d, redemarre) | leds | onde | version | restart | help\n", L2_STRIP_LEDS_MAX);
+    printf("commandes : get [cle] | set cle valeur | reset [cle] | status | stream on|off|ms | log on|off | leds [N] | onde | version | restart | help\n");
 }
 
 static void console_exec(char *line, int64_t now)
@@ -471,11 +638,43 @@ static void console_exec(char *line, int64_t now)
             printf("leds=%d enregistre, redemarrage\n", n); fflush(stdout);
             vTaskDelay(pdMS_TO_TICKS(100)); esp_restart();
         }
-        printf("leds=%d plafond=%d/255\n", s_leds, s_strip_max);
+        printf("{\"leds\":%d,\"strip_max\":%d}\n", s_leds, s_strip_max);
     } else if (strcmp(line, "onde") == 0) {
         wave_emit(now);
+    } else if (strcmp(line, "get") == 0) {
+        printf("["); for (size_t i = 0; i < N_PARAMS; i++) { if (i) printf(","); param_print(&PARAMS[i]); } printf("]\n");
+    } else if (strncmp(line, "get ", 4) == 0) {
+        const l2_param_desc_t *d = param_find(line + 4);
+        if (!d) { printf("{\"err\":\"cle inconnue\"}\n"); return; }
+        param_print(d); printf("\n");
+    } else if (strncmp(line, "set ", 4) == 0) {
+        char key[24] = ""; float v = 0;
+        if (sscanf(line + 4, "%23s %f", key, &v) != 2) { printf("{\"err\":\"usage : set cle valeur\"}\n"); return; }
+        const l2_param_desc_t *d = param_find(key);
+        if (!d) { printf("{\"err\":\"cle inconnue\"}\n"); return; }
+        if (v < d->min || v > d->max) { printf("{\"err\":\"hors limites\",\"min\":%g,\"max\":%g}\n", d->min, d->max); return; }
+        *param_ptr(d) = v; strip_budget();
+        printf("{\"ok\":%s,\"param\":", param_store(d, v) ? "true" : "false"); param_print(d); printf("}\n");
+    } else if (strcmp(line, "reset") == 0) {
+        for (size_t i = 0; i < N_PARAMS; i++) { *param_ptr(&PARAMS[i]) = PARAMS[i].def; param_store(&PARAMS[i], NAN); }
+        strip_budget(); printf("{\"ok\":true,\"reset\":\"tous\"}\n");
+    } else if (strncmp(line, "reset ", 6) == 0) {
+        const l2_param_desc_t *d = param_find(line + 6);
+        if (!d) { printf("{\"err\":\"cle inconnue\"}\n"); return; }
+        *param_ptr(d) = d->def; param_store(d, NAN); strip_budget();
+        printf("{\"ok\":true,\"param\":"); param_print(d); printf("}\n");
+    } else if (strcmp(line, "status") == 0) {
+        status_print(now);
+    } else if (strncmp(line, "stream", 6) == 0) {
+        const char *arg = line + 6; while (*arg == ' ') arg++;
+        if (strcmp(arg, "off") == 0) s_stream_on = false;
+        else { int ms = atoi(arg); if (ms >= 100) s_stream_period_us = (int64_t)ms * 1000; s_stream_on = true; }
+        printf("{\"stream\":%s,\"ms\":%lld}\n", s_stream_on ? "true" : "false", (long long)(s_stream_period_us / 1000));
+    } else if (strncmp(line, "log ", 4) == 0) {
+        esp_log_level_set(TAG, strcmp(line + 4, "off") == 0 ? ESP_LOG_WARN : ESP_LOG_INFO);
+        printf("{\"log\":%s}\n", strcmp(line + 4, "off") == 0 ? "false" : "true");
     } else if (strcmp(line, "version") == 0) {
-        printf("luciole fw=%s carte=%s protocole=%d (min %d) mac=%s leds=%d\n", L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, s_name, s_leds);
+        printf("{\"fw\":\"%s\",\"board\":\"%s\",\"proto\":%d,\"proto_min\":%d,\"mac\":\"%s\",\"leds\":%d,\"strip_max\":%d}\n", L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, s_name, s_leds, s_strip_max);
     } else if (strcmp(line, "restart") == 0) {
         esp_restart();
     } else if (strcmp(line, "help") == 0 || strcmp(line, "?") == 0) {
@@ -608,6 +807,7 @@ static void luciole_task(void *arg)
         wave_tick(now);
         crowd_tick(now);
         console_tick(now);
+        if (s_stream_on && now - s_stream_last >= s_stream_period_us) { s_stream_last = now; status_print(now); }
 
         /* Débit de balises entendu, fenêtre de 2 s (journal). */
         if (now - s_heard_window >= 2000000) {
@@ -711,7 +911,7 @@ void app_main(void)
     /* Console USB : avec le pilote, la lecture non bloquante de stdin marche
      * (sans lui, le VFS ne rend rien et l'hôte bloque à l'écriture) ; les
      * écritures restent bornées dans le temps quand aucun hôte n'écoute. */
-    usb_serial_jtag_driver_config_t usj = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    usb_serial_jtag_driver_config_t usj = { .tx_buffer_size = 4096, .rx_buffer_size = 512 };   /* une ligne d'etat fait ~1 Ko */
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usj));
     usb_serial_jtag_vfs_use_driver();
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);

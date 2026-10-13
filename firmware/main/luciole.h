@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "6.0.0"
+#define L2_FW_VERSION       "6.1.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
