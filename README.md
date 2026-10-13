@@ -5,14 +5,14 @@ Lumières de vélo qui se parlent. Un essaim de petites unités (M5Stack NanoC6 
 | Dossier | Contenu |
 |---|---|
 | `firmware/` | Firmware ESP-IDF, une image par puce, nombre de LED en configuration. Voir `firmware/README.md`. |
-| `web/` | Page de flashage par USB depuis le navigateur (ESP Web Tools), publiée par GitHub Pages. |
+| `web/` | Site public https://lucioles.limn-labs.xyz (présentation, installation par USB depuis le navigateur avec ESP Web Tools, simulation), publié par GitHub Pages à chaque push sur `main`. |
 | `sim/` | Simulation d'un Critical Mass : 20 000 vélos, 1 000 lucioles, mêmes règles que le firmware. Un fichier HTML, à ouvrir tel quel. |
 
 Documentation du projet : wiki Outline, collection Luciole² (journal, décisions, architecture et contrat radio, matériel).
 
 ## Installer une luciole
 
-Ouvrir la page de flashage dans Chrome ou Edge sur un ordinateur, brancher la luciole en USB, choisir le nombre de LED, cliquer sur Installer. Les mises à jour se font de la même façon.
+Ouvrir https://lucioles.limn-labs.xyz dans Chrome ou Edge sur un ordinateur, brancher la luciole en USB, choisir le nombre de LED, cliquer sur Installer. Les mises à jour se font de la même façon.
 
 En local, sans GitHub Pages : compiler (`firmware/README.md`), puis
 
