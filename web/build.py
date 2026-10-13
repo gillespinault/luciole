@@ -22,7 +22,6 @@ TARGETS = {  # cible IDF -> famille de puce ESP Web Tools, dossier de build loca
     "esp32c6": ("ESP32-C6", "build"),
     "esp32s3": ("ESP32-S3", "build-esp32s3"),
 }
-LEDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 16, 18, 20, 24, 25, 30, 32, 36, 40, 45, 48, 50, 60, 64, 72, 80, 90, 100, 120, 144]
 BOOTLOADER_OFFSET = 0x0   # C6 et S3 : 0x0 (l'ESP32 classique serait 0x1000)
 TABLE_OFFSET = 0x8000
 APP_OFFSET = 0x10000
@@ -66,6 +65,8 @@ def main():
     version = header_value("L2_FW_VERSION", r'"([^"]+)"')
     protocol = int(header_value("L2_PROTO_VERSION", r"(\d+)"))
     default_leds = int(header_value("L2_STRIP_LEDS_DEFAULT", r"(\d+)"))
+    max_leds = int(header_value("L2_STRIP_LEDS_MAX", r"(\d+)"))
+    leds = list(range(1, max_leds + 1))
     nvs_off, nvs_size = nvs_partition()
 
     if a.local:
@@ -85,7 +86,7 @@ def main():
     if not present:
         sys.exit("aucun binaire dans %s" % WEB)
     os.makedirs(os.path.join(WEB, "nvs"), exist_ok=True)
-    for n in LEDS:
+    for n in leds:
         gen_nvs(n, nvs_size, os.path.join(WEB, "nvs", "leds-%d.bin" % n))
         manifest = {
             "name": "Luciole²", "version": version, "new_install_prompt_erase": True,
@@ -99,9 +100,9 @@ def main():
                 ]} for t in present],
         }
         json.dump(manifest, open(os.path.join(WEB, "manifest-%d.json" % n), "w"), ensure_ascii=False, indent=1)
-    json.dump({"version": version, "protocol": protocol, "leds": LEDS, "default": default_leds, "targets": present, "repo": a.repo},
+    json.dump({"version": version, "protocol": protocol, "min": 1, "max": max_leds, "default": default_leds, "targets": present, "repo": a.repo},
               open(os.path.join(WEB, "index.json"), "w"), ensure_ascii=False, indent=1)
-    print("web/firmware : fw %s, protocole %d, cibles %s, %d choix de LED" % (version, protocol, ", ".join(present), len(LEDS)))
+    print("web/firmware : fw %s, protocole %d, cibles %s, %d choix de LED" % (version, protocol, ", ".join(present), len(leds)))
 
 
 if __name__ == "__main__":

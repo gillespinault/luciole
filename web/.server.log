@@ -6,3 +6,6 @@
 127.0.0.1 - - [13/Oct/2026 09:58:44] "GET /simulation/ HTTP/1.1" 200 -
 127.0.0.1 - - [13/Oct/2026 09:58:48] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [13/Oct/2026 09:58:49] "GET /firmware/index.json HTTP/1.1" 200 -
+127.0.0.1 - - [13/Oct/2026 10:27:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [13/Oct/2026 10:27:11] "GET /firmware/index.json HTTP/1.1" 200 -
+127.0.0.1 - - [13/Oct/2026 10:27:18] "GET /firmware/manifest-1.json HTTP/1.1" 200 -

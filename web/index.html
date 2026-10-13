@@ -22,7 +22,7 @@
   .warn { border-color:var(--warn); color:var(--warn); }
   ol, ul { padding-left:22px; margin:8px 0; } li { margin:6px 0; }
   label { display:block; margin:10px 0 6px; }
-  select { font:inherit; background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 12px; min-width:220px; }
+  input[type=number] { font:inherit; background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 12px; width:120px; }
   .note { color:var(--dim); font-size:15px; }
   esp-web-install-button { --esp-tools-button-color:var(--acc); --esp-tools-button-text-color:#1a1400; --esp-tools-button-border-radius:8px; margin-top:14px; display:block; }
   code { background:#1f2533; padding:1px 6px; border-radius:5px; font-size:15px; }
@@ -108,7 +108,7 @@
   </div>
   <div class="card">
     <label for="leds">Nombre de LED sur le ruban</label>
-    <select id="leds"></select>
+    <input type="number" id="leds" min="1" max="144" step="1" value="10" inputmode="numeric">
     <p class="note">Le module (NanoC6 ou AtomS3 Lite) est reconnu automatiquement. Le nombre de LED est enregistré dans la luciole. Il peut être changé plus tard en réinstallant, ou par la console avec <code>leds N</code>.</p>
     <esp-web-install-button id="install">
       <span slot="unsupported"></span>
@@ -157,9 +157,12 @@
   if (!idx) { document.getElementById('hint').textContent = 'Les binaires ne sont pas encore publiés sur ce site.'; btn.hidden = true; }
   else {
     document.getElementById('version').textContent = 'Firmware ' + idx.version + ', contrat radio ' + idx.protocol + '.';
-    for (const n of idx.leds) { const o = document.createElement('option'); o.value = n; o.textContent = n + ' LED'; if (n === idx.default) o.selected = true; sel.append(o); }
-    const apply = () => btn.setAttribute('manifest', 'firmware/manifest-' + sel.value + '.json');
-    sel.addEventListener('change', apply); apply();
+    sel.min = idx.min; sel.max = idx.max; sel.value = idx.default;
+    const apply = () => {
+      let n = Math.round(Number(sel.value)); if (sel.value === '' || Number.isNaN(n)) n = idx.default; if (n < idx.min) n = idx.min; if (n > idx.max) n = idx.max; sel.value = n;
+      btn.setAttribute('manifest', 'firmware/manifest-' + n + '.json');
+    };
+    sel.addEventListener('change', apply); sel.addEventListener('input', apply); apply();
   }
 </script>
 </body>
