@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Luciole² — simulation Critical Mass</title>
+<style>
+  :root { --bg:#0b0d12; --panel:#151923; --ink:#d8dde8; --dim:#8a93a6; --line:#242a38; --acc:#ffd166; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui, sans-serif; display:grid; grid-template-rows:auto 1fr auto; height:100vh; }
+  header { padding:10px 16px; display:flex; gap:18px; align-items:baseline; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header .hint { color:var(--dim); }
+  main { display:grid; grid-template-columns:1fr 340px; min-height:0; }
+  #map { width:100%; height:100%; display:block; cursor:crosshair; }
+  aside { background:var(--panel); border-left:1px solid var(--line); padding:12px 14px; overflow:auto; font-size:13px; }
+  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:14px 0 6px; }
+  aside h2:first-child { margin-top:0; }
+  .row { display:grid; grid-template-columns:130px 1fr 52px; gap:8px; align-items:center; margin:3px 0; }
+  .row label { color:var(--ink); }
+  .row output { text-align:right; color:var(--acc); font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; }
+  .stats { display:grid; grid-template-columns:1fr auto; gap:2px 10px; font-variant-numeric:tabular-nums; }
+  .stats span:nth-child(even) { text-align:right; color:var(--acc); }
+  .btns { display:flex; gap:6px; margin:6px 0; }
+  button { background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:5px 10px; cursor:pointer; }
+  button:hover { border-color:var(--acc); }
+  #strip { width:100%; height:34px; display:block; border-radius:6px; background:#000; }
+  table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+  td, th { padding:2px 4px; text-align:right; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:500; }
+  td:first-child, th:first-child { text-align:left; }
+  footer { padding:6px 16px; color:var(--dim); border-top:1px solid var(--line); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Luciole² — Critical Mass simulé</h1>
+  <span class="hint">Clic sur la route : appui sur le bouton de la luciole la plus proche (et sélection). Les règles sont celles du firmware v5.</span>
+</header>
+<main>
+  <canvas id="map"></canvas>
+  <aside>
+    <h2>Simulation</h2>
+    <div class="btns"><button id="pause">Pause</button><button id="reset">Recommencer</button><button id="press">Appui au hasard</button></div>
+    <div class="row"><label>Vitesse</label><input type="range" id="speed" min="1" max="20" step="1" value="4"><output>×4</output></div>
+    <div class="row"><label>Vélos</label><input type="range" id="bikes" min="1000" max="40000" step="1000" value="20000"><output>20000</output></div>
+    <div class="row"><label>Lucioles</label><input type="range" id="lucioles" min="10" max="3000" step="10" value="1000"><output>1000</output></div>
+    <div class="row"><label>Longueur peloton (m)</label><input type="range" id="peloton" min="300" max="5000" step="100" value="2000"><output>2000</output></div>
+    <div class="row"><label>Appuis / min</label><input type="range" id="pressRate" min="0" max="120" step="1" value="6"><output>6</output></div>
+    <h2>Radio</h2>
+    <div class="row"><label>Portée d'écoute (m)</label><input type="range" id="range" min="30" max="600" step="10" value="250"><output>250</output></div>
+    <div class="row"><label>Trame (ms d'antenne)</label><input type="range" id="air" min="1" max="12" step="0.5" value="5"><output>5</output></div>
+    <div class="row"><label>Canal visé (trames/s)</label><input type="range" id="chanRate" min="10" max="200" step="5" value="60"><output>60</output></div>
+    <h2>Onde (firmware)</h2>
+    <div class="row"><label>Étalement (s)</label><input type="range" id="spread" min="0" max="5" step="0.1" value="1.5"><output>1.5</output></div>
+    <div class="row"><label>Suppression (copies)</label><input type="range" id="suppress" min="1" max="10" step="1" value="3"><output>3</output></div>
+    <div class="row"><label>Rediffusion min (s)</label><input type="range" id="relayMin" min="0" max="5" step="0.1" value="1.5"><output>1.5</output></div>
+    <div class="row"><label>Lecture min (s)</label><input type="range" id="minPlay" min="0" max="5" step="0.1" value="1"><output>1</output></div>
+    <div class="row"><label>Sauts max</label><input type="range" id="maxHop" min="1" max="30" step="1" value="12"><output>12</output></div>
+    <h2>Mesures</h2>
+    <div class="stats" id="stats"></div>
+    <h2>Ruban de la luciole sélectionnée</h2>
+    <canvas id="strip" width="400" height="34"></canvas>
+    <div class="stats" id="selStats"></div>
+    <h2>Dernières ondes</h2>
+    <table><thead><tr><th>Onde</th><th>jouée</th><th>trames</th><th>portée</th><th>durée</th></tr></thead><tbody id="waves"></tbody></table>
+  </aside>
+</main>
+<footer>Modèle radio : RSSI = −40 − n·log10(d) ± 4 dB, n réglé pour que −100 dBm tombe à la portée choisie. Collisions : ALOHA pur, perte = 1 − e<sup>−2G</sup> avec G la charge du canal entendue par la réceptrice. Phase supposée synchronisée.</footer>
+<script>
+'use strict';
+/* ---------- Réglages (lus depuis les curseurs) ---------- */
+const P = {};
+const ids = ['speed','bikes','lucioles','peloton','pressRate','range','air','chanRate','spread','suppress','relayMin','minPlay','maxHop'];
+for (const id of ids) {
+  const el = document.getElementById(id);
+  const out = el.parentElement.querySelector('output');
+  const upd = () => { P[id] = parseFloat(el.value); out.textContent = (id === 'speed' ? '×' : '') + el.value; };
+  el.addEventListener('input', () => { upd(); if (['bikes','lucioles','peloton'].includes(id)) reset(); });
+  upd();
+}
+const F = { sweep:0.5, trail:3, late:4, minEmit:10, forget:60, jitter:0.2, rainbowB:0.45, rainbowFlow:0.10, solidB:0.5, breathMin:0.03, breathMax:1, bar:2.5,
+            cohTau:1.5, cohSocialTau:4, hueTau:3, hueDrift:2.4, hueWander:8, maxNeighbors:16, rssiNear:-80, rssiFar:-100, beaconMax:30, beat:0.5 };
+
+/* ---------- Utilitaires ---------- */
+const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
+const normDeg = h => ((h % 360) + 360) % 360;
+const wrapDeg = d => { d = ((d + 180) % 360 + 360) % 360 - 180; return d; };
+function hsv(h) { h = normDeg(h) / 60; const i = Math.floor(h), f = h - i, q = 1 - f;
+  switch (i) { case 0: return [1, f, 0]; case 1: return [q, 1, 0]; case 2: return [0, 1, f]; case 3: return [0, q, 1]; case 4: return [f, 0, 1]; default: return [1, 0, q]; } }
+const prox = r => clamp01((r - F.rssiFar) / (F.rssiNear - F.rssiFar));
+let pathN = 25;
+function rssi(d) { return -40 - pathN * Math.log10(Math.max(1, d)) + 4 * gauss(); }
+
+/* ---------- Monde ---------- */
+let bikes, lucs, C, t, paused = false, selected = -1, waves, waveLog, nextPress;
+const bikeArr = {};
+function reset() {
+  t = 0; waves = new Map(); waveLog = []; selected = -1;
+  C = P.peloton * 2;                               /* boucle fermée deux fois plus longue que le peloton */
+  pathN = 60 / Math.log10(P.range);                /* rssi(range) = -100 */
+  const n = P.bikes;
+  bikeArr.s = new Float32Array(n); bikeArr.y = new Float32Array(n); bikeArr.v = new Float32Array(n); bikeArr.isLuc = new Uint8Array(n);
+  for (let i = 0; i < n; i++) { bikeArr.s[i] = Math.random() * P.peloton; bikeArr.y[i] = (Math.random() - 0.5) * 8; bikeArr.v[i] = 3.5 + 0.4 * gauss(); }
+  lucs = [];
+  const picks = new Set(); while (picks.size < Math.min(P.lucioles, n)) picks.add(Math.floor(Math.random() * n));
+  for (const i of picks) {
+    bikeArr.isLuc[i] = 1;
+    lucs.push({ bike:i, hue:Math.random() * 360, coh:0, rpos:Math.random(), nb:[], crowd:0, load:0, interval:F.beat,
+                recs:new Map(), lastPlay:-1e9, lastRelay:-1e9, lastEmit:-1e9, playStart:-1, playHue:0, id:0, name:lucs.length });
+  }
+  nextPress = t + nextPressDelay();
+  refreshNeighbors();
+}
+const nextPressDelay = () => P.pressRate > 0 ? -Math.log(Math.random()) * 60 / P.pressRate : 1e9;
+const dist = (a, b) => { let ds = Math.abs(bikeArr.s[a.bike] - bikeArr.s[b.bike]); if (ds > C / 2) ds = C - ds; const dy = bikeArr.y[a.bike] - bikeArr.y[b.bike]; return Math.hypot(ds, dy); };
+
+/* Tri des lucioles par abscisse pour ne tester que celles à portée. */
+let sorted = [];
+function candidates(l) {
+  const s = bikeArr.s[l.bike], R = P.range * 1.3, out = [];
+  const lo = s - R, hi = s + R;
+  const push = (a, b) => { /* indices de sorted dont s ∈ [a,b] */
+    let i = 0, j = sorted.length; while (i < j) { const m = (i + j) >> 1; if (bikeArr.s[sorted[m].bike] < a) i = m + 1; else j = m; }
+    for (; i < sorted.length && bikeArr.s[sorted[i].bike] <= b; i++) if (sorted[i] !== l) out.push(sorted[i]); };
+  push(lo, hi); if (lo < 0) push(C + lo, C); if (hi > C) push(0, hi - C);
+  return out;
+}
+function refreshNeighbors() {
+  sorted = lucs.slice().sort((a, b) => bikeArr.s[a.bike] - bikeArr.s[b.bike]);
+  for (const l of lucs) {
+    const inr = []; let crowd = 0, rate = 0;
+    for (const o of candidates(l)) { const r = rssi(dist(l, o)); if (r >= F.rssiFar) { crowd++; rate += 1 / o.interval; inr.push({ o, r, p:prox(r) }); } }
+    inr.sort((a, b) => b.r - a.r);
+    l.nb = inr.slice(0, F.maxNeighbors); l.crowd = crowd;
+    l.interval = Math.min(F.beaconMax, Math.max(F.beat, (crowd + 1) / P.chanRate));
+    l.load = rate * P.air / 1000;                       /* charge du canal entendue (fraction du temps) */
+    l.loss = 1 - Math.exp(-2 * l.load);
+  }
+}
+
+/* ---------- Ondes : mêmes règles que main.c ---------- */
+function waveKey(origin, id) { return origin + '#' + id; }
+function send(l, origin, id, hop, hue) {
+  const w = waves.get(waveKey(origin, id)); if (w) { w.tx++; w.tLast = t; }
+  for (const o of candidates(l)) {
+    const r = rssi(dist(l, o)); if (r < F.rssiFar) continue;
+    if (Math.random() < o.loss) continue;                /* collision */
+    receive(o, l, r, origin, id, hop, hue);
+  }
+}
+function receive(l, from, r, origin, id, hop, hue) {
+  if (origin === l.name) return;
+  const key = waveKey(origin, id); const p = prox(r);
+  let rec = l.recs.get(key);
+  if (!rec) { rec = { hop, hue, copies:0, prox:0, tFirst:t, playAt:-1, relayAt:-1, played:false, relayed:false }; l.recs.set(key, rec); }
+  rec.copies++; rec.hop = Math.min(rec.hop, hop); rec.prox = Math.max(rec.prox, p);
+  const playAt = t + (1 - p) * P.spread;
+  if (!rec.played && (rec.playAt < 0 || playAt < rec.playAt)) rec.playAt = playAt;
+  const relayAt = rec.tFirst + F.sweep + (1 + rec.prox) * P.spread + Math.random() * F.jitter;
+  if (!rec.relayed && (rec.relayAt < 0 || relayAt < rec.relayAt)) rec.relayAt = relayAt;
+}
+function play(l, rec, key) {
+  rec.played = true; l.playStart = t; l.playHue = rec.hue; l.lastPlay = t;
+  l.hue = normDeg(l.hue + wrapDeg(rec.hue - l.hue));
+  const w = waves.get(key); if (w) { w.played++; w.tLast = t; const ds = Math.min(Math.abs(bikeArr.s[l.bike] - w.s0), C - Math.abs(bikeArr.s[l.bike] - w.s0)); w.reach = Math.max(w.reach, ds); }
+}
+function emit(l) {
+  if (t - l.lastEmit < F.minEmit) return false;
+  l.lastEmit = t; const id = ++l.id; const hue = normDeg(l.hue + 180 + (Math.random() - 0.5) * 80);
+  const key = waveKey(l.name, id);
+  const w = { key, origin:l.name, id, t0:t, tLast:t, hue, played:0, tx:0, reach:0, s0:bikeArr.s[l.bike] };
+  waves.set(key, w); waveLog.unshift(w); if (waveLog.length > 12) waveLog.pop();
+  const rec = { hop:0, hue, copies:0, prox:1, tFirst:t, playAt:t, relayAt:t, played:false, relayed:true };
+  l.recs.set(key, rec); play(l, rec, key);
+  send(l, l.name, id, 0, hue);
+  return true;
+}
+function waveTick(l) {
+  let due = null, dueKey = null;
+  for (const [key, rec] of l.recs) {
+    if (t - rec.tFirst > F.forget) { l.recs.delete(key); continue; }
+    if (!rec.played && rec.playAt >= 0 && t >= rec.playAt) {
+      if (t - rec.playAt > F.late) rec.played = true;
+      else if (!due || rec.playAt < due.playAt) { due = rec; dueKey = key; }
+    }
+    if (!rec.relayed && rec.relayAt >= 0 && t >= rec.relayAt) {
+      if (rec.copies >= P.suppress || rec.hop + 1 > P.maxHop) rec.relayed = true;
+      else if (t - rec.relayAt > F.late) rec.relayed = true;
+      else if (t - l.lastRelay >= P.relayMin) { rec.relayed = true; l.lastRelay = t; const [origin, id] = dueKeyParts(key); send(l, origin, parseInt(id), rec.hop + 1, rec.hue); }
+    }
+  }
+  if (due && t - l.lastPlay >= P.minPlay) play(l, due, dueKey);
+}
+const dueKeyParts = key => { const i = key.lastIndexOf('#'); return [parseInt(key.slice(0, i)), key.slice(i + 1)]; };
+
+/* ---------- Régulation (couleur, cohésion) ---------- */
+function regulate(l, dt) {
+  let x = 0, y = 0, cohSum = 0, miss = 1, n = 0;
+  for (const { o, p } of l.nb) { miss *= 1 - p; const a = o.hue * Math.PI / 180; x += Math.cos(a); y += Math.sin(a); cohSum += o.coh; n++; }
+  let hue = l.hue + F.hueDrift * dt;
+  if (!n) { hue += (Math.random() - 0.5) * 2 * F.hueWander * dt; l.coh += dt / F.cohTau * (0 - l.coh); }
+  else { const mean = Math.atan2(y, x) * 180 / Math.PI; hue += dt / F.hueTau * wrapDeg(mean - l.hue);
+         l.coh += dt / F.cohTau * ((1 - miss) - l.coh) + dt / F.cohSocialTau * (cohSum / n - l.coh); }
+  l.hue = normDeg(hue); l.coh = clamp01(l.coh); l.rpos = (l.rpos + F.rainbowFlow * dt) % 1;
+}
+
+/* ---------- Rendu du ruban (port de render() en C) ---------- */
+function renderStrip(l) {
+  const px = []; const coh = l.coh;
+  const xph = (t % F.bar) / F.bar, breath = 0.5 + 0.5 * Math.cos(2 * Math.PI * xph);
+  const top = F.solidB + (F.breathMax - F.solidB) * coh, bottom = F.solidB + (F.breathMin - F.solidB) * coh, bS = bottom + (top - bottom) * breath;
+  const solid = hsv(l.hue), fill = coh * 10;
+  for (let p = 0; p < 10; p++) { const w = clamp01(fill - (9 - p)); const rain = hsv(360 * (p / 10 - l.rpos));
+    px.push([0, 1, 2].map(k => rain[k] * F.rainbowB * (1 - w) + solid[k] * bS * w)); }
+  if (l.playStart >= 0) {
+    const tt = t - l.playStart, w = hsv(l.playHue); let presence;
+    if (tt < F.sweep) presence = 1; else if (tt < F.sweep + F.trail) presence = 1 - (tt - F.sweep) / F.trail; else { l.playStart = -1; return px; }
+    const keep = 1 - 0.9 * presence; for (const c of px) for (let k = 0; k < 3; k++) c[k] *= keep;
+    if (tt < F.sweep) { const head = tt / F.sweep * 12 - 1;
+      for (let p = 0; p < 10; p++) { const d = p - head, core = Math.exp(-d * d / 0.5), halo = d > 0 ? Math.exp(-d * d / 2) : 0.9; for (let k = 0; k < 3; k++) px[p][k] += core + w[k] * halo; } }
+    else { const b = 0.9 * presence; for (let p = 0; p < 10; p++) { const g = Math.random() < 0.03 * presence ? 0.8 : 0; for (let k = 0; k < 3; k++) px[p][k] += w[k] * b + g; } }
+  }
+  return px;
+}
+
+/* ---------- Boucle ---------- */
+const DT = 0.05; let nbTimer = 0, statTimer = 0;
+function step() {
+  const n = P.bikes, s = bikeArr.s, v = bikeArr.v;
+  for (let i = 0; i < n; i++) { v[i] += (3.5 - v[i]) * DT / 30 + 0.05 * gauss() * DT; s[i] += v[i] * DT; if (s[i] >= C) s[i] -= C; }
+  t += DT; nbTimer += DT;
+  if (nbTimer >= 0.5) { nbTimer = 0; refreshNeighbors(); }
+  if (t >= nextPress) { nextPress = t + nextPressDelay(); emit(lucs[Math.floor(Math.random() * lucs.length)]); }
+  for (const l of lucs) { waveTick(l); regulate(l, DT); }
+  for (const [key, w] of waves) if (t - w.tLast > 15) waves.delete(key);
+}
+
+/* ---------- Dessin ---------- */
+const map = document.getElementById('map'), ctx = map.getContext('2d');
+const stripC = document.getElementById('strip'), sctx = stripC.getContext('2d');
+let W = 0, H = 0, scaleX = 1, sCenter = 0;
+function view() {
+  /* centre : moyenne circulaire des abscisses des lucioles */
+  let x = 0, y = 0; for (const l of lucs) { const a = bikeArr.s[l.bike] / C * 2 * Math.PI; x += Math.cos(a); y += Math.sin(a); }
+  sCenter = normDeg(Math.atan2(y, x) * 180 / Math.PI) / 360 * C;
+  scaleX = (W - 40) / (P.peloton * 1.25);
+}
+const toX = s => { let d = s - sCenter; if (d > C / 2) d -= C; if (d < -C / 2) d += C; return W / 2 + d * scaleX; };
+const toY = y => H / 2 + y * Math.min(30, H / 12);
+function draw() {
+  if (map.width !== map.clientWidth || map.height !== map.clientHeight) { map.width = map.clientWidth; map.height = map.clientHeight; }
+  W = map.width; H = map.height; view();
+  ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#161a24'; ctx.fillRect(0, toY(-4.5), W, toY(4.5) - toY(-4.5));
+  /* échelle */
+  ctx.strokeStyle = '#3a4152'; ctx.fillStyle = '#8a93a6'; ctx.font = '11px system-ui'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(20, H - 20); ctx.lineTo(20 + 100 * scaleX, H - 20); ctx.stroke(); ctx.fillText('100 m', 24, H - 26);
+  /* vélos */
+  ctx.fillStyle = '#3b4252'; ctx.beginPath();
+  const n = P.bikes;
+  for (let i = 0; i < n; i++) { if (bikeArr.isLuc[i]) continue; const x = toX(bikeArr.s[i]); if (x < -2 || x > W + 2) continue; ctx.rect(x, toY(bikeArr.y[i]), 1.5, 1.5); }
+  ctx.fill();
+  /* lucioles : la couleur du point est celle du pixel central du ruban (comme la LED intégrée) */
+  for (const l of lucs) {
+    const px = renderStrip(l)[5]; const x = toX(bikeArr.s[l.bike]), y = toY(bikeArr.y[l.bike]);
+    const g = c => Math.round(255 * Math.pow(clamp01(c), 0.6));
+    ctx.fillStyle = `rgb(${g(px[0])},${g(px[1])},${g(px[2])})`;
+    const r = l.playStart >= 0 && t - l.playStart < F.sweep ? 5 : 3;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
+    if (l.name === selected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 8, 0, 2 * Math.PI); ctx.stroke(); }
+  }
+  /* ruban sélectionné */
+  sctx.fillStyle = '#000'; sctx.fillRect(0, 0, 400, 34);
+  if (selected >= 0) { const l = lucs[selected], px = renderStrip(l);
+    for (let p = 0; p < 10; p++) { const c = px[p]; sctx.fillStyle = `rgb(${Math.round(255 * clamp01(c[0]))},${Math.round(255 * clamp01(c[1]))},${Math.round(255 * clamp01(c[2]))})`;
+      sctx.beginPath(); sctx.arc(20 + p * 40, 17, 13, 0, 2 * Math.PI); sctx.fill(); } }
+}
+function stats() {
+  const L = lucs.length; let crowd = 0, inter = 0, load = 0, loss = 0, coh = 0, playing = 0;
+  for (const l of lucs) { crowd += l.crowd; inter += l.interval; load += l.load; loss += l.loss; coh += l.coh; if (l.playStart >= 0) playing++; }
+  const kv = [['temps simulé', fmtT(t)], ['lucioles', L], ['à portée (moy.)', (crowd / L).toFixed(0)], ['intervalle balise (moy.)', (inter / L).toFixed(1) + ' s'],
+    ['charge canal (moy.)', (100 * load / L).toFixed(0) + ' %'], ['perte par collision', (100 * loss / L).toFixed(0) + ' %'], ['cohésion (moy.)', (coh / L).toFixed(2)],
+    ['ondes vivantes', waves.size], ['lucioles en train de jouer', playing]];
+  document.getElementById('stats').innerHTML = kv.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+  const sel = selected >= 0 ? lucs[selected] : null;
+  document.getElementById('selStats').innerHTML = sel ? [['luciole', '#' + sel.name], ['cohésion', sel.coh.toFixed(2)], ['teinte', sel.hue.toFixed(0) + '°'], ['voisines à portée', sel.crowd],
+    ['intervalle balise', sel.interval.toFixed(1) + ' s'], ['charge canal', (100 * sel.load).toFixed(0) + ' %'], ['ondes en mémoire', sel.recs.size]].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('') : '<span>aucune (clic sur la route)</span><span></span>';
+  document.getElementById('waves').innerHTML = waveLog.map(w => `<tr><td>#${w.origin}·${w.id}</td><td>${(100 * w.played / L).toFixed(0)} %</td><td>${w.tx}</td><td>${w.reach.toFixed(0)} m</td><td>${(w.tLast - w.t0).toFixed(1)} s</td></tr>`).join('');
+}
+const fmtT = s => `${Math.floor(s / 60)} min ${(s % 60).toFixed(0).padStart(2, '0')} s`;
+
+let last = performance.now();
+function frame(now) {
+  const real = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!paused) { let budget = real * P.speed; const t0 = performance.now(); while (budget >= DT && performance.now() - t0 < 40) { step(); budget -= DT; } }
+  draw(); statTimer += real; if (statTimer > 0.25) { statTimer = 0; stats(); }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- Interactions ---------- */
+map.addEventListener('click', e => {
+  const r = map.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top; let best = null, bd = 1e9;
+  for (const l of lucs) { const d = Math.hypot(toX(bikeArr.s[l.bike]) - mx, toY(bikeArr.y[l.bike]) - my); if (d < bd) { bd = d; best = l; } }
+  if (best && bd < 40) { selected = best.name; emit(best); }
+});
+document.getElementById('pause').onclick = e => { paused = !paused; e.target.textContent = paused ? 'Reprendre' : 'Pause'; };
+document.getElementById('reset').onclick = reset;
+document.getElementById('press').onclick = () => { const l = lucs[Math.floor(Math.random() * lucs.length)]; selected = l.name; emit(l); };
+document.getElementById('range').addEventListener('input', () => { pathN = 60 / Math.log10(P.range); });
+
+reset(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Luciole² — M5NanoC6 (ESP32-C6FH4, 4 Mo de flash, mono-cœur RISC-V 160 MHz)
+CONFIG_IDF_TARGET="esp32c6"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# Console sur l'USB-Serial/JTAG natif du NanoC6 (pas de pont UART).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Pas de Wi-Fi station ni d'identifiants à stocker : rien en NVS.
+CONFIG_ESP_WIFI_NVS_ENABLED=n
+
+# Tick FreeRTOS à 1 kHz : la boucle de rendu tourne toutes les 10 ms.
+CONFIG_FREERTOS_HZ=1000

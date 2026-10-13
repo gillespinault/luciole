@@ -1,0 +1,11 @@
+# ESP-IDF
+firmware/build/
+firmware/build-*/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+# outils locaux
+.playwright-mcp/
+sim/.server.log
+web/firmware/
+__pycache__/
