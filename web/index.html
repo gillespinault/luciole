@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luciole² — flasher une luciole</title>
+<style>
+  :root { --bg:#0b0d12; --panel:#151923; --ink:#d8dde8; --dim:#8a93a6; --line:#242a38; --acc:#ffd166; --ok:#7bd88f; --warn:#ff8f6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:32px 20px 60px; }
+  h1 { font-size:28px; margin:0 0 4px; }
+  h1 small { font-size:14px; color:var(--dim); font-weight:400; margin-left:10px; }
+  .lead { color:var(--dim); margin:0 0 28px; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:28px 0 10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px; }
+  ol { padding-left:22px; margin:0; } li { margin:6px 0; }
+  label { display:block; margin:10px 0 6px; }
+  select { font:inherit; background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 12px; min-width:220px; }
+  .note { color:var(--dim); font-size:14px; }
+  .warn { border-color:var(--warn); color:var(--warn); }
+  .ok { color:var(--ok); }
+  esp-web-install-button { --esp-tools-button-color:var(--acc); --esp-tools-button-text-color:#1a1400; --esp-tools-button-border-radius:8px; margin-top:14px; display:block; }
+  code { background:#1f2533; padding:1px 6px; border-radius:5px; font-size:14px; }
+  pre { background:#1f2533; padding:12px 14px; border-radius:8px; overflow:auto; font-size:14px; }
+  a { color:var(--acc); }
+  footer { margin-top:40px; color:var(--dim); font-size:14px; }
+</style>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</head>
+<body>
+<main>
+  <h1>Luciole² <small id="version"></small></h1>
+  <p class="lead">Lumières de vélo qui se parlent. Cette page installe le firmware sur ta luciole par USB, depuis le navigateur. Rien à télécharger.</p>
+
+  <div class="card warn" id="nosupport" hidden>
+    Ce navigateur ne sait pas parler aux ports USB. Il faut <strong>Chrome ou Edge sur un ordinateur</strong> (pas Firefox, pas Safari, pas de téléphone).
+  </div>
+
+  <h2>Avant de commencer</h2>
+  <div class="card">
+    <ol>
+      <li>Branche la luciole à l'ordinateur avec un câble USB-C <strong>qui transporte les données</strong> (certains câbles ne font que charger).</li>
+      <li>Sous Linux, ton compte doit être dans le groupe <code>dialout</code> (puis se déconnecter et se reconnecter). Windows et macOS n'ont rien à installer.</li>
+      <li>Ferme tout programme qui utiliserait déjà le port (moniteur série, Arduino…).</li>
+    </ol>
+  </div>
+
+  <h2>Installer</h2>
+  <div class="card">
+    <label for="leds">Nombre de LED sur le ruban</label>
+    <select id="leds"></select>
+    <p class="note">La puce (NanoC6 ou AtomS3 Lite) est reconnue automatiquement. Le nombre de LED est enregistré dans la luciole ; on peut le changer plus tard en réinstallant, ou par la console avec <code>leds N</code>.</p>
+    <esp-web-install-button id="install">
+      <span slot="unsupported"></span>
+      <span slot="not-allowed">Cette page doit être ouverte en HTTPS.</span>
+    </esp-web-install-button>
+    <p class="note" id="hint">Clique sur le bouton, choisis le port de la luciole dans la fenêtre du navigateur, puis « Installer ». Deux minutes environ. Pour une mise à jour, même chose : la configuration est réécrite avec le nombre de LED choisi ci-dessus.</p>
+  </div>
+
+  <h2>Vérifier</h2>
+  <div class="card">
+    <p>Après l'installation, le bouton propose <em>Logs &amp; Console</em>. La première ligne de la luciole dit sa version et sa carte :</p>
+    <pre>luciole: Luciole² 1414 | fw 6.0.0 | carte M5NanoC6 | protocole 1 (min 1) | … | ruban 10 LED</pre>
+    <p>Commandes utiles dans cette console : <code>version</code>, <code>leds 30</code> (puis redémarrage), <code>onde</code> (lance une onde comme un appui sur le bouton), <code>help</code>.</p>
+  </div>
+
+  <h2>Modèles supportés</h2>
+  <div class="card">
+    <ul style="margin:0; padding-left:22px">
+      <li><strong>M5Stack NanoC6</strong> (ESP32-C6) : ruban sur le Grove, fil jaune = G2.</li>
+      <li><strong>M5Stack AtomS3 Lite</strong> (ESP32-S3) : ruban sur le Grove, en cours de validation.</li>
+    </ul>
+  </div>
+
+  <footer>Luciole² est un projet des Merveilleux Fous Roulants pour la Critical Mass de Bruxelles. Code et documentation : <a id="repo" href="#">dépôt du projet</a>.</footer>
+</main>
+<script type="module">
+  const sel = document.getElementById('leds'), btn = document.getElementById('install');
+  if (!('serial' in navigator)) document.getElementById('nosupport').hidden = false;
+  const idx = await fetch('firmware/index.json', { cache: 'no-store' }).then(r => r.json()).catch(() => null);
+  if (!idx) { document.getElementById('hint').textContent = 'Les binaires ne sont pas encore publiés sur ce site.'; btn.hidden = true; }
+  else {
+    document.getElementById('version').textContent = 'firmware ' + idx.version + ' · protocole ' + idx.protocol;
+    for (const n of idx.leds) { const o = document.createElement('option'); o.value = n; o.textContent = n + ' LED'; if (n === idx.default) o.selected = true; sel.append(o); }
+    const apply = () => btn.setAttribute('manifest', 'firmware/manifest-' + sel.value + '.json');
+    sel.addEventListener('change', apply); apply();
+    if (idx.repo) document.getElementById('repo').href = idx.repo;
+  }
+</script>
+</body>
+</html>

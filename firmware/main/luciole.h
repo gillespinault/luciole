@@ -11,11 +11,40 @@
  *  - onde          : bouton → front blanc qui traverse le ruban, puis gagne les
  *                    voisines de proche en proche (ondulation) ; chacune adopte
  *                    sa couleur au passage
+ *
+ * Deux numéros de version, indépendants :
+ *  - L2_FW_VERSION    : le firmware (rendu, réglages, cartes). Change souvent.
+ *  - L2_PROTO_VERSION : le contrat radio (voir « Contrat radio » en bas).
+ *                       Change rarement, et sans jamais rendre sourdes les
+ *                       lucioles déjà distribuées.
  */
 #pragma once
 #include <stdint.h>
+#include "sdkconfig.h"
 
-/* Grille rythmique */
+#define L2_FW_VERSION       "6.0.0"
+
+/* ------------------------------------------------------------------ */
+/* Cartes supportées : une table de brochage par cible. -1 = absent.   */
+#if CONFIG_IDF_TARGET_ESP32C6
+#define L2_BOARD            "M5NanoC6"
+#define L2_RGB_DATA_GPIO    20      /* LED RGB intégrée (WS2812) */
+#define L2_RGB_POWER_GPIO   19      /* alimentation de cette LED */
+#define L2_BUTTON_GPIO      9       /* bouton utilisateur, actif bas */
+#define L2_BLUE_LED_GPIO    7       /* LED bleue : métronome */
+#define L2_STRIP_GPIO       2       /* Grove, fil jaune = G2 (mesuré le 12 octobre) */
+#elif CONFIG_IDF_TARGET_ESP32S3
+#define L2_BOARD            "M5AtomS3Lite"
+#define L2_RGB_DATA_GPIO    35      /* LED RGB intégrée (WS2812C) */
+#define L2_RGB_POWER_GPIO   -1
+#define L2_BUTTON_GPIO      41
+#define L2_BLUE_LED_GPIO    -1
+#define L2_STRIP_GPIO       2       /* Grove G1/G2 : à vérifier à l'ohmmètre, fil jaune = G2 supposé */
+#else
+#error "carte non supportée : ajouter sa table de brochage dans luciole.h"
+#endif
+
+/* Grille rythmique (fait partie du contrat radio : la phase est exprimée dans ce cycle) */
 #define L2_BEATS_PER_BAR    5
 #define L2_BEAT_MS          500
 #define L2_BEAT_US          ((int64_t)L2_BEAT_MS * 1000)
@@ -24,7 +53,7 @@
 /* LED intégrée */
 #define L2_MAX_BRIGHTNESS   255
 
-/* Radio */
+/* Radio (fait partie du contrat radio : une unité sur un autre canal ou un autre mode est invisible) */
 #define L2_WIFI_CHANNEL     1
 #define L2_LONG_RANGE       1       /* mode longue portée Espressif (250 kbit/s, ~+10 dB) : toutes les unités doivent l'avoir */
 #define L2_TX_POWER         80      /* quarts de dBm : 80 = 20 dBm, le maximum */
@@ -56,11 +85,11 @@
 /* En longue portée le récepteur descend vers -105 dBm : toute luciole entendue
  * compte comme voisine, le RSSI ne sert qu'à graduer la proximité (lien).
  * Mesures du 12 octobre : quelques cm sur le hub -36…-69 dBm, 7,5 m en
- * intérieur -93…-97 dBm. Le 13 octobre, hub : paire la plus faible -76…-80 dBm. */
+ * intérieur -93…-97 dBm. Le 13 octobre, hub : paire la plus faible -76…-89 dBm. */
 #define L2_RSSI_ENTER       -100
 #define L2_RSSI_LEAVE       -106
 #define L2_RSSI_ALPHA       0.3f
-#define L2_RSSI_NEAR        -80     /* dBm : proximité pleine. Sur le hub (quelques cm), la paire la plus faible reçoit -76…-80 : à ce niveau on est collées */
+#define L2_RSSI_NEAR        -80     /* dBm : proximité pleine. Sur le hub (quelques cm), la paire la plus faible reçoit -76…-89 : à ce niveau on est collées */
 #define L2_RSSI_FAR         -100    /* dBm : proximité nulle (limite d'écoute) */
 
 /* Cohésion 0 (seule) .. 1 (ensemble), mise à jour à chaque trame de rendu.
@@ -70,7 +99,7 @@
 #define L2_COH_TAU_S        1.5f    /* constante de temps vers la cible : réactif en approchant */
 #define L2_COH_SOCIAL_TAU_S 4.0f    /* vers la moyenne des voisines */
 
-/* Jauge : la zone unie occupe cohésion × L2_STRIP_LEDS pixels depuis la droite,
+/* Jauge : la zone unie occupe cohésion × nombre de LED pixels depuis la droite,
  * avec une frontière fondue sur un pixel. L'arc-en-ciel occupe le reste, à
  * luminosité fixe L2_RAINBOW_B, et défile vers la droite à L2_RAINBOW_FLOW
  * tours/s (un tour = le motif complet a parcouru le ruban). */
@@ -115,47 +144,69 @@
 /* Rendu */
 #define L2_RENDER_MS        10
 #define L2_GAMMA            2.2f    /* fondus perçus comme linéaires */
-
-/* Brochage M5NanoC6 */
-#define L2_RGB_DATA_GPIO    20
-#define L2_RGB_POWER_GPIO   19
-#define L2_BUTTON_GPIO      9
-#define L2_BLUE_LED_GPIO    7
 #define L2_TICK_US          15000
 
-/* Ruban SK6812 sur le Grove : donnée fil jaune = G2. 5 V = VBUS direct, 600 mA max. */
+/* Ruban SK6812 sur le Grove. 5 V = VBUS direct. Le nombre de LED est une
+ * configuration (NVS, clé « leds », commande série « leds N »), pas une
+ * constante : un seul binaire par carte. Le plafond de luminosité suit le
+ * nombre de LED pour rester sous L2_STRIP_BUDGET_MA. */
 #define L2_STRIP_ENABLED        1
 #define L2_STRIP_TEST           0
-#define L2_STRIP_GPIO           2
-#define L2_STRIP_LEDS           10
-#define L2_STRIP_MAX_BRIGHTNESS 120     /* ~47 % : 10 LED blanc ≈ 280 mA de pic */
+#define L2_STRIP_LEDS_DEFAULT   10
+#define L2_STRIP_LEDS_MAX       144
+#define L2_STRIP_MAX_BRIGHTNESS 120     /* ~47 %, plafond absolu quel que soit le nombre de LED */
+#define L2_STRIP_BUDGET_MA      300     /* courant de pic admis pour le ruban (tout blanc) */
+#define L2_LED_FULL_MA          60      /* une SK6812 blanche à fond */
 
-/* Trames ESP-NOW : en-tête commun, puis le corps selon le type. */
-#define L2_PROTO_VERSION 5
+/* Configuration persistante (NVS) */
+#define L2_NVS_NAMESPACE    "luciole"
+#define L2_NVS_KEY_LEDS     "leds"
+
+/* ------------------------------------------------------------------ */
+/* Contrat radio v1 (13 octobre 2026). Tout ce qui suit est partagé par  */
+/* toutes les lucioles, quelle que soit leur version de firmware.       */
+/*                                                                      */
+/* Règles d'évolution :                                                 */
+/*  - une trame est acceptée si version >= L2_PROTO_MIN_VERSION et      */
+/*    longueur >= taille connue du type ; les octets en plus sont       */
+/*    ignorés ; un type inconnu est ignoré ;                            */
+/*  - un nouveau champ va toujours à la fin d'une trame existante, avec */
+/*    une valeur par défaut qui garde l'ancien comportement ;           */
+/*  - la trame d'onde ne se remplace jamais : une ancienne luciole qui  */
+/*    ne la comprendrait pas ne la rediffuserait pas, et l'ondulation   */
+/*    aurait des trous ;                                                */
+/*  - canal, mode longue portée, débit, cycle de 2,5 s et échelles      */
+/*    (teinte 0-255, cohésion 0-255, phase en µs) ne changent pas.      */
+/*  - L2_PROTO_VERSION n'est incrémenté que si l'une de ces règles doit */
+/*    être rompue ; L2_PROTO_MIN_VERSION reste à la plus ancienne       */
+/*    version encore lisible.                                           */
+#define L2_PROTO_VERSION     1
+#define L2_PROTO_MIN_VERSION 1
 #define L2_MSG_BEACON    0
 #define L2_MSG_WAVE      2
 
 typedef struct __attribute__((packed)) {
     uint8_t  magic[2];      /* 'L' '2' */
-    uint8_t  version;
-    uint8_t  type;
+    uint8_t  version;       /* L2_PROTO_VERSION de l'émettrice */
+    uint8_t  type;          /* L2_MSG_* */
 } l2_hdr_t;
 
+/* Balise, une par intervalle : « voici où j'en suis ». 16 octets. */
 typedef struct __attribute__((packed)) {
     l2_hdr_t hdr;
-    uint8_t  level;         /* niveau de densité de l'émettrice */
-    uint8_t  hue;           /* teinte, 0-255 pour 0-360° */
+    uint8_t  density;       /* voisines à portée (0-255), information */
+    uint8_t  hue;           /* teinte commune, 0-255 pour 0-360° */
     uint8_t  coh;           /* cohésion, 0-255 */
-    uint8_t  reserved;
-    uint32_t phase_us;      /* position dans le cycle à l'envoi */
-    uint32_t seq;
+    uint8_t  flags;         /* réservé, 0 : capacités futures */
+    uint32_t phase_us;      /* position dans le cycle de L2_BAR_US à l'envoi */
+    uint32_t seq;           /* compteur d'émission */
 } l2_beacon_t;
 
-/* Onde : « (origin, id) passe par ici, saut hop ». Diffusée à toutes. */
+/* Onde : « (origin, id) passe par ici, saut hop ». Diffusée à toutes. 14 octets. */
 typedef struct __attribute__((packed)) {
     l2_hdr_t hdr;
-    uint8_t  origin[6];
-    uint16_t id;
-    uint8_t  hop;
-    uint8_t  hue;
+    uint8_t  origin[6];     /* MAC de l'unité qui a appuyé */
+    uint16_t id;            /* compteur de l'origine : (origin, id) identifie l'onde */
+    uint8_t  hop;           /* sauts radio depuis l'origine */
+    uint8_t  hue;           /* teinte de l'onde, 0-255 */
 } l2_wave_t;

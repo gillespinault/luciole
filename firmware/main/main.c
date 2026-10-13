@@ -1,5 +1,7 @@
 /*
- * Luciole² — firmware v5 : jauge de cohésion, couleur commune, souffle, ondulation.
+ * Luciole² — firmware 6 : jauge de cohésion, couleur commune, souffle, ondulation.
+ * Contrat radio v1 (luciole.h), nombre de LED en configuration, une table de
+ * brochage par carte.
  * Règles locales uniquement : aucune unité n'est configurée ni appairée, tout
  * se découvre en écoutant. Le protocole ne transporte que phase, densité,
  * teinte, cohésion et ondes ; chaque kit les rend avec son propre matériel.
@@ -9,7 +11,10 @@
  */
 #include <string.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <math.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -22,7 +27,11 @@
 #include "esp_netif.h"
 #include "esp_mac.h"
 #include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_system.h"
 #include "driver/gpio.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "led_strip.h"
 #include "luciole.h"
 
@@ -69,6 +78,8 @@ static led_strip_handle_t s_ext;
 #endif
 static uint8_t  s_mac[6];
 static char     s_name[8];
+static int      s_leds = L2_STRIP_LEDS_DEFAULT;   /* configuration NVS */
+static uint8_t  s_strip_max = L2_STRIP_MAX_BRIGHTNESS;
 
 static int64_t  s_offset_us = 0;
 static uint32_t s_seq = 0;
@@ -104,6 +115,8 @@ static inline float frand(void) { return (esp_random() & 0xffff) / 65535.0f; }
 static inline bool mac_eq(const uint8_t *a, const uint8_t *b) { return memcmp(a, b, 6) == 0; }
 static inline float proximity(float rssi) { return clamp01((rssi - L2_RSSI_FAR) / (float)(L2_RSSI_NEAR - L2_RSSI_FAR)); }
 
+static inline uint64_t gpio_bit(int g) { return g >= 0 ? 1ULL << g : 0; }   /* -1 = broche absente */
+
 static void hue_to_rgb(float h, float rgb[3])
 {
     h = norm_deg(h) / 60.0f;
@@ -121,11 +134,14 @@ static void hue_to_rgb(float h, float rgb[3])
 /* ------------------------------------------------------------------ */
 static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
-    if (len < (int)sizeof(l2_hdr_t) || len > (int)sizeof(((l2_rx_t *)0)->data)) return;
+    /* Contrat radio : version >= minimum, longueur >= taille connue, le reste
+     * est ignoré. Un type inconnu est ignoré. */
+    if (len < (int)sizeof(l2_hdr_t)) return;
     const l2_hdr_t *h = (const l2_hdr_t *)data;
-    if (h->magic[0] != 'L' || h->magic[1] != '2' || h->version != L2_PROTO_VERSION) return;
-    if (h->type == L2_MSG_BEACON && len != sizeof(l2_beacon_t)) return;
-    if (h->type == L2_MSG_WAVE   && len != sizeof(l2_wave_t))   return;
+    if (h->magic[0] != 'L' || h->magic[1] != '2' || h->version < L2_PROTO_MIN_VERSION) return;
+    if (h->type == L2_MSG_BEACON)    { if (len < (int)sizeof(l2_beacon_t)) return; len = sizeof(l2_beacon_t); }
+    else if (h->type == L2_MSG_WAVE) { if (len < (int)sizeof(l2_wave_t))   return; len = sizeof(l2_wave_t); }
+    else return;
     l2_rx_t rx;
     memcpy(rx.mac, info->src_addr, 6);
     rx.rssi = info->rx_ctrl ? info->rx_ctrl->rssi : -100;
@@ -206,7 +222,7 @@ static void handle_beacon(const l2_rx_t *rx)
     n->rssi_f = (n->rssi_f <= -99.0f) ? rx->rssi : n->rssi_f + L2_RSSI_ALPHA * (rx->rssi - n->rssi_f);
     n->last_rssi = rx->rssi;
     n->last_seen_us = rx->rx_us;
-    n->level = b->level; n->hue = b->hue; n->coh = b->coh;
+    n->level = b->density; n->hue = b->hue; n->coh = b->coh;
     if (!n->in_range && n->rssi_f >= L2_RSSI_ENTER) { n->in_range = true;  ESP_LOGD(TAG, "voisine %02x%02x a portee (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
     else if (n->in_range && n->rssi_f <= L2_RSSI_LEAVE) { n->in_range = false; ESP_LOGD(TAG, "voisine %02x%02x trop loin (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
 
@@ -395,7 +411,7 @@ static void send_beacon(uint8_t level, int64_t now)
 {
     l2_beacon_t b = {
         .hdr = {{'L', '2'}, L2_PROTO_VERSION, L2_MSG_BEACON},
-        .level = level, .hue = (uint8_t)(s_hue * 255.0f / 360.0f), .coh = (uint8_t)(s_coh * 255.0f),
+        .density = level, .hue = (uint8_t)(s_hue * 255.0f / 360.0f), .coh = (uint8_t)(s_coh * 255.0f),
         .phase_us = (uint32_t)phase_at(now), .seq = s_seq++,
     };
     esp_err_t err = esp_now_send(BROADCAST, (const uint8_t *)&b, sizeof(b));
@@ -404,11 +420,89 @@ static void send_beacon(uint8_t level, int64_t now)
 }
 
 /* ------------------------------------------------------------------ */
+/* Configuration persistante : nombre de LED du ruban.                  */
+static void strip_budget(void)
+{
+    /* Plafond de luminosité : L2_STRIP_MAX_BRIGHTNESS, ou moins si le ruban
+     * tout blanc dépasserait le budget de courant. */
+    int by_current = 255 * L2_STRIP_BUDGET_MA / (s_leds * L2_LED_FULL_MA);
+    s_strip_max = by_current < L2_STRIP_MAX_BRIGHTNESS ? by_current : L2_STRIP_MAX_BRIGHTNESS;
+}
+
+static void config_load(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(L2_NVS_NAMESPACE, NVS_READONLY, &h) == ESP_OK) {
+        uint16_t v = 0;
+        if (nvs_get_u16(h, L2_NVS_KEY_LEDS, &v) == ESP_OK && v >= 1 && v <= L2_STRIP_LEDS_MAX) s_leds = v;
+        nvs_close(h);
+    }
+    strip_budget();
+}
+
+static bool config_save_leds(int leds)
+{
+    nvs_handle_t h;
+    if (nvs_open(L2_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return false;
+    bool ok = nvs_set_u16(h, L2_NVS_KEY_LEDS, (uint16_t)leds) == ESP_OK && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    return ok;
+}
+
+/* Commandes sur la console série (USB), une par ligne. Lecture non bloquante
+ * de stdin dans la boucle de rendu. */
+static void console_help(void)
+{
+    printf("commandes : leds N (1..%d, redemarre) | leds | onde | version | restart | help\n", L2_STRIP_LEDS_MAX);
+}
+
+static void console_exec(char *line, int64_t now)
+{
+    while (*line == ' ') line++;
+    char *end = line + strlen(line);
+    while (end > line && (end[-1] == ' ' || end[-1] == '\r')) *--end = 0;
+    if (!*line) return;
+    if (strncmp(line, "leds", 4) == 0) {
+        char *arg = line + 4; while (*arg == ' ') arg++;
+        if (*arg) {
+            int n = atoi(arg);
+            if (n < 1 || n > L2_STRIP_LEDS_MAX) { printf("leds : entre 1 et %d\n", L2_STRIP_LEDS_MAX); return; }
+            if (!config_save_leds(n)) { printf("leds : ecriture NVS impossible\n"); return; }
+            printf("leds=%d enregistre, redemarrage\n", n); fflush(stdout);
+            vTaskDelay(pdMS_TO_TICKS(100)); esp_restart();
+        }
+        printf("leds=%d plafond=%d/255\n", s_leds, s_strip_max);
+    } else if (strcmp(line, "onde") == 0) {
+        wave_emit(now);
+    } else if (strcmp(line, "version") == 0) {
+        printf("luciole fw=%s carte=%s protocole=%d (min %d) mac=%s leds=%d\n", L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, s_name, s_leds);
+    } else if (strcmp(line, "restart") == 0) {
+        esp_restart();
+    } else if (strcmp(line, "help") == 0 || strcmp(line, "?") == 0) {
+        console_help();
+    } else {
+        printf("commande inconnue : %s\n", line); console_help();
+    }
+}
+
+static void console_tick(int64_t now)
+{
+    static char buf[64]; static int len = 0;
+    char c;
+    while (read(STDIN_FILENO, &c, 1) == 1) {
+        if (c == '\n') { buf[len] = 0; len = 0; console_exec(buf, now); }
+        else if (len < (int)sizeof(buf) - 1) buf[len++] = c;
+        else len = 0;
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Rendu                                                                */
 /* Calcule l'image du ruban en flottants 0..1, et la couleur de la LED intégrée. */
-static void render(int64_t now, float dt, float px[L2_STRIP_LEDS][3])
+static void render(int64_t now, float dt, float px[L2_STRIP_LEDS_MAX][3])
 {
-    memset(px, 0, sizeof(float) * L2_STRIP_LEDS * 3);
+    const int N = s_leds;
+    memset(px, 0, sizeof(float) * N * 3);
     float coh = s_coh;
 
     /* Arc-en-ciel : dégradé linéaire sur toute la longueur, qui défile vers la droite. */
@@ -424,11 +518,11 @@ static void render(int64_t now, float dt, float px[L2_STRIP_LEDS][3])
     float solid[3]; hue_to_rgb(s_hue, solid);
 
     /* Jauge : la zone unie occupe `fill` pixels depuis la droite, frontière fondue sur un pixel. */
-    float fill = coh * L2_STRIP_LEDS;
-    for (int p = 0; p < L2_STRIP_LEDS; p++) {
-        float from_right = L2_STRIP_LEDS - 1 - p;              /* 0 pour le pixel de droite */
+    float fill = coh * N;
+    for (int p = 0; p < N; p++) {
+        float from_right = N - 1 - p;                           /* 0 pour le pixel de droite */
         float w = clamp01(fill - from_right);                   /* part unie de ce pixel */
-        float u = p / (float)L2_STRIP_LEDS;
+        float u = p / (float)N;
         float rain[3]; hue_to_rgb(360.0f * (u - s_rainbow_pos), rain);
         for (int k = 0; k < 3; k++) px[p][k] = rain[k] * L2_RAINBOW_B * (1 - w) + solid[k] * b_solid * w;
     }
@@ -443,10 +537,10 @@ static void render(int64_t now, float dt, float px[L2_STRIP_LEDS][3])
         else if (t < L2_WAVE_SWEEP_US + L2_WAVE_TRAIL_US) presence = 1 - (float)(t - L2_WAVE_SWEEP_US) / L2_WAVE_TRAIL_US;
         else { s_play_start = -1; return; }
         float keep = 1 - 0.9f * presence;
-        for (int p = 0; p < L2_STRIP_LEDS; p++) for (int k = 0; k < 3; k++) px[p][k] *= keep;
+        for (int p = 0; p < N; p++) for (int k = 0; k < 3; k++) px[p][k] *= keep;
         if (t < L2_WAVE_SWEEP_US) {
-            float head = t / (float)L2_WAVE_SWEEP_US * (L2_STRIP_LEDS + 2) - 1.0f;
-            for (int p = 0; p < L2_STRIP_LEDS; p++) {
+            float head = t / (float)L2_WAVE_SWEEP_US * (N + 2) - 1.0f;
+            for (int p = 0; p < N; p++) {
                 float d = p - head;
                 float core = expf(-d * d / 0.5f);                 /* front blanc, net */
                 float halo = d > 0 ? expf(-d * d / 2.0f) : 0.9f;  /* devant : halo ; derrière : plein */
@@ -454,7 +548,7 @@ static void render(int64_t now, float dt, float px[L2_STRIP_LEDS][3])
             }
         } else {
             float b = 0.9f * presence;
-            for (int p = 0; p < L2_STRIP_LEDS; p++) {
+            for (int p = 0; p < N; p++) {
                 float glint = (frand() < 0.03f * presence) ? 0.8f : 0;   /* paillettes blanches */
                 for (int k = 0; k < 3; k++) px[p][k] += wrgb[k] * b + glint;
             }
@@ -462,19 +556,19 @@ static void render(int64_t now, float dt, float px[L2_STRIP_LEDS][3])
     }
 }
 
-static void show(float px[L2_STRIP_LEDS][3])
+static void show(float px[L2_STRIP_LEDS_MAX][3])
 {
     /* Gamma : les LED sont linéaires en courant, l'œil ne l'est pas. Sans
      * correction, tout fondu paraît brutal et les faibles niveaux sont écrasés. */
     static uint8_t lut[256]; static bool lut_ok = false;
     if (!lut_ok) { for (int i = 0; i < 256; i++) lut[i] = (uint8_t)(powf(i / 255.0f, L2_GAMMA) * 255 + 0.5f); lut_ok = true; }
 #if L2_STRIP_ENABLED
-    float k = L2_STRIP_MAX_BRIGHTNESS / 255.0f;
-    for (int p = 0; p < L2_STRIP_LEDS; p++)
+    float k = s_strip_max / 255.0f;
+    for (int p = 0; p < s_leds; p++)
         led_strip_set_pixel(s_ext, p, lut[(int)(clamp01(px[p][0]) * 255)] * k, lut[(int)(clamp01(px[p][1]) * 255)] * k, lut[(int)(clamp01(px[p][2]) * 255)] * k);
     led_strip_refresh(s_ext);
 #endif
-    int c = L2_STRIP_LEDS / 2;
+    int c = s_leds / 2;
     float k2 = L2_MAX_BRIGHTNESS / 255.0f;
     led_strip_set_pixel(s_strip, 0, lut[(int)(clamp01(px[c][0]) * 255)] * k2, lut[(int)(clamp01(px[c][1]) * 255)] * k2, lut[(int)(clamp01(px[c][2]) * 255)] * k2);
     led_strip_refresh(s_strip);
@@ -483,8 +577,8 @@ static void show(float px[L2_STRIP_LEDS][3])
 #if L2_STRIP_ENABLED && L2_STRIP_TEST
 static void strip_rainbow(int64_t now)
 {
-    float base = (now / 1000) % 5000 / 5000.0f * 360.0f, k = L2_STRIP_MAX_BRIGHTNESS / 255.0f;
-    for (int p = 0; p < L2_STRIP_LEDS; p++) { float c[3]; hue_to_rgb(base + p * 360.0f / L2_STRIP_LEDS, c);
+    float base = (now / 1000) % 5000 / 5000.0f * 360.0f, k = s_strip_max / 255.0f;
+    for (int p = 0; p < s_leds; p++) { float c[3]; hue_to_rgb(base + p * 360.0f / s_leds, c);
         led_strip_set_pixel(s_ext, p, (uint8_t)(c[0] * 255 * k), (uint8_t)(c[1] * 255 * k), (uint8_t)(c[2] * 255 * k)); }
     led_strip_refresh(s_ext);
 }
@@ -496,7 +590,7 @@ static void luciole_task(void *arg)
     int last_beat = -1, level = 0, density = 0;
     int64_t tick_off = -1, send_due = -1;
     const float dt = L2_RENDER_MS / 1000.0f;
-    float px[L2_STRIP_LEDS][3];
+    float px[L2_STRIP_LEDS_MAX][3];
 #if L2_BUTTON_ENABLED
     int btn_low_ms = 0; bool btn_pressed = false;
 #endif
@@ -513,6 +607,7 @@ static void luciole_task(void *arg)
         }
         wave_tick(now);
         crowd_tick(now);
+        console_tick(now);
 
         /* Débit de balises entendu, fenêtre de 2 s (journal). */
         if (now - s_heard_window >= 2000000) {
@@ -534,11 +629,12 @@ static void luciole_task(void *arg)
                 level = density > 4 ? 4 : density;
                 log_bar(density, level);
             }
-            gpio_set_level(L2_BLUE_LED_GPIO, 1); tick_off = now + L2_TICK_US;
+            if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 1);
+            tick_off = now + L2_TICK_US;
             if (now - s_last_beacon_tx >= beacon_interval_us() - L2_BEAT_US / 2)
                 send_due = now + (int64_t)(esp_random() % (L2_SEND_JITTER_MS + 1)) * 1000;
         }
-        if (tick_off >= 0 && now >= tick_off) { gpio_set_level(L2_BLUE_LED_GPIO, 0); tick_off = -1; }
+        if (tick_off >= 0 && now >= tick_off) { if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 0); tick_off = -1; }
         if (send_due >= 0 && now >= send_due) { send_beacon((uint8_t)level, now); send_due = -1; }
 
         regulate(dt);
@@ -555,10 +651,13 @@ static void luciole_task(void *arg)
 /* ------------------------------------------------------------------ */
 static void led_init(void)
 {
-    gpio_config_t io = { .pin_bit_mask = (1ULL << L2_RGB_POWER_GPIO) | (1ULL << L2_BLUE_LED_GPIO), .mode = GPIO_MODE_OUTPUT };
-    ESP_ERROR_CHECK(gpio_config(&io));
-    gpio_set_level(L2_RGB_POWER_GPIO, 1);
-    gpio_set_level(L2_BLUE_LED_GPIO, 0);
+    uint64_t outs = gpio_bit(L2_RGB_POWER_GPIO) | gpio_bit(L2_BLUE_LED_GPIO);
+    if (outs) {
+        gpio_config_t io = { .pin_bit_mask = outs, .mode = GPIO_MODE_OUTPUT };
+        ESP_ERROR_CHECK(gpio_config(&io));
+        if (L2_RGB_POWER_GPIO >= 0) gpio_set_level(L2_RGB_POWER_GPIO, 1);
+        if (L2_BLUE_LED_GPIO >= 0)  gpio_set_level(L2_BLUE_LED_GPIO, 0);
+    }
     gpio_config_t btn = { .pin_bit_mask = 1ULL << L2_BUTTON_GPIO, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE };
     ESP_ERROR_CHECK(gpio_config(&btn));
 
@@ -568,7 +667,7 @@ static void led_init(void)
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_strip));
     led_strip_clear(s_strip);
 #if L2_STRIP_ENABLED
-    led_strip_config_t ext_cfg = { .strip_gpio_num = L2_STRIP_GPIO, .max_leds = L2_STRIP_LEDS, .led_model = LED_MODEL_SK6812,
+    led_strip_config_t ext_cfg = { .strip_gpio_num = L2_STRIP_GPIO, .max_leds = s_leds, .led_model = LED_MODEL_SK6812,
                                    .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB };
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&ext_cfg, &rmt_cfg, &s_ext));
     led_strip_clear(s_ext);
@@ -577,8 +676,6 @@ static void led_init(void)
 
 static void radio_init(void)
 {
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { ESP_ERROR_CHECK(nvs_flash_erase()); ESP_ERROR_CHECK(nvs_flash_init()); }
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -611,12 +708,23 @@ static void radio_init(void)
 void app_main(void)
 {
     s_rx_queue = xQueueCreate(64, sizeof(l2_rx_t));
+    /* Console USB : avec le pilote, la lecture non bloquante de stdin marche
+     * (sans lui, le VFS ne rend rien et l'hôte bloque à l'écriture) ; les
+     * écritures restent bornées dans le temps quand aucun hôte n'écoute. */
+    usb_serial_jtag_driver_config_t usj = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usj));
+    usb_serial_jtag_vfs_use_driver();
+    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { ESP_ERROR_CHECK(nvs_flash_erase()); ESP_ERROR_CHECK(nvs_flash_init()); }
+    config_load();
     led_init();
     radio_init();
     s_offset_us = esp_random() % L2_BAR_US;
     s_native_hue = (s_mac[3] * 97 + s_mac[4] * 31 + s_mac[5] * 151) % 360;
     s_hue = s_native_hue;
-    ESP_LOGI(TAG, "Luciole² %s v5 | canal %d | %d temps x %d ms | teinte propre %.0f | ruban %d LED",
-             s_name, L2_WIFI_CHANNEL, L2_BEATS_PER_BAR, L2_BEAT_MS, s_native_hue, L2_STRIP_LEDS);
+    ESP_LOGI(TAG, "Luciole² %s | fw %s | carte %s | protocole %d (min %d) | canal %d | %d temps x %d ms | teinte propre %.0f | ruban %d LED, plafond %d/255",
+             s_name, L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, L2_WIFI_CHANNEL, L2_BEATS_PER_BAR, L2_BEAT_MS, s_native_hue, s_leds, s_strip_max);
+    console_help();
     xTaskCreate(luciole_task, "luciole", 6144, NULL, 5, NULL);
 }

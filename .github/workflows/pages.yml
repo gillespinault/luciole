@@ -1,0 +1,71 @@
+name: firmware et page de flashage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    name: firmware ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [esp32c6, esp32s3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: compiler (ESP-IDF v5.5)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5
+          target: ${{ matrix.target }}
+          path: firmware
+          command: idf.py -B build set-target ${{ matrix.target }} build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            firmware/build/bootloader/bootloader.bin
+            firmware/build/partition_table/partition-table.bin
+            firmware/build/luciole.bin
+
+  page:
+    name: page de flashage
+    needs: firmware
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+      - name: ranger les binaires
+        run: |
+          for t in esp32c6 esp32s3; do
+            mkdir -p web/firmware/$t
+            cp artefacts/$t/bootloader/bootloader.bin artefacts/$t/partition_table/partition-table.bin artefacts/$t/luciole.bin web/firmware/$t/
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: configurations NVS et manifestes
+        run: |
+          pip install esp-idf-nvs-partition-gen
+          python3 web/build.py --repo "https://github.com/${{ github.repository }}"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deploy
+        uses: actions/deploy-pages@v4
