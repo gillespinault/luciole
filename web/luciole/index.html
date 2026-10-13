@@ -155,11 +155,15 @@ const hsv = h => { h = ((h % 360) + 360) % 360 / 60; const i = Math.floor(h), f 
 const CTRL = ['disconnect', 'onde', 'restart', 'leds-set', 'reset-all', 'export', 'cmd', 'freeze', 'test-px-btn', 'name-set', 'rec', 'prof-save'];
 
 /* ---------- Port série : Web Serial, ou WebUSB (Android) via le polyfill ---------- */
-let serialApi = navigator.serial;
+/* Sur Android, Chrome expose navigator.serial mais ne sait pas ouvrir un port USB avec :
+ * on passe par WebUSB (polyfill). Ailleurs, Web Serial natif. */
+const isAndroid = /Android/i.test(navigator.userAgent);
+let serialApi = isAndroid ? null : navigator.serial, apiName = serialApi ? 'Web Serial natif' : '';
 if (!serialApi && navigator.usb) {
-  try { const m = await import('https://unpkg.com/web-serial-polyfill@1.0.15/dist/serial.js'); serialApi = m.serial; }
-  catch (e) { console.warn('polyfill WebUSB indisponible', e); }
+  try { const m = await import('https://unpkg.com/web-serial-polyfill@1.0.15/dist/serial.js'); serialApi = m.serial; apiName = 'WebUSB via polyfill' + (isAndroid ? ' (Android)' : ''); }
+  catch (e) { console.warn('polyfill WebUSB indisponible', e); apiName = 'polyfill WebUSB indisponible : ' + e.message; }
 }
+if (!serialApi && navigator.serial) { serialApi = navigator.serial; apiName = 'Web Serial natif'; }
 if (!serialApi) { $('nosupport').hidden = false; $('nosupport').textContent = 'Ce navigateur ne donne pas accès aux ports USB. Il faut Chrome ou Edge (ordinateur), ou Chrome sur Android.'; $('connect').disabled = true; }
 
 let port = null, reader = null, writer = null, params = {}, streaming = false, me = {};
@@ -272,7 +276,7 @@ async function diag() {
   const parts = [];
   try { const ps = await serialApi.getPorts(); parts.push(`ports série autorisés : ${ps.length}` + (ps.length ? ' (' + ps.map(p => { const i = p.getInfo(); return `${(i.usbVendorId || 0).toString(16)}:${(i.usbProductId || 0).toString(16)}`; }).join(', ') + ')' : '')); } catch (e) { parts.push('Web Serial : ' + e.message); }
   if (navigator.usb) { try { const ds = await navigator.usb.getDevices(); parts.push(`appareils WebUSB autorisés : ${ds.length}` + (ds.length ? ' (' + ds.map(d => `${d.productName || '?'} ${d.vendorId.toString(16)}:${d.productId.toString(16)}`).join(', ') + ')' : '')); } catch (e) { parts.push('WebUSB : ' + e.message); } }
-  parts.push(navigator.serial ? 'Web Serial natif' : 'WebUSB via polyfill');
+  parts.push(apiName || 'aucune interface USB');
   $('diag').textContent = 'Diagnostic : ' + parts.join(' · ');
 }
 diag();
