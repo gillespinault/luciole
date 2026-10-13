@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "6.1.0"
+#define L2_FW_VERSION       "6.2.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -161,6 +161,9 @@
 /* Configuration persistante (NVS) */
 #define L2_NVS_NAMESPACE    "luciole"
 #define L2_NVS_KEY_LEDS     "leds"
+#define L2_NVS_KEY_NAME     "name"
+#define L2_NAME_LEN         8       /* surnom, 7 caractères + fin de chaîne */
+#define L2_LED_CHANNEL_MA   20      /* une composante (R, G ou B) à fond : estimation du courant */
 
 /* ------------------------------------------------------------------ */
 /* Contrat radio v1 (13 octobre 2026). Tout ce qui suit est partagé par  */
@@ -191,7 +194,10 @@ typedef struct __attribute__((packed)) {
     uint8_t  type;          /* L2_MSG_* */
 } l2_hdr_t;
 
-/* Balise, une par intervalle : « voici où j'en suis ». 16 octets. */
+/* Balise, une par intervalle : « voici où j'en suis ». 16 octets dans le
+ * contrat v1 ; les champs ajoutés ensuite vont à la fin et sont optionnels
+ * (une balise plus courte est acceptée, les champs absents valent 0). */
+#define L2_BEACON_MIN_LEN 16
 typedef struct __attribute__((packed)) {
     l2_hdr_t hdr;
     uint8_t  density;       /* voisines à portée (0-255), information */
@@ -200,6 +206,8 @@ typedef struct __attribute__((packed)) {
     uint8_t  flags;         /* réservé, 0 : capacités futures */
     uint32_t phase_us;      /* position dans le cycle de L2_BAR_US à l'envoi */
     uint32_t seq;           /* compteur d'émission */
+    /* ---- ajouts après le contrat v1 (firmware 6.2.0) ---- */
+    char     name[L2_NAME_LEN]; /* surnom, ASCII, complété de zéros ; vide = pas de surnom */
 } l2_beacon_t;
 
 /* Onde : « (origin, id) passe par ici, saut hop ». Diffusée à toutes. 14 octets. */

@@ -26,8 +26,15 @@ status               état complet : cohésion, teinte, foule, voisines (RSSI, p
 stream 500 | off     même état toutes les 500 ms (100 au moins)
 log off | on         coupe ou rétablit le journal humain (utile pendant un flux)
 leds [N]             nombre de LED ; avec N : enregistre et redémarre
+name [surnom]        surnom (7 caractères), enregistré et diffusé dans la balise (champ ajouté en fin, ignoré par les anciennes)
+test off|white|black|chase|px N   mode test du ruban (non persistant)
 onde                 lance une onde, comme un appui sur le bouton
 restart, help
+```
+
+Pendant un flux (`stream`), chaque événement d'onde sort aussi en JSON : `{"ev":"emit|heard|play|relay|skip|late","origin","id","hop","rssi","prox","copies"}`. L'état comporte le surnom, le courant estimé du ruban (`ma`, 20 mA par composante à fond) et, par voisine, le dernier écart de phase retenu (`ph`, ms). Le paramètre `hue_freeze` gèle la couleur commune (dérive, vagabondage, consensus) pour isoler un réglage.
+
+```
 ```
 
 ## Comportement (firmware 6)

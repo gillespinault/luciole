@@ -21,33 +21,35 @@
   button:hover { border-color:var(--acc); } button.acc { background:var(--acc); color:#1a1400; border-color:var(--acc); font-weight:600; }
   button:disabled { opacity:.5; cursor:default; }
   input[type=number], input[type=text] { font:inherit; background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 10px; width:110px; }
-  input[type=text] { width:100%; }
+  input.full { width:100%; } textarea { width:100%; font:12px ui-monospace, monospace; background:#0b0d12; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px; min-height:70px; }
   .warn { border-color:var(--warn); color:var(--warn); }
   .note { color:var(--dim); font-size:13px; }
   .kv { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-variant-numeric:tabular-nums; }
   .kv span:nth-child(odd) { color:var(--dim); }
   .gauge { height:10px; background:#1f2533; border-radius:5px; overflow:hidden; margin:6px 0; }
   .gauge i { display:block; height:100%; background:var(--acc); width:0; transition:width .2s; }
-  .strip { display:flex; gap:5px; margin:8px 0; } .strip i { width:22px; height:22px; border-radius:50%; display:block; background:#222; }
+  .strip { display:flex; gap:5px; margin:8px 0; flex-wrap:wrap; } .strip i { width:22px; height:22px; border-radius:50%; display:block; background:#222; }
   table { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
   td, th { padding:4px 6px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }
   th { color:var(--dim); font-weight:500; } td:first-child, th:first-child { text-align:left; }
   .bar { display:inline-block; height:8px; background:var(--ok); border-radius:4px; vertical-align:middle; }
   .params tr.changed td:first-child { color:var(--acc); }
   .params input { width:96px; } .params td.d { text-align:left; color:var(--dim); white-space:normal; }
-  .params button { padding:2px 8px; font-size:12px; }
+  .params button, .mini { padding:2px 8px; font-size:12px; }
   #log { height:220px; overflow:auto; background:#0b0d12; border:1px solid var(--line); border-radius:8px; padding:8px; font:12px/1.4 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; color:var(--dim); }
-  #log .json { color:#6fb3ff; } #log .tx { color:var(--acc); } #log .err { color:var(--warn); }
+  #log .json { color:#6fb3ff; } #log .tx { color:var(--acc); } #log .err { color:var(--warn); } #log .ev { color:var(--ok); }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#555; display:inline-block; } .dot.on { background:var(--ok); } .dot.rec { background:var(--warn); animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.3; } }
   .viz { --surface-1:#151923; --text-primary:#d8dde8; --text-secondary:#8a93a6; --grid:#242a38;
          --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500; --series-5:#d55181; --series-6:#008300; --series-7:#9085e9; --series-8:#e66767; --series-other:#6b7280; }
   canvas.chart { width:100%; display:block; touch-action:none; }
-  #rssi-chart { height:300px; cursor:crosshair; } #coh-chart { height:110px; }
+  #rssi-chart { height:300px; cursor:crosshair; } #coh-chart, #phase-chart, #heard-chart, #interval-chart { height:110px; }
   .legend { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:13px; margin:6px 0 0; color:var(--text-secondary); }
   .legend i { display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:5px; }
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; } .seg button { border:0; border-radius:0; padding:4px 10px; } .seg button.on { background:#2a3144; color:var(--acc); }
   .tip { position:absolute; pointer-events:none; background:#0b0d12; border:1px solid var(--line); border-radius:8px; padding:6px 9px; font-size:12px; color:var(--ink); white-space:nowrap; display:none; z-index:3; }
-  .dot { width:10px; height:10px; border-radius:50%; background:#555; display:inline-block; } .dot.on { background:var(--ok); }
+  label.chk { display:inline-flex; gap:6px; align-items:center; }
 </style>
 </head>
 <body>
@@ -77,27 +79,44 @@
       <span>Décalage de phase</span><span id="offset">–</span>
       <span>Ondes en mémoire</span><span id="waves">–</span>
       <span>Ruban</span><span id="leds">–</span>
+      <span>Courant du ruban</span><span id="ma">–</span>
     </div>
     <div class="strip" id="strip"></div>
-    <p class="note">Le ruban ci-dessus est une reconstitution : longueur unie = cohésion, couleur = couleur commune, pas le souffle.</p>
-    <div class="row"><button id="onde" disabled>Lancer une onde</button><button id="restart" disabled>Redémarrer</button></div>
+    <p class="note">Ruban reconstitué : longueur unie = cohésion, couleur = couleur commune, sans le souffle. Courant estimé d'après les pixels affichés (20 mA par composante à fond), hors module.</p>
+    <div class="row"><button id="onde" disabled>Lancer une onde</button><button id="restart" disabled>Redémarrer</button>
+      <label class="chk"><input type="checkbox" id="freeze" disabled> geler la couleur commune</label></div>
+    <div class="row"><span class="note">Test du ruban :</span><span class="seg" id="test"><button data-t="off" class="on">normal</button><button data-t="white">tout blanc</button><button data-t="black">tout noir</button><button data-t="chase">chenille</button></span>
+      <label class="note">pixel <input type="number" id="test-px" min="0" max="143" value="0" style="width:70px"></label><button class="mini" id="test-px-btn" disabled>allumer ce pixel</button></div>
+    <div class="row"><label class="note">Surnom <input type="text" id="name-in" maxlength="7" placeholder="7 caractères"></label><button class="mini" id="name-set" disabled>Enregistrer</button><span class="note">diffusé aux voisines dans la balise</span></div>
   </div>
 
   <div class="card">
     <h2>Voisines</h2>
-    <table><thead><tr><th>Luciole</th><th>RSSI</th><th>lissé</th><th>proximité</th><th>teinte</th><th>cohésion</th><th>vue il y a</th></tr></thead><tbody id="nb"></tbody></table>
+    <table><thead><tr><th>Luciole</th><th>RSSI</th><th>lissé</th><th>proximité</th><th>teinte</th><th>cohésion</th><th>phase</th><th>vue il y a</th></tr></thead><tbody id="nb"></tbody></table>
     <p class="note" id="nb-note">–</p>
   </div>
 
   <div class="card wide viz" style="position:relative">
-    <h2>Signal des voisines <span class="note">(RSSI lissé, dBm ; glissez les lignes « pleine » et « nulle » pour régler les seuils de proximité)</span></h2>
+    <h2>Signal des voisines <span class="note">(RSSI lissé, dBm ; glissez les quatre lignes de seuil pour les régler ; triangles = ondes)</span></h2>
     <div class="row"><span class="seg" id="range"><button data-s="60" class="on">1 min</button><button data-s="180">3 min</button><button data-s="600">10 min</button></span>
       <span class="note" id="chart-note">en attente de données</span></div>
     <canvas class="chart" id="rssi-chart"></canvas>
     <div class="legend" id="legend"></div>
     <h2 style="margin-top:14px">Cohésion <span class="note">(0 seule … 1 ensemble)</span></h2>
     <canvas class="chart" id="coh-chart"></canvas>
+    <h2 style="margin-top:14px">Écart de phase avec chaque voisine <span class="note">(ms ; 0 = calées, la zone morte est de ±5 ms)</span></h2>
+    <canvas class="chart" id="phase-chart"></canvas>
+    <h2 style="margin-top:14px">Balises entendues <span class="note">(par seconde)</span></h2>
+    <canvas class="chart" id="heard-chart"></canvas>
+    <h2 style="margin-top:14px">Intervalle de mes balises <span class="note">(s ; monte avec la foule)</span></h2>
+    <canvas class="chart" id="interval-chart"></canvas>
     <div class="tip" id="tip"></div>
+  </div>
+
+  <div class="card wide">
+    <h2>Enregistrement <span class="note">(une ligne par voisine et par mesure, CSV ; avec la position du téléphone si autorisée : l'outil du test de portée)</span></h2>
+    <div class="row"><span class="dot" id="rec-dot"></span><button id="rec" disabled>Démarrer</button><button id="rec-dl" disabled>Télécharger le CSV</button>
+      <label class="chk"><input type="checkbox" id="gps" checked> position GPS</label><span class="note" id="rec-note">–</span></div>
   </div>
 
   <div class="card wide">
@@ -113,8 +132,16 @@
   </div>
 
   <div class="card wide">
+    <h2>Profils de réglages <span class="note">(enregistrés dans ce navigateur ; appliquer envoie chaque réglage à la luciole branchée)</span></h2>
+    <div class="row"><input type="text" id="prof-name" placeholder="nom du profil" style="width:200px"><button id="prof-save" disabled>Enregistrer les réglages courants</button>
+      <label class="chk"><input type="checkbox" id="prof-reset" checked> remettre par défaut avant d'appliquer</label></div>
+    <div id="prof-list" class="row"></div>
+    <details><summary class="note">Importer / exporter (JSON)</summary><textarea id="prof-json"></textarea><div class="row"><button class="mini" id="prof-import">Importer</button><button class="mini" id="prof-export">Exporter tous les profils</button></div></details>
+  </div>
+
+  <div class="card wide">
     <h2>Console</h2>
-    <div class="row"><input type="text" id="cmd" placeholder="commande (help, get, set rssi_near -85, status, stream 500, log off…)" disabled></div>
+    <div class="row"><input type="text" class="full" id="cmd" placeholder="commande (help, get, set rssi_near -85, status, stream 500, log off…)" disabled></div>
     <div id="log"></div>
   </div>
 </main>
@@ -123,6 +150,7 @@
 const $ = id => document.getElementById(id);
 const hsv = h => { h = ((h % 360) + 360) % 360 / 60; const i = Math.floor(h), f = h - i, q = 1 - f;
   const c = [[1,f,0],[q,1,0],[0,1,f],[0,q,1],[f,0,1],[1,0,q]][i]; return `rgb(${c.map(v => Math.round(40 + 215 * v)).join(',')})`; };
+const CTRL = ['disconnect', 'onde', 'restart', 'leds-set', 'reset-all', 'export', 'cmd', 'freeze', 'test-px-btn', 'name-set', 'rec', 'prof-save'];
 
 /* ---------- Port série : Web Serial, ou WebUSB (Android) via le polyfill ---------- */
 let serialApi = navigator.serial;
@@ -132,18 +160,18 @@ if (!serialApi && navigator.usb) {
 }
 if (!serialApi) { $('nosupport').hidden = false; $('nosupport').textContent = 'Ce navigateur ne donne pas accès aux ports USB. Il faut Chrome ou Edge (ordinateur), ou Chrome sur Android.'; $('connect').disabled = true; }
 
-let port = null, reader = null, writer = null, params = {}, streaming = false;
+let port = null, reader = null, writer = null, params = {}, streaming = false, me = {};
 const enc = new TextEncoder(), dec = new TextDecoder();
 
 async function connect() {
   try { port = await serialApi.requestPort(); await port.open({ baudRate: 115200 }); }
   catch (e) { log('err', 'ouverture du port : ' + e.message); return; }
-  $('dot').classList.add('on'); $('connect').disabled = true;
-  for (const id of ['disconnect', 'onde', 'restart', 'leds-set', 'reset-all', 'export', 'cmd']) $(id).disabled = false;
+  $('dot').classList.add('on'); $('connect').disabled = true; for (const id of CTRL) $(id).disabled = false;
   $('intro').hidden = true;
   writer = port.writable.getWriter();
   readLoop();
   await send('log off'); await send('version'); await send('get'); await send('stream 500'); streaming = true;
+  renderProfiles();
 }
 async function disconnect() {
   try { if (streaming) await send('stream off'); } catch (e) {}
@@ -151,9 +179,8 @@ async function disconnect() {
   try { writer && writer.releaseLock(); } catch (e) {}
   try { port && await port.close(); } catch (e) {}
   port = reader = writer = null; streaming = false;
-  $('dot').classList.remove('on'); $('connect').disabled = false;
-  for (const id of ['disconnect', 'onde', 'restart', 'leds-set', 'reset-all', 'export', 'cmd']) $(id).disabled = true;
-  $('id').textContent = '';
+  $('dot').classList.remove('on'); $('connect').disabled = false; for (const id of CTRL) $(id).disabled = true;
+  $('id').textContent = ''; if (recording) recStop(); renderProfiles();
 }
 async function send(cmd) { if (!writer) return; log('tx', '> ' + cmd); await writer.write(enc.encode(cmd + '\n')); }
 
@@ -180,13 +207,16 @@ function onLine(line) {
   let d; try { d = JSON.parse(line); } catch (e) { log('err', 'JSON illisible : ' + line.slice(0, 120)); return; }
   if (Array.isArray(d)) { params = {}; for (const p of d) params[p.k] = p; renderParams(); log('json', 'paramètres : ' + d.length); return; }
   if ('nb' in d) { renderStatus(d); return; }
+  if (d.ev) { onEvent(d); return; }
   log('json', line.length > 200 ? line.slice(0, 200) + '…' : line);
   if (d.param) { params[d.param.k] = d.param; renderParam(d.param); }
   if (d.reset === 'tous') send('get');
-  if (d.board) { $('id').textContent = `${d.mac} · ${d.board} · fw ${d.fw} · contrat ${d.proto}`; $('leds-in').value = d.leds; }
+  if (d.board) { me = d; $('id').textContent = `${d.name || d.mac} · ${d.board} · fw ${d.fw} · contrat ${d.proto}`; $('leds-in').value = d.leds; $('name-in').value = d.name || ''; }
+  if ('test' in d && !('t' in d)) setTestUi(d.test);
   if (d.err) log('err', 'erreur : ' + d.err);
 }
 window.onLine = onLine;   /* pour les tests */
+const label = n => n.name ? `${n.name} (${n.id})` : n.id;
 
 function renderStatus(d) {
   $('coh').textContent = d.coh.toFixed(2); $('g-coh').style.width = (100 * d.coh) + '%';
@@ -197,16 +227,19 @@ function renderStatus(d) {
   $('offset').textContent = d.offset_ms + ' ms';
   $('waves').textContent = d.waves + (d.playing ? ' · onde en cours' : '');
   $('leds').textContent = `${d.leds} LED, plafond ${d.strip_max}/255`;
-  if (!$('id').textContent) $('id').textContent = d.mac + ' · fw ' + d.fw;
+  if ('ma' in d) $('ma').textContent = `≈ ${d.ma} mA` + (d.test ? ' (mode test)' : '');
+  if (!$('id').textContent) $('id').textContent = (d.name || d.mac) + ' · fw ' + d.fw;
+  if ('test' in d) setTestUi(d.test);
   const st = $('strip'); const n = Math.min(d.leds, 30); if (st.children.length !== n) { st.innerHTML = ''; for (let p = 0; p < n; p++) st.append(document.createElement('i')); }
   const fill = d.coh * n;
   for (let p = 0; p < n; p++) { const w = Math.min(1, Math.max(0, fill - (n - 1 - p))); st.children[p].style.background = w > 0.5 ? hsv(d.hue) : hsv(p * 360 / n); st.children[p].style.opacity = w > 0.5 ? 1 : 0.6; }
-  chartPush(d);
+  chartPush(d); if (recording) recPush(d);
   const nb = d.nb.slice().sort((a, b) => b.rssi_f - a.rssi_f);
-  $('nb').innerHTML = nb.map(n => `<tr style="opacity:${n.in ? 1 : .5}"><td>${n.id}${n.in ? '' : ' (loin)'}</td><td>${n.rssi} dBm</td><td>${n.rssi_f.toFixed(1)}</td>
-    <td><span class="bar" style="width:${Math.round(60 * n.prox)}px"></span> ${n.prox.toFixed(2)}</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${hsv(n.hue)}"></span> ${n.hue}°</td><td>${n.coh.toFixed(2)}</td><td>${(n.age / 1000).toFixed(1)} s</td></tr>`).join('');
+  $('nb').innerHTML = nb.map(n => `<tr style="opacity:${n.in ? 1 : .5}"><td>${label(n)}${n.in ? '' : ' (loin)'}</td><td>${n.rssi} dBm</td><td>${n.rssi_f.toFixed(1)}</td>
+    <td><span class="bar" style="width:${Math.round(60 * n.prox)}px"></span> ${n.prox.toFixed(2)}</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${hsv(n.hue)}"></span> ${n.hue}°</td><td>${n.coh.toFixed(2)}</td><td>${n.ph != null ? n.ph.toFixed(0) + ' ms' : '–'}</td><td>${(n.age / 1000).toFixed(1)} s</td></tr>`).join('');
   $('nb-note').textContent = nb.length ? `${nb.length} voisine${nb.length > 1 ? 's' : ''} en table (16 au plus, les plus fortes)` : 'aucune voisine entendue';
 }
+function setTestUi(t) { const map = { 0: 'off', 1: 'white', 2: 'black', 3: 'px', 4: 'chase' }; $('test').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === map[t])); }
 
 /* ---------- Paramètres ---------- */
 function renderParams() {
@@ -214,8 +247,9 @@ function renderParams() {
   for (const p of Object.values(params)) renderParam(p);
   $('params').querySelectorAll('input').forEach(i => i.addEventListener('change', () => send(`set ${i.dataset.k} ${i.value}`)));
   $('params').querySelectorAll('button[data-reset]').forEach(b => b.addEventListener('click', () => send(`reset ${b.dataset.reset}`)));
+  chartDraw();
 }
-function renderParam(p) { const tr = $('p-' + p.k); if (!tr) return; tr.querySelector('input').value = p.v; tr.classList.toggle('changed', p.v !== p.def); if (p.k.startsWith('rssi_')) chartDraw(); }
+function renderParam(p) { const tr = $('p-' + p.k); if (!tr) return; tr.querySelector('input').value = p.v; tr.classList.toggle('changed', p.v !== p.def); if (p.k === 'hue_freeze') $('freeze').checked = p.v >= 0.5; if (p.k.startsWith('rssi_')) chartDraw(); }
 
 /* ---------- Journal et boutons ---------- */
 const lines = [];
@@ -228,124 +262,178 @@ $('onde').onclick = () => send('onde');
 $('restart').onclick = () => send('restart');
 $('leds-set').onclick = () => send('leds ' + $('leds-in').value);
 $('reset-all').onclick = () => { if (confirm('Remettre tous les paramètres par défaut ?')) send('reset'); };
-$('export').onclick = () => { const txt = Object.values(params).filter(p => p.v !== p.def).map(p => `set ${p.k} ${p.v}`).join('\n') || '(tout est au défaut)'; navigator.clipboard.writeText(txt).then(() => log('json', 'copié :\n' + txt)); };
+$('export').onclick = () => { const txt = diffText(); navigator.clipboard.writeText(txt).then(() => log('json', 'copié :\n' + txt)); };
 $('cmd').addEventListener('keydown', e => { if (e.key === 'Enter' && $('cmd').value.trim()) { send($('cmd').value.trim()); $('cmd').value = ''; } });
-/* ---------- Graphes : signal des voisines dans le temps, seuils glissables ; cohésion ---------- */
-const hist = new Map();            /* id -> [{t, f, r}] (t en s, f = RSSI lissé, r = brut) */
-const cohHist = [];                /* [{t, c}] */
+$('freeze').addEventListener('change', () => send('set hue_freeze ' + ($('freeze').checked ? 1 : 0)));
+$('test').querySelectorAll('button').forEach(b => b.addEventListener('click', () => send('test ' + b.dataset.t)));
+$('test-px-btn').onclick = () => send('test px ' + $('test-px').value);
+$('name-set').onclick = () => send('name ' + $('name-in').value.trim());
+const diffText = () => Object.values(params).filter(p => p.v !== p.def).map(p => `set ${p.k} ${p.v}`).join('\n') || '(tout est au défaut)';
+
+/* ---------- Graphes ---------- */
+const hist = new Map();            /* id -> [{t, f, r, ph}] */
+const cohHist = [], heardHist = [], intervalHist = [], events = [];
 const order = [];                  /* ordre d'apparition : attribution fixe des couleurs */
-let rangeS = 60, lastT = 0, drag = null, hover = null;
+let rangeS = 60, lastT = 0, drag = null;
 const Y0 = -110, Y1 = -30, PAD = { l: 44, r: 64, t: 10, b: 22 };
 const css = v => getComputedStyle(document.querySelector('.viz')).getPropertyValue(v).trim();
 const seriesColor = id => { const i = order.indexOf(id); return i >= 0 && i < 8 ? css('--series-' + (i + 1)) : css('--series-other'); };
+const names = new Map();
 
 function chartPush(d) {
   const t = d.t / 1000; lastT = t;
   for (const n of d.nb) {
     if (!hist.has(n.id)) { hist.set(n.id, []); order.push(n.id); }
-    const h = hist.get(n.id); h.push({ t, f: n.rssi_f, r: n.rssi, age: n.age });
+    if (n.name) names.set(n.id, n.name);
+    hist.get(n.id).push({ t, f: n.rssi_f, r: n.rssi, ph: n.ph ?? null, age: n.age });
   }
-  cohHist.push({ t, c: d.coh });
+  cohHist.push({ t, v: d.coh }); heardHist.push({ t, v: d.heard }); intervalHist.push({ t, v: d.interval });
   const keep = t - 600;
   for (const h of hist.values()) while (h.length && h[0].t < keep) h.shift();
-  while (cohHist.length && cohHist[0].t < keep) cohHist.shift();
-  $('chart-note').textContent = `${hist.size} voisine${hist.size > 1 ? 's' : ''} vue${hist.size > 1 ? 's' : ''} sur 10 min · une mesure toutes les 0,5 s`;
+  for (const h of [cohHist, heardHist, intervalHist, events]) while (h.length && h[0].t < keep) h.shift();
+  $('chart-note').textContent = `${hist.size} voisine${hist.size > 1 ? 's' : ''} vue${hist.size > 1 ? 's' : ''} sur 10 min · ${events.length} événement${events.length > 1 ? 's' : ''} d'onde`;
   chartDraw();
 }
+function onEvent(e) {
+  events.push({ t: e.t / 1000, ev: e.ev, origin: e.origin, id: e.id, hop: e.hop, rssi: e.rssi, prox: e.prox, copies: e.copies });
+  const txt = { emit: 'onde émise', heard: 'onde entendue', play: 'onde jouée', relay: 'onde rediffusée', skip: 'rediffusion supprimée', late: 'lecture abandonnée' }[e.ev] || e.ev;
+  log('ev', `${txt} : ${names.get(e.origin) || e.origin}#${e.id} saut ${e.hop}` + (e.ev === 'heard' ? ` ${e.rssi} dBm` : '') + (e.ev === 'skip' ? ` (${e.copies} copies)` : ''));
+  if (recording) recRows.push([new Date().toISOString(), e.t, pos.lat, pos.lon, pos.acc, '', '', '', '', '', '', 'onde:' + e.ev, e.origin, '', '', '', '', '', e.id, e.hop].join(','));
+  chartDraw();
+}
+const EV_COLOR = { emit: '#ffd166', heard: '#8a93a6', play: '#7bd88f', relay: '#6fb3ff', skip: '#555c6b', late: '#ff8f6b' };
 
 function setupCanvas(c) {
   const r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
   if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); }
-  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return { ctx, w: r.width, h: r.height };
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.font = '12px system-ui'; ctx.textBaseline = 'middle'; return { ctx, w: r.width, h: r.height };
 }
 const xOf = (t, w) => PAD.l + (w - PAD.l - PAD.r) * (1 - (lastT - t) / rangeS);
 const yOf = (v, h) => PAD.t + (h - PAD.t - PAD.b) * (Y1 - v) / (Y1 - Y0);
 const vOf = (y, h) => Y1 - (y - PAD.t) / (h - PAD.t - PAD.b) * (Y1 - Y0);
+function timeAxis(ctx, w, h) {
+  ctx.fillStyle = css('--text-secondary'); ctx.textAlign = 'center';
+  const step = rangeS <= 60 ? 10 : rangeS <= 180 ? 30 : 120;
+  for (let s = 0; s <= rangeS; s += step) ctx.fillText(s ? '-' + s + ' s' : 'maintenant', xOf(lastT - s, w), h - PAD.b / 2);
+}
+function spreadLabels(ends) {
+  ends.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+  for (let i = ends.length - 2; i >= 0; i--) if (ends[i + 1].y - ends[i].y < 13) ends[i].y = ends[i + 1].y - 13;
+}
+function drawSeries(ctx, w, h, pts, yFn, col, key = 'v') {
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.beginPath(); let started = false, last = null;
+  for (const p of pts) { if (p.t < lastT - rangeS || p[key] == null) continue; const x = xOf(p.t, w), y = yFn(p[key]);
+    if (!started || p.t - last.t > 3) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y); last = p; }
+  ctx.stroke(); return last;
+}
 
 function chartDraw() {
   const { ctx, w, h } = setupCanvas($('rssi-chart'));
   ctx.clearRect(0, 0, w, h);
-  ctx.font = '12px system-ui'; ctx.textBaseline = 'middle';
   const near = params.rssi_near?.v ?? -80, far = params.rssi_far?.v ?? -100, enter = params.rssi_enter?.v, leave = params.rssi_leave?.v;
-  /* bande de proximité partielle */
   ctx.fillStyle = 'rgba(255,209,102,0.07)'; ctx.fillRect(PAD.l, yOf(near, h), w - PAD.l - PAD.r, yOf(far, h) - yOf(near, h));
-  /* grille */
   ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.fillStyle = css('--text-secondary'); ctx.textAlign = 'right';
   for (let v = Y1; v >= Y0; v -= 10) { const y = yOf(v, h); ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke(); ctx.fillText(v, PAD.l - 6, y); }
-  ctx.textAlign = 'center';
-  const step = rangeS <= 60 ? 10 : rangeS <= 180 ? 30 : 120;
-  for (let s = 0; s <= rangeS; s += step) { const x = xOf(lastT - s, w); ctx.fillText(s ? '-' + s + ' s' : 'maintenant', x, h - PAD.b / 2); }
-  /* séries */
-  ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  timeAxis(ctx, w, h);
+  /* événements d'onde : triangles en bas */
+  for (const e of events) { if (e.t < lastT - rangeS) continue; const x = xOf(e.t, w), y = h - PAD.b - 2; ctx.fillStyle = EV_COLOR[e.ev] || '#888';
+    ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.closePath(); ctx.fill(); }
   const ends = [];
-  for (const [id, pts] of hist) {
-    const col = seriesColor(id); ctx.strokeStyle = col; ctx.beginPath(); let started = false, last = null;
-    for (const p of pts) {
-      if (p.t < lastT - rangeS) continue;
-      const x = xOf(p.t, w), y = yOf(p.f, h);
-      if (!started || (last && p.t - last.t > 3)) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
-      last = p;
-    }
-    ctx.stroke();
-    if (last) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(xOf(last.t, w), yOf(last.f, h), 4, 0, 2 * Math.PI); ctx.fill(); ends.push({ id, y: yOf(last.f, h), col }); }
-  }
-  /* étiquettes directes au bout des lignes, écartées d'au moins 13 px */
-  ends.sort((a, b) => a.y - b.y);
-  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
-  for (let i = ends.length - 2; i >= 0; i--) if (ends[i + 1].y - ends[i].y < 13) ends[i].y = ends[i + 1].y - 13;
-  ctx.textAlign = 'left';
-  for (const e of ends) { ctx.fillStyle = e.col; ctx.fillRect(w - PAD.r + 6, e.y - 1.5, 10, 3); ctx.fillStyle = css('--text-primary'); ctx.fillText(e.id, w - PAD.r + 20, e.y); }
-  /* seuils */
-  /* seuils forts (pleine, nulle) étiquetés au-dessus de leur ligne, faibles (entre, sort) en dessous, à gauche du tracé */
+  for (const [id, pts] of hist) { const last = drawSeries(ctx, w, h, pts, v => yOf(v, h), seriesColor(id), 'f');
+    if (last) { ctx.fillStyle = seriesColor(id); ctx.beginPath(); ctx.arc(xOf(last.t, w), yOf(last.f, h), 4, 0, 2 * Math.PI); ctx.fill(); ends.push({ id, y: yOf(last.f, h), col: seriesColor(id) }); } }
+  spreadLabels(ends); ctx.textAlign = 'left';
+  for (const e of ends) { ctx.fillStyle = e.col; ctx.fillRect(w - PAD.r + 6, e.y - 1.5, 10, 3); ctx.fillStyle = css('--text-primary'); ctx.fillText(names.get(e.id) || e.id, w - PAD.r + 20, e.y); }
+  /* seuils : forts (pleine, nulle) étiquetés au-dessus, faibles (entre, sort) en dessous, à gauche */
   const line = (v, label, dash, strong) => { if (v == null) return; const y = yOf(v, h);
-    ctx.setLineDash(dash); ctx.strokeStyle = strong ? css('--acc') || '#ffd166' : css('--text-secondary'); ctx.lineWidth = strong ? 2 : 1;
+    ctx.setLineDash(dash); ctx.strokeStyle = strong ? '#ffd166' : css('--text-secondary'); ctx.lineWidth = strong ? 2 : 1;
     ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = strong ? '#ffd166' : css('--text-secondary'); ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(`${label} ${v}`, PAD.l + 6, strong ? y - 2 : y + 15); ctx.textBaseline = 'middle'; };
-  line(enter, 'entre', [2, 4], false); line(leave, 'sort', [2, 4], false);
-  line(near, 'pleine', [6, 4], true); line(far, 'nulle', [6, 4], true);
-  if (drag) { ctx.fillStyle = '#ffd166'; ctx.textAlign = 'left'; ctx.fillText(`${drag.key === 'rssi_near' ? 'pleine' : 'nulle'} → ${drag.v} dBm`, PAD.l + 8, yOf(drag.v, h) - 10); }
-  /* légende */
-  $('legend').innerHTML = [...hist.keys()].map(id => `<span><i style="background:${seriesColor(id)}"></i>${id}</span>`).join('') +
-    `<span><i style="background:#ffd166"></i>seuils de proximité (glissables)</span><span><i style="background:${css('--text-secondary')};height:1px"></i>entre / sort de la table des voisines</span>`;
-  cohDraw();
+  line(enter, 'entre', [2, 4], false); line(leave, 'sort', [2, 4], false); line(near, 'pleine', [6, 4], true); line(far, 'nulle', [6, 4], true);
+  if (drag) { ctx.fillStyle = '#ffd166'; ctx.textAlign = 'left'; ctx.fillText(`${LBL[drag.key]} → ${drag.v} dBm`, PAD.l + 8, yOf(drag.v, h) - 14); }
+  $('legend').innerHTML = [...hist.keys()].map(id => `<span><i style="background:${seriesColor(id)}"></i>${names.get(id) || id}</span>`).join('') +
+    `<span><i style="background:#ffd166"></i>seuils de proximité</span><span><i style="background:${css('--text-secondary')};height:1px"></i>entrée / sortie de la table</span>` +
+    Object.entries({ emit: 'émise', heard: 'entendue', play: 'jouée', relay: 'rediffusée', skip: 'supprimée', late: 'abandonnée' }).map(([k, v]) => `<span><i style="background:${EV_COLOR[k]};width:8px;height:8px;border-radius:0"></i>${v}</span>`).join('');
+  smallChart('coh-chart', [{ pts: cohHist, col: css('--series-1') }], 0, 1, [0, 0.5, 1], v => v.toFixed(2));
+  const phSeries = [...hist.entries()].map(([id, pts]) => ({ pts, col: seriesColor(id), id }));
+  const phMax = Math.max(50, ...phSeries.flatMap(s => s.pts.filter(p => p.t >= lastT - rangeS && p.ph != null).map(p => Math.abs(p.ph))));
+  const phLim = phMax <= 50 ? 50 : phMax <= 200 ? 200 : 1250;
+  smallChart('phase-chart', phSeries, -phLim, phLim, [-phLim, 0, phLim], v => v.toFixed(0), 'ph');
+  smallChart('heard-chart', [{ pts: heardHist, col: css('--series-3') }], 0, Math.max(10, ...heardHist.map(p => p.v)) * 1.1, null, v => v.toFixed(1));
+  smallChart('interval-chart', [{ pts: intervalHist, col: css('--series-2') }], 0, Math.max(1, ...intervalHist.map(p => p.v)) * 1.1, null, v => v.toFixed(1) + ' s');
 }
+const LBL = { rssi_near: 'pleine', rssi_far: 'nulle', rssi_enter: 'entre', rssi_leave: 'sort' };
 
-function cohDraw() {
-  const { ctx, w, h } = setupCanvas($('coh-chart'));
-  ctx.clearRect(0, 0, w, h); ctx.font = '12px system-ui'; ctx.textBaseline = 'middle';
-  const y = v => 8 + (h - 8 - 18) * (1 - v);
+function smallChart(id, series, lo, hi, ticks, fmt, key = 'v') {
+  const { ctx, w, h } = setupCanvas($(id)); ctx.clearRect(0, 0, w, h);
+  const y = v => 8 + (h - 8 - 18) * (1 - (v - lo) / (hi - lo));
   ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.fillStyle = css('--text-secondary'); ctx.textAlign = 'right';
-  for (const v of [0, 0.5, 1]) { ctx.beginPath(); ctx.moveTo(PAD.l, y(v)); ctx.lineTo(w - PAD.r, y(v)); ctx.stroke(); ctx.fillText(v, PAD.l - 6, y(v)); }
-  ctx.strokeStyle = css('--series-1'); ctx.lineWidth = 2; ctx.beginPath(); let started = false;
-  for (const p of cohHist) { if (p.t < lastT - rangeS) continue; const x = xOf(p.t, w); if (!started) { ctx.moveTo(x, y(p.c)); started = true; } else ctx.lineTo(x, y(p.c)); }
-  ctx.stroke();
-  const last = cohHist[cohHist.length - 1]; if (last) { ctx.fillStyle = css('--text-primary'); ctx.textAlign = 'left'; ctx.fillText(last.c.toFixed(2), w - PAD.r + 8, y(last.c)); }
+  for (const v of ticks || [lo, (lo + hi) / 2, hi]) { ctx.beginPath(); ctx.moveTo(PAD.l, y(v)); ctx.lineTo(w - PAD.r, y(v)); ctx.stroke(); ctx.fillText(fmt(v), PAD.l - 6, y(v)); }
+  const ends = [];
+  for (const s of series) { const last = drawSeries(ctx, w, h, s.pts, y, s.col, key); if (last && last[key] != null) ends.push({ y: y(last[key]), txt: (s.id ? (names.get(s.id) || s.id) + ' ' : '') + fmt(last[key]), col: s.col }); }
+  spreadLabels(ends); ctx.textAlign = 'left';
+  for (const e of ends) { ctx.fillStyle = e.col; ctx.fillRect(w - PAD.r + 6, e.y - 1.5, 10, 3); ctx.fillStyle = css('--text-primary'); ctx.fillText(e.txt, w - PAD.r + 20, e.y); }
 }
 
 /* seuils glissables + survol */
 const rc = $('rssi-chart');
 function nearThreshold(ev) {
-  const r = rc.getBoundingClientRect(), y = ev.clientY - r.top, h = r.height;
-  for (const key of ['rssi_near', 'rssi_far']) { const p = params[key]; if (p && Math.abs(yOf(p.v, h) - y) < 8) return key; }
-  return null;
+  const r = rc.getBoundingClientRect(), y = ev.clientY - r.top, h = r.height; let best = null, bd = 8;
+  for (const key of ['rssi_near', 'rssi_far', 'rssi_enter', 'rssi_leave']) { const p = params[key]; if (!p) continue; const d = Math.abs(yOf(p.v, h) - y); if (d < bd) { bd = d; best = key; } }
+  return best;
 }
 rc.addEventListener('pointerdown', ev => { const key = nearThreshold(ev); if (!key || !writer) return; drag = { key, v: params[key].v }; rc.setPointerCapture(ev.pointerId); });
 rc.addEventListener('pointermove', ev => {
   const r = rc.getBoundingClientRect(), h = r.height, y = ev.clientY - r.top;
   if (drag) { const p = params[drag.key]; drag.v = Math.round(Math.min(p.max, Math.max(p.min, vOf(y, h)))); chartDraw(); return; }
   rc.style.cursor = nearThreshold(ev) ? 'ns-resize' : 'crosshair';
-  /* info-bulle : valeurs à l'instant survolé */
   const t = lastT - rangeS * (1 - (ev.clientX - r.left - PAD.l) / (r.width - PAD.l - PAD.r));
-  const rows = []; for (const [id, pts] of hist) { let best = null; for (const p of pts) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p; if (best && Math.abs(best.t - t) < 2) rows.push(`<span style="color:${seriesColor(id)}">●</span> ${id} : ${best.f.toFixed(1)} dBm (brut ${best.r})`); }
+  const rows = [];
+  for (const [id, pts] of hist) { let best = null; for (const p of pts) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p; if (best && Math.abs(best.t - t) < 2) rows.push(`<span style="color:${seriesColor(id)}">●</span> ${names.get(id) || id} : ${best.f.toFixed(1)} dBm (brut ${best.r})`); }
+  for (const e of events) if (Math.abs(e.t - t) < rangeS / 60) rows.push(`<span style="color:${EV_COLOR[e.ev]}">▲</span> ${e.ev} ${names.get(e.origin) || e.origin}#${e.id} saut ${e.hop}`);
   const tip = $('tip'); if (!rows.length) { tip.style.display = 'none'; return; }
   tip.innerHTML = `il y a ${Math.max(0, lastT - t).toFixed(0)} s<br>` + rows.join('<br>'); tip.style.display = 'block';
-  const card = rc.closest('.card').getBoundingClientRect(); tip.style.left = Math.min(ev.clientX - card.left + 14, card.width - 200) + 'px'; tip.style.top = (ev.clientY - card.top - 10) + 'px';
+  const card = rc.closest('.card').getBoundingClientRect(); tip.style.left = Math.min(ev.clientX - card.left + 14, card.width - 220) + 'px'; tip.style.top = (ev.clientY - card.top - 10) + 'px';
 });
 rc.addEventListener('pointerleave', () => { $('tip').style.display = 'none'; });
-rc.addEventListener('pointerup', ev => { if (!drag) return; const { key, v } = drag; drag = null; if (v !== params[key].v) send(`set ${key} ${v}`); else chartDraw(); });
+rc.addEventListener('pointerup', () => { if (!drag) return; const { key, v } = drag; drag = null; if (v !== params[key].v) send(`set ${key} ${v}`); else chartDraw(); });
 $('range').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { rangeS = +b.dataset.s; $('range').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); chartDraw(); }));
 window.addEventListener('resize', chartDraw);
-window.chartPush = chartPush;
+
+/* ---------- Enregistrement CSV (+ GPS) ---------- */
+let recording = false, recRows = [], watchId = null; const pos = { lat: '', lon: '', acc: '' };
+const HEADER = 'horodatage,t_luciole_ms,lat,lon,precision_m,ma_mac,cohesion,teinte,foule,balises_s,intervalle_s,voisine,nom,rssi,rssi_lisse,proximite,teinte_voisine,cohesion_voisine,age_ms_ou_id_onde,phase_ms_ou_saut';
+function recStart() {
+  recording = true; recRows = [HEADER]; $('rec').textContent = 'Arrêter'; $('rec-dot').classList.add('rec'); $('rec-dl').disabled = true;
+  if ($('gps').checked && navigator.geolocation) watchId = navigator.geolocation.watchPosition(p => { pos.lat = p.coords.latitude.toFixed(6); pos.lon = p.coords.longitude.toFixed(6); pos.acc = Math.round(p.coords.accuracy); },
+    e => log('err', 'GPS : ' + e.message), { enableHighAccuracy: true, maximumAge: 1000 });
+}
+function recStop() { recording = false; $('rec').textContent = 'Démarrer'; $('rec-dot').classList.remove('rec'); $('rec-dl').disabled = recRows.length < 2; if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; } }
+function recPush(d) {
+  const now = new Date().toISOString(), base = [now, d.t, pos.lat, pos.lon, pos.acc, d.mac, d.coh, d.hue, d.crowd, d.heard, d.interval];
+  if (!d.nb.length) recRows.push([...base, '', '', '', '', '', '', '', '', ''].join(','));
+  for (const n of d.nb) recRows.push([...base, n.id, n.name || '', n.rssi, n.rssi_f, n.prox, n.hue, n.coh, n.age, n.ph ?? ''].join(','));
+  $('rec-note').textContent = `${recRows.length - 1} lignes` + (pos.lat ? ` · GPS ±${pos.acc} m` : $('gps').checked ? ' · en attente du GPS' : '');
+}
+$('rec').onclick = () => recording ? recStop() : recStart();
+$('rec-dl').onclick = () => { const blob = new Blob([recRows.join('\n')], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `luciole-${me.name || me.mac || 'x'}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.csv`; a.click(); };
+window.recTest = { start: recStart, stop: recStop, rows: () => recRows };
+
+/* ---------- Profils (localStorage) ---------- */
+const PK = 'luciole-profils';
+const profiles = () => JSON.parse(localStorage.getItem(PK) || '{}');
+function renderProfiles() {
+  const p = profiles(), keys = Object.keys(p);
+  $('prof-list').innerHTML = keys.length ? keys.map(k => `<span class="seg"><button data-apply="${k}" ${writer ? '' : 'disabled'}>${k} (${Object.keys(p[k]).length})</button><button data-del="${k}" title="supprimer">×</button></span>`).join('') : '<span class="note">aucun profil</span>';
+  $('prof-list').querySelectorAll('[data-apply]').forEach(b => b.onclick = async () => { const vals = p[b.dataset.apply]; if ($('prof-reset').checked) { await send('reset'); await new Promise(r => setTimeout(r, 300)); } for (const [k, v] of Object.entries(vals)) { await send(`set ${k} ${v}`); await new Promise(r => setTimeout(r, 80)); } });
+  $('prof-list').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (confirm(`Supprimer le profil « ${b.dataset.del} » ?`)) { const q = profiles(); delete q[b.dataset.del]; localStorage.setItem(PK, JSON.stringify(q)); renderProfiles(); } });
+}
+$('prof-save').onclick = () => { const name = $('prof-name').value.trim(); if (!name) { alert('Donnez un nom au profil.'); return; }
+  const q = profiles(); q[name] = Object.fromEntries(Object.values(params).filter(x => x.v !== x.def).map(x => [x.k, x.v])); localStorage.setItem(PK, JSON.stringify(q)); renderProfiles(); log('json', `profil « ${name} » enregistré : ${Object.keys(q[name]).length} réglages`); };
+$('prof-export').onclick = () => { $('prof-json').value = JSON.stringify(profiles(), null, 1); };
+$('prof-import').onclick = () => { try { const q = JSON.parse($('prof-json').value); localStorage.setItem(PK, JSON.stringify({ ...profiles(), ...q })); renderProfiles(); log('json', 'profils importés : ' + Object.keys(q).join(', ')); } catch (e) { log('err', 'JSON de profils illisible'); } };
+renderProfiles();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>

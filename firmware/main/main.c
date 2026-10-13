@@ -50,6 +50,8 @@ typedef struct {
     uint8_t  level, hue, coh;
     int64_t  diffs[3];
     uint8_t  ndiffs;
+    int64_t  last_diff_us;  /* dernier écart de phase retenu (médiane) */
+    char     name[L2_NAME_LEN];
 } l2_neighbor_t;
 
 typedef struct {
@@ -81,6 +83,11 @@ static uint8_t  s_mac[6];
 static char     s_name[8];
 static int      s_leds = L2_STRIP_LEDS_DEFAULT;   /* configuration NVS */
 static uint8_t  s_strip_max = L2_STRIP_MAX_BRIGHTNESS;
+static char     s_nick[L2_NAME_LEN] = "";         /* surnom (NVS), diffusé dans la balise */
+static int      s_est_ma = 0;                     /* courant estimé du ruban, mA */
+static int      s_test = 0;                       /* mode test du ruban : 0 off, 1 blanc, 2 noir, 3 pixel, 4 chenille */
+static int      s_test_px = 0;
+static bool     s_stream_on = false;              /* flux JSON périodique sur la console */
 
 static int64_t  s_offset_us = 0;
 static uint32_t s_seq = 0;
@@ -115,7 +122,7 @@ typedef struct {
     float coh_tau, coh_social, hue_tau, hue_drift, hue_wander, hue_wave;
     float rainbow_b, rainbow_flow, solid_b, breath_min, breath_max;
     float wave_sweep, wave_trail, wave_spread, wave_suppress, wave_relay_min, wave_min_play, wave_late, wave_min_emit, wave_max_hop;
-    float beacon_rate, phase_gain, nb_replace_db, strip_max;
+    float beacon_rate, phase_gain, nb_replace_db, strip_max, hue_freeze;
 } l2_params_t;
 
 typedef struct { const char *key; size_t off; float def, min, max; const char *desc; } l2_param_desc_t;
@@ -150,6 +157,7 @@ static const l2_param_desc_t PARAMS[] = {
     PD(phase_gain,     L2_PHASE_GAIN,               0,    1,      "0..1 : correction de phase par balise"),
     PD(nb_replace_db,  L2_NEIGHBOR_REPLACE_DB,      0,    30,     "dB : marge pour remplacer la voisine la plus faible"),
     PD(strip_max,      L2_STRIP_MAX_BRIGHTNESS,     1,    255,    "plafond de luminosite du ruban (/255)"),
+    PD(hue_freeze,     0,                           0,    1,      "1 : gele la couleur commune (derive, consensus)"),
 };
 #define N_PARAMS (sizeof(PARAMS) / sizeof(PARAMS[0]))
 static l2_params_t P;
@@ -213,7 +221,6 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #define L2_NEIGHBOR_REPLACE_DB P.nb_replace_db
 #define L2_STRIP_MAX_BRIGHTNESS ((int)P.strip_max)
 
-static bool    s_stream_on = false;      /* flux JSON périodique sur la console */
 static int64_t s_stream_period_us = 500000, s_stream_last = 0;
 
 /* ------------------------------------------------------------------ */
@@ -250,7 +257,7 @@ static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int le
     if (len < (int)sizeof(l2_hdr_t)) return;
     const l2_hdr_t *h = (const l2_hdr_t *)data;
     if (h->magic[0] != 'L' || h->magic[1] != '2' || h->version < L2_PROTO_MIN_VERSION) return;
-    if (h->type == L2_MSG_BEACON)    { if (len < (int)sizeof(l2_beacon_t)) return; len = sizeof(l2_beacon_t); }
+    if (h->type == L2_MSG_BEACON)    { if (len < L2_BEACON_MIN_LEN) return; if (len > (int)sizeof(l2_beacon_t)) len = sizeof(l2_beacon_t); }
     else if (h->type == L2_MSG_WAVE) { if (len < (int)sizeof(l2_wave_t))   return; len = sizeof(l2_wave_t); }
     else return;
     l2_rx_t rx;
@@ -334,6 +341,7 @@ static void handle_beacon(const l2_rx_t *rx)
     n->last_rssi = rx->rssi;
     n->last_seen_us = rx->rx_us;
     n->level = b->density; n->hue = b->hue; n->coh = b->coh;
+    if (rx->len >= (int)sizeof(l2_beacon_t)) { memcpy(n->name, b->name, L2_NAME_LEN); n->name[L2_NAME_LEN - 1] = 0; }
     if (!n->in_range && n->rssi_f >= L2_RSSI_ENTER) { n->in_range = true;  ESP_LOGD(TAG, "voisine %02x%02x a portee (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
     else if (n->in_range && n->rssi_f <= L2_RSSI_LEAVE) { n->in_range = false; ESP_LOGD(TAG, "voisine %02x%02x trop loin (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
 
@@ -346,6 +354,7 @@ static void handle_beacon(const l2_rx_t *rx)
         int64_t a = n->diffs[0], c = n->diffs[1], d = n->diffs[2];
         diff = (a > c) ? ((c > d) ? c : (a > d ? d : a)) : ((a > d) ? a : (c > d ? d : c));
     }
+    n->last_diff_us = diff;
     if (diff > L2_PHASE_DEADBAND_US || diff < -L2_PHASE_DEADBAND_US)
         s_offset_us += (int64_t)(diff * L2_PHASE_GAIN);
 }
@@ -376,6 +385,13 @@ static l2_wave_rec_t *wave_add(const uint8_t *origin, uint16_t id, uint8_t hue, 
     slot->id = id; slot->hue = hue; slot->hop = hop; slot->t_first = now;
     slot->play_at = slot->relay_at = -1;
     return slot;
+}
+
+static void wave_event(const char *what, const l2_wave_rec_t *r, int hop, int rssi, float prox, int64_t now)
+{
+    if (!s_stream_on) return;
+    printf("{\"ev\":\"%s\",\"t\":%lld,\"origin\":\"%02x%02x\",\"id\":%u,\"hop\":%d,\"rssi\":%d,\"prox\":%.2f,\"copies\":%u}\n",
+           what, (long long)(now / 1000), r->origin[4], r->origin[5], r->id, hop, rssi, prox, r->copies);
 }
 
 static void wave_send(const l2_wave_rec_t *r, uint8_t hop)
@@ -409,6 +425,7 @@ static void handle_wave(const l2_rx_t *rx)
         r = wave_add(w->origin, w->id, w->hue, w->hop, rx->rx_us);
         ESP_LOGI(TAG, "onde %02x%02x#%u entendue de %02x%02x (saut %u, %d dBm)", w->origin[4], w->origin[5], w->id,
                  rx->mac[4], rx->mac[5], w->hop, rx->rssi);
+        wave_event("heard", r, w->hop, rx->rssi, prox, rx->rx_us);
     }
     if (r->copies < 255) r->copies++;
     if (w->hop < r->hop) r->hop = w->hop;
@@ -430,6 +447,7 @@ static void wave_emit(int64_t now)
     l2_wave_rec_t *r = wave_add(s_mac, ++s_wave_id, (uint8_t)(wave_hue * 255.0f / 360.0f), 0, now);
     r->mine = true; r->prox = 1;
     ESP_LOGI(TAG, "bouton : onde #%u emise, teinte %.0f -> %.0f", r->id, s_hue, wave_hue);
+    wave_event("emit", r, 0, 0, 1, now);
     wave_play(r, now);
     wave_send(r, 0); r->relayed = true;
 }
@@ -444,23 +462,26 @@ static void wave_tick(int64_t now)
         l2_wave_rec_t *r = &s_waves[i];
         if (!r->used) continue;
         if (!r->played && r->play_at >= 0 && now >= r->play_at) {
-            if (now - r->play_at > L2_WAVE_LATE_US) { r->played = true; ESP_LOGI(TAG, "onde %02x%02x#%u : lecture abandonnee (retard)", r->origin[4], r->origin[5], r->id); }
+            if (now - r->play_at > L2_WAVE_LATE_US) { r->played = true; ESP_LOGI(TAG, "onde %02x%02x#%u : lecture abandonnee (retard)", r->origin[4], r->origin[5], r->id); wave_event("late", r, r->hop, 0, r->prox, now); }
             else if (!due || r->play_at < due->play_at) due = r;
         }
         if (!r->relayed && r->relay_at >= 0 && now >= r->relay_at) {
             if (r->copies >= L2_WAVE_SUPPRESS || r->hop + 1 > L2_WAVE_MAX_HOP) {
                 r->relayed = true;
                 ESP_LOGI(TAG, "onde %02x%02x#%u : pas rediffusee (%u copies, saut %u)", r->origin[4], r->origin[5], r->id, r->copies, r->hop);
+                wave_event("skip", r, r->hop, 0, r->prox, now);
             } else if (now - r->relay_at > L2_WAVE_LATE_US) {
                 r->relayed = true;
             } else if (now - s_last_relay >= L2_WAVE_RELAY_MIN_US) {
                 wave_send(r, r->hop + 1); r->relayed = true; s_last_relay = now;
                 ESP_LOGI(TAG, "onde %02x%02x#%u : rediffusee (saut %u, %u copies)", r->origin[4], r->origin[5], r->id, r->hop + 1, r->copies);
+                wave_event("relay", r, r->hop + 1, 0, r->prox, now);
             }
         }
     }
     if (due && now - s_last_play >= L2_WAVE_MIN_PLAY_US) {
         ESP_LOGI(TAG, "onde %02x%02x#%u : lecture (saut %u, proximite %.2f)", due->origin[4], due->origin[5], due->id, due->hop, due->prox);
+        wave_event("play", due, due->hop, 0, due->prox, now);
         wave_play(due, now);
     }
 }
@@ -491,13 +512,14 @@ static void regulate(float dt)
         float a = n->hue * 360.0f / 255.0f * (float)M_PI / 180.0f;
         x += cosf(a); y += sinf(a); coh_sum += n->coh / 255.0f; n_in++;
     }
-    float hue = s_hue + L2_HUE_DRIFT_DPS * dt;
+    bool freeze = P.hue_freeze >= 0.5f;
+    float hue = s_hue + (freeze ? 0 : L2_HUE_DRIFT_DPS * dt);
     if (n_in == 0) {
-        hue += (frand() - 0.5f) * 2 * L2_HUE_WANDER_DPS * dt;
+        if (!freeze) hue += (frand() - 0.5f) * 2 * L2_HUE_WANDER_DPS * dt;
         s_coh += dt / L2_COH_TAU_S * (0 - s_coh);
     } else {
         float mean_hue = atan2f(y, x) * 180.0f / (float)M_PI;
-        hue += dt / L2_HUE_TAU_S * wrap_deg(mean_hue - s_hue);
+        if (!freeze) hue += dt / L2_HUE_TAU_S * wrap_deg(mean_hue - s_hue);
         s_coh += dt / L2_COH_TAU_S * ((1 - miss) - s_coh) + dt / L2_COH_SOCIAL_TAU_S * (coh_sum / n_in - s_coh);
     }
     s_hue = norm_deg(hue);
@@ -525,6 +547,7 @@ static void send_beacon(uint8_t level, int64_t now)
         .density = level, .hue = (uint8_t)(s_hue * 255.0f / 360.0f), .coh = (uint8_t)(s_coh * 255.0f),
         .phase_us = (uint32_t)phase_at(now), .seq = s_seq++,
     };
+    memcpy(b.name, s_nick, L2_NAME_LEN);
     esp_err_t err = esp_now_send(BROADCAST, (const uint8_t *)&b, sizeof(b));
     if (err != ESP_OK) ESP_LOGW(TAG, "esp_now_send: %s", esp_err_to_name(err));
     s_last_beacon_tx = now;
@@ -552,6 +575,9 @@ static void config_load(void)
     if (nvs_open(L2_NVS_NAMESPACE, NVS_READONLY, &h) == ESP_OK) {
         uint16_t v = 0;
         if (nvs_get_u16(h, L2_NVS_KEY_LEDS, &v) == ESP_OK && v >= 1 && v <= L2_STRIP_LEDS_MAX) s_leds = v;
+        size_t nl = sizeof(s_nick);
+        if (nvs_get_str(h, L2_NVS_KEY_NAME, s_nick, &nl) != ESP_OK) s_nick[0] = 0;
+        s_nick[L2_NAME_LEN - 1] = 0;
         for (size_t i = 0; i < N_PARAMS; i++) {
             uint32_t bits; float f;
             if (nvs_get_u32(h, PARAMS[i].key, &bits) == ESP_OK) {
@@ -577,6 +603,15 @@ static bool param_store(const l2_param_desc_t *d, float v)
     return ok;
 }
 
+static bool nick_store(const char *name)
+{
+    nvs_handle_t h;
+    if (nvs_open(L2_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return false;
+    bool ok = nvs_set_str(h, L2_NVS_KEY_NAME, name) == ESP_OK && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    return ok;
+}
+
 static const l2_param_desc_t *param_find(const char *key)
 {
     for (size_t i = 0; i < N_PARAMS; i++) if (strcmp(PARAMS[i].key, key) == 0) return &PARAMS[i];
@@ -591,16 +626,16 @@ static void param_print(const l2_param_desc_t *d)
 /* État complet en une ligne JSON (commande « status » et flux « stream »). */
 static void status_print(int64_t now)
 {
-    printf("{\"t\":%lld,\"mac\":\"%s\",\"fw\":\"%s\",\"leds\":%d,\"strip_max\":%d,\"hue\":%.1f,\"coh\":%.3f,\"crowd\":%d,\"heard\":%.1f,\"interval\":%.2f,\"offset_ms\":%lld,\"phase\":%.3f,\"playing\":%s,\"nb\":[",
-           (long long)(now / 1000), s_name, L2_FW_VERSION, s_leds, s_strip_max, s_hue, s_coh, s_crowd, s_heard_rate,
+    printf("{\"t\":%lld,\"mac\":\"%s\",\"name\":\"%s\",\"fw\":\"%s\",\"leds\":%d,\"strip_max\":%d,\"ma\":%d,\"test\":%d,\"hue\":%.1f,\"coh\":%.3f,\"crowd\":%d,\"heard\":%.1f,\"interval\":%.2f,\"offset_ms\":%lld,\"phase\":%.3f,\"playing\":%s,\"nb\":[",
+           (long long)(now / 1000), s_name, s_nick, L2_FW_VERSION, s_leds, s_strip_max, s_est_ma, s_test, s_hue, s_coh, s_crowd, s_heard_rate,
            beacon_interval_us() / 1000000.0f, (long long)(s_offset_us / 1000), phase_at(now) / (float)L2_BAR_US, s_play_start >= 0 ? "true" : "false");
     bool first = true;
     for (int i = 0; i < L2_MAX_NEIGHBORS; i++) {
         l2_neighbor_t *n = &s_neighbors[i];
         if (!n->used) continue;
-        printf("%s{\"id\":\"%02x%02x\",\"rssi\":%d,\"rssi_f\":%.1f,\"prox\":%.2f,\"hue\":%.0f,\"coh\":%.2f,\"in\":%s,\"age\":%lld}",
-               first ? "" : ",", n->mac[4], n->mac[5], n->last_rssi, n->rssi_f, proximity(n->rssi_f), n->hue * 360.0f / 255.0f, n->coh / 255.0f,
-               n->in_range ? "true" : "false", (long long)((now - n->last_seen_us) / 1000));
+        printf("%s{\"id\":\"%02x%02x\",\"name\":\"%s\",\"rssi\":%d,\"rssi_f\":%.1f,\"prox\":%.2f,\"hue\":%.0f,\"coh\":%.2f,\"in\":%s,\"age\":%lld,\"ph\":%.1f}",
+               first ? "" : ",", n->mac[4], n->mac[5], n->name, n->last_rssi, n->rssi_f, proximity(n->rssi_f), n->hue * 360.0f / 255.0f, n->coh / 255.0f,
+               n->in_range ? "true" : "false", (long long)((now - n->last_seen_us) / 1000), n->last_diff_us / 1000.0f);
         first = false;
     }
     int nw = 0; for (int i = 0; i < L2_WAVE_RECORDS; i++) if (s_waves[i].used) nw++;
@@ -620,7 +655,7 @@ static bool config_save_leds(int leds)
  * de stdin dans la boucle de rendu. */
 static void console_help(void)
 {
-    printf("commandes : get [cle] | set cle valeur | reset [cle] | status | stream on|off|ms | log on|off | leds [N] | onde | version | restart | help\n");
+    printf("commandes : get [cle] | set cle valeur | reset [cle] | status | stream on|off|ms | log on|off | leds [N] | name [surnom] | test off|white|black|chase|px N | onde | version | restart | help\n");
 }
 
 static void console_exec(char *line, int64_t now)
@@ -641,6 +676,20 @@ static void console_exec(char *line, int64_t now)
         printf("{\"leds\":%d,\"strip_max\":%d}\n", s_leds, s_strip_max);
     } else if (strcmp(line, "onde") == 0) {
         wave_emit(now);
+    } else if (strncmp(line, "name", 4) == 0 && (line[4] == 0 || line[4] == ' ')) {
+        const char *arg = line + 4; while (*arg == ' ') arg++;
+        if (*arg) {
+            char nn[L2_NAME_LEN] = ""; int k = 0;
+            for (; *arg && k < L2_NAME_LEN - 1; arg++) if (*arg >= 0x20 && *arg < 0x7f && *arg != '"' && *arg != '\\') nn[k++] = *arg;
+            nn[k] = 0; strcpy(s_nick, nn);
+            printf("{\"ok\":%s,\"name\":\"%s\"}\n", nick_store(nn) ? "true" : "false", s_nick);
+        } else printf("{\"name\":\"%s\",\"mac\":\"%s\"}\n", s_nick, s_name);
+    } else if (strncmp(line, "test", 4) == 0 && (line[4] == 0 || line[4] == ' ')) {
+        const char *arg = line + 4; while (*arg == ' ') arg++;
+        if (strcmp(arg, "white") == 0) s_test = 1; else if (strcmp(arg, "black") == 0) s_test = 2;
+        else if (strncmp(arg, "px", 2) == 0) { s_test = 3; s_test_px = atoi(arg + 2); }
+        else if (strcmp(arg, "chase") == 0) s_test = 4; else s_test = 0;
+        printf("{\"test\":%d,\"px\":%d}\n", s_test, s_test_px);
     } else if (strcmp(line, "get") == 0) {
         printf("["); for (size_t i = 0; i < N_PARAMS; i++) { if (i) printf(","); param_print(&PARAMS[i]); } printf("]\n");
     } else if (strncmp(line, "get ", 4) == 0) {
@@ -674,7 +723,7 @@ static void console_exec(char *line, int64_t now)
         esp_log_level_set(TAG, strcmp(line + 4, "off") == 0 ? ESP_LOG_WARN : ESP_LOG_INFO);
         printf("{\"log\":%s}\n", strcmp(line + 4, "off") == 0 ? "false" : "true");
     } else if (strcmp(line, "version") == 0) {
-        printf("{\"fw\":\"%s\",\"board\":\"%s\",\"proto\":%d,\"proto_min\":%d,\"mac\":\"%s\",\"leds\":%d,\"strip_max\":%d}\n", L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, s_name, s_leds, s_strip_max);
+        printf("{\"fw\":\"%s\",\"board\":\"%s\",\"proto\":%d,\"proto_min\":%d,\"mac\":\"%s\",\"name\":\"%s\",\"leds\":%d,\"strip_max\":%d}\n", L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, s_name, s_nick, s_leds, s_strip_max);
     } else if (strcmp(line, "restart") == 0) {
         esp_restart();
     } else if (strcmp(line, "help") == 0 || strcmp(line, "?") == 0) {
@@ -762,9 +811,16 @@ static void show(float px[L2_STRIP_LEDS_MAX][3])
     static uint8_t lut[256]; static bool lut_ok = false;
     if (!lut_ok) { for (int i = 0; i < 256; i++) lut[i] = (uint8_t)(powf(i / 255.0f, L2_GAMMA) * 255 + 0.5f); lut_ok = true; }
 #if L2_STRIP_ENABLED
-    float k = s_strip_max / 255.0f;
-    for (int p = 0; p < s_leds; p++)
-        led_strip_set_pixel(s_ext, p, lut[(int)(clamp01(px[p][0]) * 255)] * k, lut[(int)(clamp01(px[p][1]) * 255)] * k, lut[(int)(clamp01(px[p][2]) * 255)] * k);
+    float k = s_strip_max / 255.0f, sum = 0;
+    if (s_test) {   /* mode test : écrase le rendu */
+        int on = s_test == 3 ? s_test_px : s_test == 4 ? (int)((esp_timer_get_time() / 400000) % s_leds) : -1;
+        for (int p = 0; p < s_leds; p++) { float v = s_test == 1 || p == on ? 1 : 0; px[p][0] = px[p][1] = px[p][2] = v; }
+    }
+    for (int p = 0; p < s_leds; p++) {
+        uint8_t c[3]; for (int i = 0; i < 3; i++) { c[i] = lut[(int)(clamp01(px[p][i]) * 255)] * k; sum += c[i]; }
+        led_strip_set_pixel(s_ext, p, c[0], c[1], c[2]);
+    }
+    s_est_ma = (int)(sum / 255.0f * L2_LED_CHANNEL_MA);
     led_strip_refresh(s_ext);
 #endif
     int c = s_leds / 2;
@@ -925,6 +981,7 @@ void app_main(void)
     s_hue = s_native_hue;
     ESP_LOGI(TAG, "Luciole² %s | fw %s | carte %s | protocole %d (min %d) | canal %d | %d temps x %d ms | teinte propre %.0f | ruban %d LED, plafond %d/255",
              s_name, L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, L2_WIFI_CHANNEL, L2_BEATS_PER_BAR, L2_BEAT_MS, s_native_hue, s_leds, s_strip_max);
+    if (s_nick[0]) ESP_LOGI(TAG, "surnom : %s", s_nick);
     console_help();
     xTaskCreate(luciole_task, "luciole", 6144, NULL, 5, NULL);
 }
