@@ -39,6 +39,14 @@
   #log { height:220px; overflow:auto; background:#0b0d12; border:1px solid var(--line); border-radius:8px; padding:8px; font:12px/1.4 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; color:var(--dim); }
   #log .json { color:#6fb3ff; } #log .tx { color:var(--acc); } #log .err { color:var(--warn); }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0; }
+  .viz { --surface-1:#151923; --text-primary:#d8dde8; --text-secondary:#8a93a6; --grid:#242a38;
+         --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500; --series-5:#d55181; --series-6:#008300; --series-7:#9085e9; --series-8:#e66767; --series-other:#6b7280; }
+  canvas.chart { width:100%; display:block; touch-action:none; }
+  #rssi-chart { height:300px; cursor:crosshair; } #coh-chart { height:110px; }
+  .legend { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:13px; margin:6px 0 0; color:var(--text-secondary); }
+  .legend i { display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:5px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; } .seg button { border:0; border-radius:0; padding:4px 10px; } .seg button.on { background:#2a3144; color:var(--acc); }
+  .tip { position:absolute; pointer-events:none; background:#0b0d12; border:1px solid var(--line); border-radius:8px; padding:6px 9px; font-size:12px; color:var(--ink); white-space:nowrap; display:none; z-index:3; }
   .dot { width:10px; height:10px; border-radius:50%; background:#555; display:inline-block; } .dot.on { background:var(--ok); }
 </style>
 </head>
@@ -79,6 +87,17 @@
     <h2>Voisines</h2>
     <table><thead><tr><th>Luciole</th><th>RSSI</th><th>lissé</th><th>proximité</th><th>teinte</th><th>cohésion</th><th>vue il y a</th></tr></thead><tbody id="nb"></tbody></table>
     <p class="note" id="nb-note">–</p>
+  </div>
+
+  <div class="card wide viz" style="position:relative">
+    <h2>Signal des voisines <span class="note">(RSSI lissé, dBm ; glissez les lignes « pleine » et « nulle » pour régler les seuils de proximité)</span></h2>
+    <div class="row"><span class="seg" id="range"><button data-s="60" class="on">1 min</button><button data-s="180">3 min</button><button data-s="600">10 min</button></span>
+      <span class="note" id="chart-note">en attente de données</span></div>
+    <canvas class="chart" id="rssi-chart"></canvas>
+    <div class="legend" id="legend"></div>
+    <h2 style="margin-top:14px">Cohésion <span class="note">(0 seule … 1 ensemble)</span></h2>
+    <canvas class="chart" id="coh-chart"></canvas>
+    <div class="tip" id="tip"></div>
   </div>
 
   <div class="card wide">
@@ -182,6 +201,7 @@ function renderStatus(d) {
   const st = $('strip'); const n = Math.min(d.leds, 30); if (st.children.length !== n) { st.innerHTML = ''; for (let p = 0; p < n; p++) st.append(document.createElement('i')); }
   const fill = d.coh * n;
   for (let p = 0; p < n; p++) { const w = Math.min(1, Math.max(0, fill - (n - 1 - p))); st.children[p].style.background = w > 0.5 ? hsv(d.hue) : hsv(p * 360 / n); st.children[p].style.opacity = w > 0.5 ? 1 : 0.6; }
+  chartPush(d);
   const nb = d.nb.slice().sort((a, b) => b.rssi_f - a.rssi_f);
   $('nb').innerHTML = nb.map(n => `<tr style="opacity:${n.in ? 1 : .5}"><td>${n.id}${n.in ? '' : ' (loin)'}</td><td>${n.rssi} dBm</td><td>${n.rssi_f.toFixed(1)}</td>
     <td><span class="bar" style="width:${Math.round(60 * n.prox)}px"></span> ${n.prox.toFixed(2)}</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${hsv(n.hue)}"></span> ${n.hue}°</td><td>${n.coh.toFixed(2)}</td><td>${(n.age / 1000).toFixed(1)} s</td></tr>`).join('');
@@ -195,7 +215,7 @@ function renderParams() {
   $('params').querySelectorAll('input').forEach(i => i.addEventListener('change', () => send(`set ${i.dataset.k} ${i.value}`)));
   $('params').querySelectorAll('button[data-reset]').forEach(b => b.addEventListener('click', () => send(`reset ${b.dataset.reset}`)));
 }
-function renderParam(p) { const tr = $('p-' + p.k); if (!tr) return; tr.querySelector('input').value = p.v; tr.classList.toggle('changed', p.v !== p.def); }
+function renderParam(p) { const tr = $('p-' + p.k); if (!tr) return; tr.querySelector('input').value = p.v; tr.classList.toggle('changed', p.v !== p.def); if (p.k.startsWith('rssi_')) chartDraw(); }
 
 /* ---------- Journal et boutons ---------- */
 const lines = [];
@@ -210,6 +230,123 @@ $('leds-set').onclick = () => send('leds ' + $('leds-in').value);
 $('reset-all').onclick = () => { if (confirm('Remettre tous les paramètres par défaut ?')) send('reset'); };
 $('export').onclick = () => { const txt = Object.values(params).filter(p => p.v !== p.def).map(p => `set ${p.k} ${p.v}`).join('\n') || '(tout est au défaut)'; navigator.clipboard.writeText(txt).then(() => log('json', 'copié :\n' + txt)); };
 $('cmd').addEventListener('keydown', e => { if (e.key === 'Enter' && $('cmd').value.trim()) { send($('cmd').value.trim()); $('cmd').value = ''; } });
+/* ---------- Graphes : signal des voisines dans le temps, seuils glissables ; cohésion ---------- */
+const hist = new Map();            /* id -> [{t, f, r}] (t en s, f = RSSI lissé, r = brut) */
+const cohHist = [];                /* [{t, c}] */
+const order = [];                  /* ordre d'apparition : attribution fixe des couleurs */
+let rangeS = 60, lastT = 0, drag = null, hover = null;
+const Y0 = -110, Y1 = -30, PAD = { l: 44, r: 64, t: 10, b: 22 };
+const css = v => getComputedStyle(document.querySelector('.viz')).getPropertyValue(v).trim();
+const seriesColor = id => { const i = order.indexOf(id); return i >= 0 && i < 8 ? css('--series-' + (i + 1)) : css('--series-other'); };
+
+function chartPush(d) {
+  const t = d.t / 1000; lastT = t;
+  for (const n of d.nb) {
+    if (!hist.has(n.id)) { hist.set(n.id, []); order.push(n.id); }
+    const h = hist.get(n.id); h.push({ t, f: n.rssi_f, r: n.rssi, age: n.age });
+  }
+  cohHist.push({ t, c: d.coh });
+  const keep = t - 600;
+  for (const h of hist.values()) while (h.length && h[0].t < keep) h.shift();
+  while (cohHist.length && cohHist[0].t < keep) cohHist.shift();
+  $('chart-note').textContent = `${hist.size} voisine${hist.size > 1 ? 's' : ''} vue${hist.size > 1 ? 's' : ''} sur 10 min · une mesure toutes les 0,5 s`;
+  chartDraw();
+}
+
+function setupCanvas(c) {
+  const r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); }
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return { ctx, w: r.width, h: r.height };
+}
+const xOf = (t, w) => PAD.l + (w - PAD.l - PAD.r) * (1 - (lastT - t) / rangeS);
+const yOf = (v, h) => PAD.t + (h - PAD.t - PAD.b) * (Y1 - v) / (Y1 - Y0);
+const vOf = (y, h) => Y1 - (y - PAD.t) / (h - PAD.t - PAD.b) * (Y1 - Y0);
+
+function chartDraw() {
+  const { ctx, w, h } = setupCanvas($('rssi-chart'));
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '12px system-ui'; ctx.textBaseline = 'middle';
+  const near = params.rssi_near?.v ?? -80, far = params.rssi_far?.v ?? -100, enter = params.rssi_enter?.v, leave = params.rssi_leave?.v;
+  /* bande de proximité partielle */
+  ctx.fillStyle = 'rgba(255,209,102,0.07)'; ctx.fillRect(PAD.l, yOf(near, h), w - PAD.l - PAD.r, yOf(far, h) - yOf(near, h));
+  /* grille */
+  ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.fillStyle = css('--text-secondary'); ctx.textAlign = 'right';
+  for (let v = Y1; v >= Y0; v -= 10) { const y = yOf(v, h); ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke(); ctx.fillText(v, PAD.l - 6, y); }
+  ctx.textAlign = 'center';
+  const step = rangeS <= 60 ? 10 : rangeS <= 180 ? 30 : 120;
+  for (let s = 0; s <= rangeS; s += step) { const x = xOf(lastT - s, w); ctx.fillText(s ? '-' + s + ' s' : 'maintenant', x, h - PAD.b / 2); }
+  /* séries */
+  ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  const ends = [];
+  for (const [id, pts] of hist) {
+    const col = seriesColor(id); ctx.strokeStyle = col; ctx.beginPath(); let started = false, last = null;
+    for (const p of pts) {
+      if (p.t < lastT - rangeS) continue;
+      const x = xOf(p.t, w), y = yOf(p.f, h);
+      if (!started || (last && p.t - last.t > 3)) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+      last = p;
+    }
+    ctx.stroke();
+    if (last) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(xOf(last.t, w), yOf(last.f, h), 4, 0, 2 * Math.PI); ctx.fill(); ends.push({ id, y: yOf(last.f, h), col }); }
+  }
+  /* étiquettes directes au bout des lignes, écartées d'au moins 13 px */
+  ends.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+  for (let i = ends.length - 2; i >= 0; i--) if (ends[i + 1].y - ends[i].y < 13) ends[i].y = ends[i + 1].y - 13;
+  ctx.textAlign = 'left';
+  for (const e of ends) { ctx.fillStyle = e.col; ctx.fillRect(w - PAD.r + 6, e.y - 1.5, 10, 3); ctx.fillStyle = css('--text-primary'); ctx.fillText(e.id, w - PAD.r + 20, e.y); }
+  /* seuils */
+  /* seuils forts (pleine, nulle) étiquetés au-dessus de leur ligne, faibles (entre, sort) en dessous, à gauche du tracé */
+  const line = (v, label, dash, strong) => { if (v == null) return; const y = yOf(v, h);
+    ctx.setLineDash(dash); ctx.strokeStyle = strong ? css('--acc') || '#ffd166' : css('--text-secondary'); ctx.lineWidth = strong ? 2 : 1;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = strong ? '#ffd166' : css('--text-secondary'); ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(`${label} ${v}`, PAD.l + 6, strong ? y - 2 : y + 15); ctx.textBaseline = 'middle'; };
+  line(enter, 'entre', [2, 4], false); line(leave, 'sort', [2, 4], false);
+  line(near, 'pleine', [6, 4], true); line(far, 'nulle', [6, 4], true);
+  if (drag) { ctx.fillStyle = '#ffd166'; ctx.textAlign = 'left'; ctx.fillText(`${drag.key === 'rssi_near' ? 'pleine' : 'nulle'} → ${drag.v} dBm`, PAD.l + 8, yOf(drag.v, h) - 10); }
+  /* légende */
+  $('legend').innerHTML = [...hist.keys()].map(id => `<span><i style="background:${seriesColor(id)}"></i>${id}</span>`).join('') +
+    `<span><i style="background:#ffd166"></i>seuils de proximité (glissables)</span><span><i style="background:${css('--text-secondary')};height:1px"></i>entre / sort de la table des voisines</span>`;
+  cohDraw();
+}
+
+function cohDraw() {
+  const { ctx, w, h } = setupCanvas($('coh-chart'));
+  ctx.clearRect(0, 0, w, h); ctx.font = '12px system-ui'; ctx.textBaseline = 'middle';
+  const y = v => 8 + (h - 8 - 18) * (1 - v);
+  ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.fillStyle = css('--text-secondary'); ctx.textAlign = 'right';
+  for (const v of [0, 0.5, 1]) { ctx.beginPath(); ctx.moveTo(PAD.l, y(v)); ctx.lineTo(w - PAD.r, y(v)); ctx.stroke(); ctx.fillText(v, PAD.l - 6, y(v)); }
+  ctx.strokeStyle = css('--series-1'); ctx.lineWidth = 2; ctx.beginPath(); let started = false;
+  for (const p of cohHist) { if (p.t < lastT - rangeS) continue; const x = xOf(p.t, w); if (!started) { ctx.moveTo(x, y(p.c)); started = true; } else ctx.lineTo(x, y(p.c)); }
+  ctx.stroke();
+  const last = cohHist[cohHist.length - 1]; if (last) { ctx.fillStyle = css('--text-primary'); ctx.textAlign = 'left'; ctx.fillText(last.c.toFixed(2), w - PAD.r + 8, y(last.c)); }
+}
+
+/* seuils glissables + survol */
+const rc = $('rssi-chart');
+function nearThreshold(ev) {
+  const r = rc.getBoundingClientRect(), y = ev.clientY - r.top, h = r.height;
+  for (const key of ['rssi_near', 'rssi_far']) { const p = params[key]; if (p && Math.abs(yOf(p.v, h) - y) < 8) return key; }
+  return null;
+}
+rc.addEventListener('pointerdown', ev => { const key = nearThreshold(ev); if (!key || !writer) return; drag = { key, v: params[key].v }; rc.setPointerCapture(ev.pointerId); });
+rc.addEventListener('pointermove', ev => {
+  const r = rc.getBoundingClientRect(), h = r.height, y = ev.clientY - r.top;
+  if (drag) { const p = params[drag.key]; drag.v = Math.round(Math.min(p.max, Math.max(p.min, vOf(y, h)))); chartDraw(); return; }
+  rc.style.cursor = nearThreshold(ev) ? 'ns-resize' : 'crosshair';
+  /* info-bulle : valeurs à l'instant survolé */
+  const t = lastT - rangeS * (1 - (ev.clientX - r.left - PAD.l) / (r.width - PAD.l - PAD.r));
+  const rows = []; for (const [id, pts] of hist) { let best = null; for (const p of pts) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p; if (best && Math.abs(best.t - t) < 2) rows.push(`<span style="color:${seriesColor(id)}">●</span> ${id} : ${best.f.toFixed(1)} dBm (brut ${best.r})`); }
+  const tip = $('tip'); if (!rows.length) { tip.style.display = 'none'; return; }
+  tip.innerHTML = `il y a ${Math.max(0, lastT - t).toFixed(0)} s<br>` + rows.join('<br>'); tip.style.display = 'block';
+  const card = rc.closest('.card').getBoundingClientRect(); tip.style.left = Math.min(ev.clientX - card.left + 14, card.width - 200) + 'px'; tip.style.top = (ev.clientY - card.top - 10) + 'px';
+});
+rc.addEventListener('pointerleave', () => { $('tip').style.display = 'none'; });
+rc.addEventListener('pointerup', ev => { if (!drag) return; const { key, v } = drag; drag = null; if (v !== params[key].v) send(`set ${key} ${v}`); else chartDraw(); });
+$('range').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { rangeS = +b.dataset.s; $('range').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); chartDraw(); }));
+window.addEventListener('resize', chartDraw);
+window.chartPush = chartPush;
+
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
