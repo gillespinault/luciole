@@ -23,3 +23,6 @@
 127.0.0.1 - - [13/Oct/2026 12:36:11] "GET /luciole/ HTTP/1.1" 200 -
 127.0.0.1 - - [13/Oct/2026 12:36:11] "GET /luciole/manifest.webmanifest HTTP/1.1" 304 -
 127.0.0.1 - - [13/Oct/2026 12:36:11] "GET /luciole/icon.svg HTTP/1.1" 304 -
+127.0.0.1 - - [13/Oct/2026 12:44:52] "GET /luciole/ HTTP/1.1" 200 -
+127.0.0.1 - - [13/Oct/2026 12:44:52] "GET /luciole/manifest.webmanifest HTTP/1.1" 304 -
+127.0.0.1 - - [13/Oct/2026 12:44:52] "GET /luciole/icon.svg HTTP/1.1" 304 -

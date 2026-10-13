@@ -57,6 +57,7 @@
   <h1>Luciole² — mise au point</h1>
   <span class="dot" id="dot"></span>
   <button class="acc" id="connect">Connecter</button>
+  <button id="choose" title="choisir un autre port">…</button>
   <button id="disconnect" disabled>Déconnecter</button>
   <span id="id"></span>
   <a href="../">← site</a>
@@ -65,7 +66,8 @@
   <div class="card warn wide" id="nosupport" hidden></div>
   <div class="card wide" id="intro">
     <p>Branchez une luciole en USB, cliquez sur <strong>Connecter</strong> et choisissez son port. La page lit son état en continu et permet de régler ses paramètres, sans réinstaller le firmware. Les réglages sont enregistrés dans la luciole.</p>
-    <p class="note">Ordinateur : Chrome ou Edge. Android : Chrome, avec un câble USB-C vers USB-C (le téléphone alimente la luciole). Pas d'iPhone. Sous Linux, groupe <code>dialout</code>. Fermez la console d'installation si elle est ouverte sur le même port.</p>
+    <p class="note">Ordinateur : Chrome ou Edge. Android : Chrome, avec un câble USB-C vers USB-C (le téléphone alimente la luciole : son ruban doit s'allumer). Pas d'iPhone. Sous Linux, groupe <code>dialout</code>. Fermez la console d'installation si elle est ouverte sur le même port. La première fois, le navigateur demande d'autoriser le port ; ensuite la page le retrouve seule, et le bouton « … » permet d'en choisir un autre.</p>
+    <p class="note" id="diag"></p>
   </div>
 
   <div class="card">
@@ -163,9 +165,16 @@ if (!serialApi) { $('nosupport').hidden = false; $('nosupport').textContent = 'C
 let port = null, reader = null, writer = null, params = {}, streaming = false, me = {};
 const enc = new TextEncoder(), dec = new TextDecoder();
 
-async function connect() {
-  try { port = await serialApi.requestPort(); await port.open({ baudRate: 115200 }); }
-  catch (e) { log('err', 'ouverture du port : ' + e.message); return; }
+const ESPRESSIF = 0x303a;
+async function connect(forceChooser = false) {
+  try {
+    let known = [];
+    try { known = await serialApi.getPorts(); } catch (e) {}
+    const esp = known.filter(p => { try { return p.getInfo().usbVendorId === ESPRESSIF; } catch (e) { return false; } });
+    if (!forceChooser && esp.length === 1) port = esp[0];                     /* port déjà autorisé : pas de fenêtre */
+    else port = await serialApi.requestPort({ filters: [{ usbVendorId: ESPRESSIF }] });
+    await port.open({ baudRate: 115200 });
+  } catch (e) { log('err', 'ouverture du port : ' + e.message); diag(); return; }
   $('dot').classList.add('on'); $('connect').disabled = true; for (const id of CTRL) $(id).disabled = false;
   $('intro').hidden = true;
   writer = port.writable.getWriter();
@@ -257,7 +266,16 @@ function log(cls, text) {
   lines.push(`<span class="${cls}">${text.replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</span>`); if (lines.length > 300) lines.shift();
   const el = $('log'); const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 4; el.innerHTML = lines.join('\n'); if (stick) el.scrollTop = el.scrollHeight;
 }
-$('connect').onclick = connect; $('disconnect').onclick = disconnect;
+$('connect').onclick = () => connect(false); $('choose').onclick = () => connect(true); $('disconnect').onclick = disconnect;
+/* Diagnostic : ce que le navigateur voit (ports série autorisés, appareils USB autorisés) */
+async function diag() {
+  const parts = [];
+  try { const ps = await serialApi.getPorts(); parts.push(`ports série autorisés : ${ps.length}` + (ps.length ? ' (' + ps.map(p => { const i = p.getInfo(); return `${(i.usbVendorId || 0).toString(16)}:${(i.usbProductId || 0).toString(16)}`; }).join(', ') + ')' : '')); } catch (e) { parts.push('Web Serial : ' + e.message); }
+  if (navigator.usb) { try { const ds = await navigator.usb.getDevices(); parts.push(`appareils WebUSB autorisés : ${ds.length}` + (ds.length ? ' (' + ds.map(d => `${d.productName || '?'} ${d.vendorId.toString(16)}:${d.productId.toString(16)}`).join(', ') + ')' : '')); } catch (e) { parts.push('WebUSB : ' + e.message); } }
+  parts.push(navigator.serial ? 'Web Serial natif' : 'WebUSB via polyfill');
+  $('diag').textContent = 'Diagnostic : ' + parts.join(' · ');
+}
+diag();
 $('onde').onclick = () => send('onde');
 $('restart').onclick = () => send('restart');
 $('leds-set').onclick = () => send('leds ' + $('leds-in').value);
