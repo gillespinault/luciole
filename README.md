@@ -26,3 +26,7 @@ Web Serial exige HTTPS ou `localhost` : pour flasher depuis un autre poste, il f
 ## Faire évoluer le firmware sans casser l'essaim
 
 Le contrat radio v1 (`firmware/main/luciole.h`, section « Contrat radio ») fixe le canal, le mode longue portée, le cycle de 2,5 s et le format des trames. Une luciole déjà distribuée doit rester membre de l'essaim : les nouveaux champs vont en fin de trame, les octets inconnus sont ignorés, la trame d'onde ne se remplace jamais. Le rendu (jauge, couleurs, ondulation) est local et change librement. Vérifier les changements d'échelle dans `sim/index.html` avant de flasher.
+
+## Licence
+
+Luciole² est publié sous [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.fr) : réutilisation et modification libres avec attribution, partage à l'identique, pas d'usage commercial. Texte complet dans `LICENSE`.
