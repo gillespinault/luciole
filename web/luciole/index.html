@@ -50,6 +50,12 @@
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; } .seg button { border:0; border-radius:0; padding:4px 10px; } .seg button.on { background:#2a3144; color:var(--acc); }
   .tip { position:absolute; pointer-events:none; background:#0b0d12; border:1px solid var(--line); border-radius:8px; padding:6px 9px; font-size:12px; color:var(--ink); white-space:nowrap; display:none; z-index:3; }
   label.chk { display:inline-flex; gap:6px; align-items:center; }
+  .q { display:inline-block; width:18px; height:18px; line-height:16px; text-align:center; border-radius:50%; border:1px solid var(--line); background:#1f2533; color:var(--dim); font-size:12px; padding:0; margin-left:6px; cursor:help; vertical-align:middle; }
+  .q:hover, .q.on { border-color:var(--acc); color:var(--acc); }
+  tr.help td { text-align:left; white-space:normal; color:var(--ink); background:#10131b; font-size:13px; padding:8px 10px; }
+  details.adv { margin-top:14px; } details.adv summary { cursor:pointer; color:var(--dim); font-size:13px; }
+  h3.grp { font-size:12px; color:var(--dim); margin:14px 0 4px; font-weight:500; text-transform:uppercase; letter-spacing:.06em; }
+  .kv span.k { cursor:help; }
 </style>
 </head>
 <body>
@@ -73,15 +79,15 @@
   <div class="card">
     <h2>État</h2>
     <div class="kv">
-      <span>Cohésion</span><span><div class="gauge"><i id="g-coh"></i></div><b id="coh">–</b></span>
+      <span class="k" data-h="coh">Cohésion</span><span><div class="gauge"><i id="g-coh"></i></div><b id="coh">–</b></span>
       <span>Couleur commune</span><span><span id="hue-sw" style="display:inline-block;width:16px;height:16px;border-radius:4px;vertical-align:middle;background:#333"></span> <span id="hue">–</span></span>
-      <span>Foule entendue</span><span id="crowd">–</span>
-      <span>Balises entendues</span><span id="heard">–</span>
-      <span>Mes balises</span><span id="interval">–</span>
-      <span>Décalage de phase</span><span id="offset">–</span>
-      <span>Ondes en mémoire</span><span id="waves">–</span>
+      <span class="k" data-h="crowd">Foule entendue</span><span id="crowd">–</span>
+      <span class="k" data-h="heard">Balises entendues</span><span id="heard">–</span>
+      <span class="k" data-h="interval">Mes balises</span><span id="interval">–</span>
+      <span class="k" data-h="offset">Décalage de phase</span><span id="offset">–</span>
+      <span class="k" data-h="waves">Ondes en mémoire</span><span id="waves">–</span>
       <span>Ruban</span><span id="leds">–</span>
-      <span>Courant du ruban</span><span id="ma">–</span>
+      <span class="k" data-h="ma">Courant du ruban</span><span id="ma">–</span>
     </div>
     <div class="strip" id="strip"></div>
     <p class="note">Ruban reconstitué : longueur unie = cohésion, couleur = couleur commune, sans le souffle. Courant estimé d'après les pixels affichés (20 mA par composante à fond), hors module.</p>
@@ -130,7 +136,9 @@
       <button id="reset-all" disabled>Tout remettre par défaut</button>
       <button id="export" disabled>Copier les réglages</button>
     </div>
-    <table class="params"><thead><tr><th>Clé</th><th>Valeur</th><th>Défaut</th><th>Min</th><th>Max</th><th></th><th class="d">Description</th></tr></thead><tbody id="params"></tbody></table>
+    <h3 class="grp">Essentiels</h3>
+    <table class="params"><thead><tr><th>Réglage</th><th>Valeur</th><th>Défaut</th><th>Min</th><th>Max</th><th></th><th class="d">En bref</th></tr></thead><tbody id="params"></tbody></table>
+    <details class="adv"><summary>Avancés : voisinage, couleur, rendu, onde, radio</summary><div id="params-adv"></div></details>
   </div>
 
   <div class="card wide">
@@ -291,12 +299,67 @@ function renderStatus(d) {
 }
 function setTestUi(t) { const map = { 0: 'off', 1: 'white', 2: 'black', 3: 'px', 4: 'chase' }; $('test').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === map[t])); }
 
-/* ---------- Paramètres ---------- */
+/* ---------- Paramètres : groupes et aide ---------- */
+const ESSENTIELS = ['rssi_near', 'rssi_far', 'coh_tau', 'hue_tau', 'rainbow_b', 'solid_b', 'wave_spread', 'wave_suppress', 'strip_max'];
+const GROUPES = {
+  'Voisinage et cohésion': ['rssi_enter', 'rssi_leave', 'nb_replace_db', 'coh_social'],
+  'Couleur commune': ['hue_drift', 'hue_wander', 'hue_wave', 'hue_freeze'],
+  'Rendu du ruban': ['rainbow_flow', 'breath_min', 'breath_max'],
+  'Onde': ['wave_sweep', 'wave_trail', 'wave_relay_min', 'wave_min_play', 'wave_late', 'wave_min_emit', 'wave_max_hop'],
+  'Radio': ['beacon_rate', 'phase_gain'],
+};
+const TITRES = { rssi_near: 'Proximité pleine', rssi_far: 'Proximité nulle', rssi_enter: 'Entrée en voisine', rssi_leave: 'Sortie de voisine', coh_tau: 'Réactivité de la cohésion', coh_social: 'Corégulation', hue_tau: 'Accord sur la couleur', hue_drift: 'Dérive de la couleur', hue_wander: 'Vagabondage seule', hue_wave: 'Couleur adoptée après une onde', hue_freeze: 'Geler la couleur', rainbow_b: 'Luminosité de l\'arc-en-ciel', rainbow_flow: 'Vitesse de l\'arc-en-ciel', solid_b: 'Luminosité de la zone unie', breath_min: 'Creux du souffle', breath_max: 'Sommet du souffle', wave_sweep: 'Traversée du ruban', wave_trail: 'Traînée de l\'onde', wave_spread: 'Étalement de l\'onde', wave_suppress: 'Suppression des rediffusions', wave_relay_min: 'Délai entre rediffusions', wave_min_play: 'Délai entre lectures', wave_late: 'Abandon d\'une onde en retard', wave_min_emit: 'Délai entre appuis', wave_max_hop: 'Sauts au plus', beacon_rate: 'Débit visé sur le canal', phase_gain: 'Correction de phase', nb_replace_db: 'Marge de remplacement', strip_max: 'Plafond de luminosité' };
+const AIDE = {
+  rssi_near: 'Niveau de signal (dBm) à partir duquel une voisine compte comme collée : sa proximité vaut 1. Entre ce seuil et « proximité nulle », la proximité descend linéairement. Monter la valeur (vers -70) rend la jauge plus exigeante : il faut être plus près pour remplir le ruban. Mesuré sur le hub à quelques centimètres : -76 à -89 dBm.',
+  rssi_far: 'Niveau (dBm) en dessous duquel une voisine ne compte plus du tout dans la cohésion, même si on l\'entend encore. Avec -100, la limite d\'écoute en longue portée est environ -105.',
+  rssi_enter: 'Signal lissé au-dessus duquel une luciole entendue devient voisine (entre dans la cohésion et le consensus de couleur).',
+  rssi_leave: 'Signal lissé en dessous duquel une voisine cesse de compter. L\'écart avec « entrée » évite qu\'une luciole en limite de portée entre et sorte sans arrêt.',
+  coh_tau: 'Constante de temps (s) avec laquelle la cohésion rejoint sa cible quand des voisines approchent ou s\'éloignent. Plus petit = la jauge réagit plus vite, mais tremble davantage avec le signal.',
+  coh_social: 'Constante de temps (s) avec laquelle la cohésion glisse vers la moyenne annoncée par les voisines, pour que tout un groupe montre la même chose.',
+  hue_tau: 'Constante de temps (s) avec laquelle la couleur commune rejoint la moyenne des voisines. Plus petit = un groupe s\'accorde plus vite sur une couleur.',
+  hue_drift: 'Vitesse (degrés par seconde) à laquelle la couleur commune voyage sur le cercle des teintes, au même rythme pour toutes. 2,4°/s = un tour en 2,5 minutes. 0 = couleur fixe.',
+  hue_wander: 'Quand la luciole n\'entend personne, sa couleur erre en plus au hasard, à cette vitesse (°/s), pour que deux lucioles seules ne restent pas identiques.',
+  hue_wave: 'Part (0 à 1) de la couleur de l\'onde que la luciole adopte quand elle la joue. 1 = elle prend entièrement la couleur de l\'onde ; 0 = l\'onde passe sans laisser de trace.',
+  hue_freeze: '1 = la couleur commune ne bouge plus (ni dérive, ni vagabondage, ni consensus). Pour isoler un réglage sans que la couleur brouille ce qu\'on regarde. Remettre 0 avant une sortie.',
+  rainbow_b: 'Luminosité (0 à 1) de l\'arc-en-ciel, la partie du ruban qui n\'est pas encore unie. Fixe, sans souffle.',
+  rainbow_flow: 'Vitesse de défilement de l\'arc-en-ciel en tours par seconde (un tour = le motif a parcouru tout le ruban). Négatif = vers la gauche. 0,1 = un tour en 10 s.',
+  solid_b: 'Luminosité centrale (0 à 1) de la zone unie. Le souffle oscille autour de cette valeur, de plus en plus fort avec la cohésion.',
+  breath_min: 'Creux du souffle (0 à 1) quand la cohésion est pleine. 0,03 = presque éteint au creux.',
+  breath_max: 'Sommet du souffle (0 à 1) quand la cohésion est pleine. 1 = pleine luminosité (sous le plafond).',
+  wave_sweep: 'Durée (ms) du front blanc qui traverse le ruban quand la luciole joue une onde.',
+  wave_trail: 'Durée (ms) pendant laquelle le ruban reste dans la couleur de l\'onde après le passage, avec des paillettes, avant de revenir au rendu normal.',
+  wave_spread: 'Quand une onde est entendue, la luciole attend avant de la jouer : 0 ms si l\'émettrice est collée, cette valeur si elle est à la limite d\'écoute. C\'est ce qui fait que l\'ondulation s\'éloigne visiblement de l\'origine. Plus grand = vague plus lente et plus lisible.',
+  wave_suppress: 'Nombre de copies d\'une même onde entendues au-delà duquel la luciole ne la rediffuse pas : ses voisines s\'en sont chargées. Plus petit = moins de trames radio, propagation moins sûre.',
+  wave_relay_min: 'Délai minimal (ms) entre deux rediffusions par cette luciole. Borne le trafic radio quand beaucoup de gens appuient.',
+  wave_min_play: 'Délai minimal (ms) entre deux ondes jouées sur le ruban. Les ondes qui arrivent plus vite attendent, puis sont abandonnées si trop en retard.',
+  wave_late: 'Retard (ms) au-delà duquel une onde en attente de lecture ou de rediffusion est abandonnée. Évite de rejouer une vague éteinte depuis longtemps.',
+  wave_min_emit: 'Délai minimal (ms) entre deux appuis sur le bouton de cette luciole. 10 000 = un appui toutes les 10 s au plus.',
+  wave_max_hop: 'Nombre maximal de sauts radio d\'une onde depuis son origine. Borne la portée d\'un appui dans une foule.',
+  beacon_rate: 'Nombre total de balises par seconde visé sur le canal radio. Chaque luciole espace ses balises selon la foule qu\'elle entend pour tenir ce total. Plus bas = moins de collisions, mais des voisines mises à jour moins souvent.',
+  phase_gain: 'Fraction (0 à 1) de l\'écart de phase corrigée à chaque balise reçue. Plus grand = synchronisation plus rapide mais plus nerveuse.',
+  nb_replace_db: 'La table ne garde que 16 voisines. Une inconnue ne remplace la plus faible que si elle est plus forte d\'au moins cette marge (dB), pour éviter que la table tourne sans arrêt en foule.',
+  strip_max: 'Plafond de luminosité du ruban (sur 255), appliqué à tout le rendu. Abaissé automatiquement si le ruban tout blanc dépasserait 300 mA.',
+};
+const AIDE_ETAT = { coh: 'Cohésion : 0 seule, 1 ensemble. Chaque voisine apporte sa proximité (selon son signal), les parts s\'additionnent en saturant, puis on glisse vers la moyenne annoncée par les voisines.', crowd: 'Nombre d\'émettrices distinctes entendues sur les 20 à 40 dernières secondes. Sert à espacer les balises.', heard: 'Balises reçues par seconde, toutes lucioles confondues.', interval: 'Espacement de mes propres balises : un temps (0,5 s) quand on est peu, jusqu\'à 30 s en foule.', offset: 'Correction de phase accumulée depuis le démarrage. Doit se stabiliser quand plusieurs lucioles sont allumées.', waves: 'Ondes récentes gardées en mémoire pour ne pas rejouer deux fois la même (origine + numéro).', ma: 'Estimation du courant du ruban d\'après les pixels affichés : 20 mA par composante rouge, verte ou bleue à fond, sans le module.' };
+
+function paramRow(p) {
+  const t = TITRES[p.k] || p.k, a = (AIDE[p.k] || p.d).replace(/"/g, '&quot;');
+  return `<tr id="p-${p.k}"><td>${t}<button class="q" data-q="${p.k}" title="${a}">?</button><div class="note" style="font-size:11px">${p.k}</div></td><td><input type="number" step="any" data-k="${p.k}"></td><td>${p.def}</td><td>${p.min}</td><td>${p.max}</td><td><button data-reset="${p.k}">défaut</button></td><td class="d">${p.d}</td></tr>
+    <tr class="help" id="h-${p.k}" hidden><td colspan="7">${AIDE[p.k] || p.d}</td></tr>`;
+}
 function renderParams() {
-  $('params').innerHTML = Object.values(params).map(p => `<tr id="p-${p.k}"><td>${p.k}</td><td><input type="number" step="any" data-k="${p.k}"></td><td>${p.def}</td><td>${p.min}</td><td>${p.max}</td><td><button data-reset="${p.k}">défaut</button></td><td class="d">${p.d}</td></tr>`).join('');
-  for (const p of Object.values(params)) renderParam(p);
-  $('params').querySelectorAll('input').forEach(i => i.addEventListener('change', () => send(`set ${i.dataset.k} ${i.value}`)));
-  $('params').querySelectorAll('button[data-reset]').forEach(b => b.addEventListener('click', () => send(`reset ${b.dataset.reset}`)));
+  const all = Object.values(params), byKey = Object.fromEntries(all.map(p => [p.k, p]));
+  $('params').innerHTML = ESSENTIELS.filter(k => byKey[k]).map(k => paramRow(byKey[k])).join('');
+  const placed = new Set(ESSENTIELS); let adv = '';
+  for (const [g, keys] of Object.entries(GROUPES)) { const ks = keys.filter(k => byKey[k]); if (!ks.length) continue; ks.forEach(k => placed.add(k));
+    adv += `<h3 class="grp">${g}</h3><table class="params"><tbody>${ks.map(k => paramRow(byKey[k])).join('')}</tbody></table>`; }
+  const rest = all.filter(p => !placed.has(p.k));
+  if (rest.length) adv += `<h3 class="grp">Autres</h3><table class="params"><tbody>${rest.map(paramRow).join('')}</tbody></table>`;
+  $('params-adv').innerHTML = adv;
+  for (const p of all) renderParam(p);
+  document.querySelectorAll('.params input').forEach(i => i.addEventListener('change', () => send(`set ${i.dataset.k} ${i.value}`)));
+  document.querySelectorAll('.params button[data-reset]').forEach(b => b.addEventListener('click', () => send(`reset ${b.dataset.reset}`)));
+  document.querySelectorAll('.params button.q').forEach(b => b.addEventListener('click', () => { const h = $('h-' + b.dataset.q); h.hidden = !h.hidden; b.classList.toggle('on', !h.hidden); }));
   chartDraw();
 }
 function renderParam(p) { const tr = $('p-' + p.k); if (!tr) return; tr.querySelector('input').value = p.v; tr.classList.toggle('changed', p.v !== p.def); if (p.k === 'hue_freeze') $('freeze').checked = p.v >= 0.5; if (p.k.startsWith('rssi_')) chartDraw(); }
@@ -493,6 +556,7 @@ $('prof-save').onclick = () => { const name = $('prof-name').value.trim(); if (!
 $('prof-export').onclick = () => { $('prof-json').value = JSON.stringify(profiles(), null, 1); };
 $('prof-import').onclick = () => { try { const q = JSON.parse($('prof-json').value); localStorage.setItem(PK, JSON.stringify({ ...profiles(), ...q })); renderProfiles(); log('json', 'profils importés : ' + Object.keys(q).join(', ')); } catch (e) { log('err', 'JSON de profils illisible'); } };
 renderProfiles();
+document.querySelectorAll('.kv span.k').forEach(el => { el.title = AIDE_ETAT[el.dataset.h] || ''; el.addEventListener('click', () => log('json', el.textContent + ' : ' + el.title)); });
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
