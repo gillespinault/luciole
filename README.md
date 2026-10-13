@@ -5,7 +5,7 @@ Lumières de vélo qui se parlent. Un essaim de petites unités (M5Stack NanoC6 
 | Dossier | Contenu |
 |---|---|
 | `firmware/` | Firmware ESP-IDF, une image par puce, nombre de LED en configuration. Voir `firmware/README.md`. |
-| `web/` | Site public https://lucioles.limn-labs.xyz (présentation, installation par USB depuis le navigateur avec ESP Web Tools, simulation), publié par GitHub Pages à chaque push sur `main`. |
+| `web/` | Site public https://lucioles.limn-labs.xyz, publié par GitHub Pages à chaque push sur `main` : présentation, installation par USB depuis le navigateur (ESP Web Tools), page de mise au point `luciole/` (état en direct, graphes, réglages, enregistrement CSV, sur ordinateur et Android), simulation. |
 | `sim/` | Simulation d'un Critical Mass : 20 000 vélos, 1 000 lucioles, mêmes règles que le firmware. Un fichier HTML, à ouvrir tel quel. |
 
 Documentation du projet : wiki Outline, collection Luciole² (journal, décisions, architecture et contrat radio, matériel).
@@ -22,6 +22,10 @@ python3 -m http.server 8766 --directory web
 ```
 
 Web Serial exige HTTPS ou `localhost` : pour flasher depuis un autre poste, il faut passer par la page publiée.
+
+## Régler une luciole sans la reflasher
+
+https://lucioles.limn-labs.xyz/luciole/ : la luciole branchée en USB envoie son état en JSON (commande `stream`) et accepte `set clé valeur` pour chacun de ses 29 réglages, enregistrés en NVS. La page trace le signal des voisines avec les seuils glissables, la cohésion, la phase, la radio et les ondes ; enregistre en CSV avec GPS ; gère des profils. Sur Android, elle parle à la luciole par WebUSB avec sa propre couche CDC (le Web Serial de Chrome Android ne sait pas ouvrir un appareil USB). Détail des commandes dans `firmware/README.md`.
 
 ## Faire évoluer le firmware sans casser l'essaim
 
