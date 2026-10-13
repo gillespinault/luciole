@@ -3,3 +3,6 @@
 127.0.0.1 - - [13/Oct/2026 09:43:57] "GET /firmware/index.json HTTP/1.1" 200 -
 127.0.0.1 - - [13/Oct/2026 09:43:57] code 404, message File not found
 127.0.0.1 - - [13/Oct/2026 09:43:57] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [13/Oct/2026 09:58:44] "GET /simulation/ HTTP/1.1" 200 -
+127.0.0.1 - - [13/Oct/2026 09:58:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [13/Oct/2026 09:58:49] "GET /firmware/index.json HTTP/1.1" 200 -

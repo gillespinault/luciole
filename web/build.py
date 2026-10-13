@@ -4,7 +4,8 @@
   python3 web/build.py --local    # prend firmware/build (C6) et firmware/build-esp32s3 (S3)
   python3 web/build.py            # suppose les binaires déjà copiés dans web/firmware/<cible>/ (CI)
 
-Produit : web/firmware/nvs/leds-N.bin (configuration : nombre de LED),
+Produit : web/simulation/index.html (copie de sim/index.html),
+          web/firmware/nvs/leds-N.bin (configuration : nombre de LED),
           web/firmware/manifest-N.json (un par nombre de LED, toutes les cartes),
           web/firmware/index.json (liste des choix, version, pour la page).
 
@@ -76,6 +77,9 @@ def main():
             shutil.copy(os.path.join(src, "bootloader", "bootloader.bin"), dst)
             shutil.copy(os.path.join(src, "partition_table", "partition-table.bin"), dst)
             shutil.copy(os.path.join(src, "luciole.bin"), dst)
+
+    sim_dst = os.path.join(ROOT, "web", "simulation"); os.makedirs(sim_dst, exist_ok=True)
+    shutil.copy(os.path.join(ROOT, "sim", "index.html"), os.path.join(sim_dst, "index.html"))
 
     present = [t for t in TARGETS if os.path.exists(os.path.join(WEB, t, "luciole.bin"))]
     if not present:

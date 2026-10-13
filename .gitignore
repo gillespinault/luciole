@@ -8,4 +8,6 @@ firmware/sdkconfig.old
 .playwright-mcp/
 sim/.server.log
 web/firmware/
+web/simulation/
+web/.server.log
 __pycache__/
