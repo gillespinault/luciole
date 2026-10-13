@@ -155,62 +155,99 @@ const hsv = h => { h = ((h % 360) + 360) % 360 / 60; const i = Math.floor(h), f 
 const CTRL = ['disconnect', 'onde', 'restart', 'leds-set', 'reset-all', 'export', 'cmd', 'freeze', 'test-px-btn', 'name-set', 'rec', 'prof-save'];
 
 /* ---------- Port série : Web Serial, ou WebUSB (Android) via le polyfill ---------- */
-/* Sur Android, Chrome expose navigator.serial mais ne sait pas ouvrir un port USB avec :
- * on passe par WebUSB (polyfill). Ailleurs, Web Serial natif. */
-const isAndroid = /Android/i.test(navigator.userAgent);
-let serialApi = isAndroid ? null : navigator.serial, apiName = serialApi ? 'Web Serial natif' : '';
-if (!serialApi && navigator.usb) {
-  try { const m = await import('https://unpkg.com/web-serial-polyfill@1.0.15/dist/serial.js'); serialApi = m.serial; apiName = 'WebUSB via polyfill' + (isAndroid ? ' (Android)' : ''); }
-  catch (e) { console.warn('polyfill WebUSB indisponible', e); apiName = 'polyfill WebUSB indisponible : ' + e.message; }
-}
-if (!serialApi && navigator.serial) { serialApi = navigator.serial; apiName = 'Web Serial natif'; }
-if (!serialApi) { $('nosupport').hidden = false; $('nosupport').textContent = 'Ce navigateur ne donne pas accès aux ports USB. Il faut Chrome ou Edge (ordinateur), ou Chrome sur Android.'; $('connect').disabled = true; }
+/* Deux chemins vers la luciole, derrière la même petite interface « lien » :
+ *  - Web Serial natif (Chrome / Edge sur ordinateur) ;
+ *  - WebUSB avec une couche CDC-ACM écrite ici (Chrome sur Android, dont le
+ *    Web Serial existe mais ne sait pas ouvrir un appareil USB).
+ * lien = { name, open(), write(bytes), read() -> Uint8Array|null, close() } */
+const isAndroid = /Android/i.test(navigator.userAgent), ESPRESSIF = 0x303a;
+const useSerial = !isAndroid && !!navigator.serial, useUsb = !useSerial && !!navigator.usb;
+const apiName = useSerial ? 'Web Serial natif' : useUsb ? 'WebUSB, couche CDC de la page' + (isAndroid ? ' (Android)' : '') : 'aucune interface USB';
+if (!useSerial && !useUsb) { $('nosupport').hidden = false; $('nosupport').textContent = 'Ce navigateur ne donne pas accès aux ports USB. Il faut Chrome ou Edge (ordinateur), ou Chrome sur Android.'; $('connect').disabled = true; }
+const errText = e => e ? `${e.name || 'erreur'} : ${e.message || String(e)}` : 'erreur sans détail';
 
-let port = null, reader = null, writer = null, params = {}, streaming = false, me = {};
+function serialLink(port) {
+  let reader = null, writer = null;
+  return {
+    name: 'Web Serial',
+    async open() { await port.open({ baudRate: 115200 }); writer = port.writable.getWriter(); reader = port.readable.getReader(); },
+    async write(bytes) { await writer.write(bytes); },
+    async read() { const { value, done } = await reader.read(); return done ? null : value; },
+    async close() { try { reader && await reader.cancel(); } catch (e) {} try { reader && reader.releaseLock(); } catch (e) {} try { writer && writer.releaseLock(); } catch (e) {} try { await port.close(); } catch (e) {} },
+  };
+}
+function usbCdcLink(device) {
+  let ctrl = null, data = null, epIn = null, epOut = null;
+  return {
+    name: 'WebUSB CDC',
+    async open() {
+      await device.open();
+      if (!device.configuration) await device.selectConfiguration(1);
+      const seen = [];
+      for (const itf of device.configuration.interfaces) {
+        const alt = itf.alternates[0]; seen.push(`${itf.interfaceNumber}:${alt.interfaceClass}`);
+        if (alt.interfaceClass === 2 && !ctrl) ctrl = itf;
+        if (alt.interfaceClass === 10 && !data) { data = itf; for (const ep of alt.endpoints) if (ep.type === 'bulk') { if (ep.direction === 'in') epIn = ep.endpointNumber; else epOut = ep.endpointNumber; } }
+      }
+      log('json', `USB : ${device.productName || '?'} ${device.vendorId.toString(16)}:${device.productId.toString(16)}, interfaces ${seen.join(' ')}`);
+      if (!data || epIn == null || epOut == null) throw new Error('interface série CDC introuvable (interfaces : ' + seen.join(' ') + ')');
+      if (ctrl) { try { await device.claimInterface(ctrl.interfaceNumber); } catch (e) { log('err', 'interface de contrôle : ' + errText(e)); } }
+      await device.claimInterface(data.interfaceNumber);
+      if (ctrl) {
+        const idx = ctrl.interfaceNumber;
+        try { await device.controlTransferOut({ requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: idx }, new Uint8Array([0x00, 0xc2, 0x01, 0x00, 0, 0, 8])); } catch (e) { log('err', 'SET_LINE_CODING : ' + errText(e)); }
+        try { await device.controlTransferOut({ requestType: 'class', recipient: 'interface', request: 0x22, value: 0x03, index: idx }); } catch (e) { log('err', 'SET_CONTROL_LINE_STATE : ' + errText(e)); }
+      }
+    },
+    async write(bytes) { const r = await device.transferOut(epOut, bytes); if (r.status !== 'ok') throw new Error('transferOut ' + r.status); },
+    async read() { const r = await device.transferIn(epIn, 512); if (r.status === 'stall') { await device.clearHalt('in', epIn); return new Uint8Array(0); } if (r.status !== 'ok') throw new Error('transferIn ' + r.status); return new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength); },
+    async close() { try { await device.close(); } catch (e) {} },
+  };
+}
+async function pickLink(forceChooser) {
+  if (useSerial) {
+    const known = (await navigator.serial.getPorts()).filter(p => { try { return p.getInfo().usbVendorId === ESPRESSIF; } catch (e) { return false; } });
+    const port = (!forceChooser && known.length === 1) ? known[0] : await navigator.serial.requestPort({ filters: [{ usbVendorId: ESPRESSIF }] });
+    return serialLink(port);
+  }
+  const known = (await navigator.usb.getDevices()).filter(d => d.vendorId === ESPRESSIF);
+  const device = (!forceChooser && known.length === 1) ? known[0] : await navigator.usb.requestDevice({ filters: [{ vendorId: ESPRESSIF }] });
+  return usbCdcLink(device);
+}
+
+let link = null, params = {}, streaming = false, me = {}, closing = false;
 const enc = new TextEncoder(), dec = new TextDecoder();
 
-const ESPRESSIF = 0x303a;
 async function connect(forceChooser = false) {
-  try {
-    let known = [];
-    try { known = await serialApi.getPorts(); } catch (e) {}
-    const esp = known.filter(p => { try { return p.getInfo().usbVendorId === ESPRESSIF; } catch (e) { return false; } });
-    if (!forceChooser && esp.length === 1) port = esp[0];                     /* port déjà autorisé : pas de fenêtre */
-    else port = await serialApi.requestPort({ filters: [{ usbVendorId: ESPRESSIF }] });
-    await port.open({ baudRate: 115200 });
-  } catch (e) { log('err', 'ouverture du port : ' + e.message); diag(); return; }
+  try { link = await pickLink(forceChooser); await link.open(); }
+  catch (e) { log('err', 'ouverture du port : ' + errText(e)); try { link && await link.close(); } catch (x) {} link = null; diag(); return; }
   $('dot').classList.add('on'); $('connect').disabled = true; for (const id of CTRL) $(id).disabled = false;
-  $('intro').hidden = true;
-  writer = port.writable.getWriter();
+  $('intro').hidden = true; closing = false;
   readLoop();
   await send('log off'); await send('version'); await send('get'); await send('stream 500'); streaming = true;
   renderProfiles();
 }
 async function disconnect() {
+  if (!link) return; closing = true;
   try { if (streaming) await send('stream off'); } catch (e) {}
-  try { reader && await reader.cancel(); } catch (e) {}
-  try { writer && writer.releaseLock(); } catch (e) {}
-  try { port && await port.close(); } catch (e) {}
-  port = reader = writer = null; streaming = false;
+  const l = link; link = null; streaming = false;
+  await l.close();
   $('dot').classList.remove('on'); $('connect').disabled = false; for (const id of CTRL) $(id).disabled = true;
   $('id').textContent = ''; if (recording) recStop(); renderProfiles();
 }
-async function send(cmd) { if (!writer) return; log('tx', '> ' + cmd); await writer.write(enc.encode(cmd + '\n')); }
+async function send(cmd) { if (!link) return; log('tx', '> ' + cmd); try { await link.write(enc.encode(cmd + '\n')); } catch (e) { log('err', 'écriture : ' + errText(e)); } }
 
 async function readLoop() {
-  let buf = '';
-  while (port && port.readable) {
-    reader = port.readable.getReader();
-    try {
-      while (true) {
-        const { value, done } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i + 1); onLine(line); }
-      }
-    } catch (e) { log('err', 'lecture : ' + e.message); break; }
-    finally { reader.releaseLock(); }
-  }
-  if (port) disconnect();
+  let buf = ''; const l = link;
+  try {
+    while (link === l) {
+      const value = await l.read(); if (value === null) break;
+      if (!value.byteLength) continue;
+      buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i + 1); onLine(line); }
+    }
+  } catch (e) { if (!closing) log('err', 'lecture : ' + errText(e)); }
+  if (link === l) disconnect();
 }
 
 /* ---------- Lignes reçues ---------- */
@@ -274,9 +311,9 @@ $('connect').onclick = () => connect(false); $('choose').onclick = () => connect
 /* Diagnostic : ce que le navigateur voit (ports série autorisés, appareils USB autorisés) */
 async function diag() {
   const parts = [];
-  try { const ps = await serialApi.getPorts(); parts.push(`ports série autorisés : ${ps.length}` + (ps.length ? ' (' + ps.map(p => { const i = p.getInfo(); return `${(i.usbVendorId || 0).toString(16)}:${(i.usbProductId || 0).toString(16)}`; }).join(', ') + ')' : '')); } catch (e) { parts.push('Web Serial : ' + e.message); }
-  if (navigator.usb) { try { const ds = await navigator.usb.getDevices(); parts.push(`appareils WebUSB autorisés : ${ds.length}` + (ds.length ? ' (' + ds.map(d => `${d.productName || '?'} ${d.vendorId.toString(16)}:${d.productId.toString(16)}`).join(', ') + ')' : '')); } catch (e) { parts.push('WebUSB : ' + e.message); } }
-  parts.push(apiName || 'aucune interface USB');
+  if (navigator.serial) { try { const ps = await navigator.serial.getPorts(); parts.push(`ports série autorisés : ${ps.length}` + (ps.length ? ' (' + ps.map(p => { const i = p.getInfo(); return `${(i.usbVendorId || 0).toString(16)}:${(i.usbProductId || 0).toString(16)}`; }).join(', ') + ')' : '')); } catch (e) { parts.push('Web Serial : ' + errText(e)); } }
+  if (navigator.usb) { try { const ds = await navigator.usb.getDevices(); parts.push(`appareils WebUSB autorisés : ${ds.length}` + (ds.length ? ' (' + ds.map(d => `${d.productName || '?'} ${d.vendorId.toString(16)}:${d.productId.toString(16)}`).join(', ') + ')' : '')); } catch (e) { parts.push('WebUSB : ' + errText(e)); } }
+  parts.push(apiName);
   $('diag').textContent = 'Diagnostic : ' + parts.join(' · ');
 }
 diag();
@@ -404,7 +441,7 @@ function nearThreshold(ev) {
   for (const key of ['rssi_near', 'rssi_far', 'rssi_enter', 'rssi_leave']) { const p = params[key]; if (!p) continue; const d = Math.abs(yOf(p.v, h) - y); if (d < bd) { bd = d; best = key; } }
   return best;
 }
-rc.addEventListener('pointerdown', ev => { const key = nearThreshold(ev); if (!key || !writer) return; drag = { key, v: params[key].v }; rc.setPointerCapture(ev.pointerId); });
+rc.addEventListener('pointerdown', ev => { const key = nearThreshold(ev); if (!key || !link) return; drag = { key, v: params[key].v }; rc.setPointerCapture(ev.pointerId); });
 rc.addEventListener('pointermove', ev => {
   const r = rc.getBoundingClientRect(), h = r.height, y = ev.clientY - r.top;
   if (drag) { const p = params[drag.key]; drag.v = Math.round(Math.min(p.max, Math.max(p.min, vOf(y, h)))); chartDraw(); return; }
@@ -447,7 +484,7 @@ const PK = 'luciole-profils';
 const profiles = () => JSON.parse(localStorage.getItem(PK) || '{}');
 function renderProfiles() {
   const p = profiles(), keys = Object.keys(p);
-  $('prof-list').innerHTML = keys.length ? keys.map(k => `<span class="seg"><button data-apply="${k}" ${writer ? '' : 'disabled'}>${k} (${Object.keys(p[k]).length})</button><button data-del="${k}" title="supprimer">×</button></span>`).join('') : '<span class="note">aucun profil</span>';
+  $('prof-list').innerHTML = keys.length ? keys.map(k => `<span class="seg"><button data-apply="${k}" ${link ? '' : 'disabled'}>${k} (${Object.keys(p[k]).length})</button><button data-del="${k}" title="supprimer">×</button></span>`).join('') : '<span class="note">aucun profil</span>';
   $('prof-list').querySelectorAll('[data-apply]').forEach(b => b.onclick = async () => { const vals = p[b.dataset.apply]; if ($('prof-reset').checked) { await send('reset'); await new Promise(r => setTimeout(r, 300)); } for (const [k, v] of Object.entries(vals)) { await send(`set ${k} ${v}`); await new Promise(r => setTimeout(r, 80)); } });
   $('prof-list').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (confirm(`Supprimer le profil « ${b.dataset.del} » ?`)) { const q = profiles(); delete q[b.dataset.del]; localStorage.setItem(PK, JSON.stringify(q)); renderProfiles(); } });
 }
