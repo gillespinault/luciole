@@ -87,6 +87,8 @@ static char     s_nick[L2_NAME_LEN] = "";         /* surnom (NVS), diffusé dans
 static int      s_est_ma = 0;                     /* courant estimé du ruban, mA */
 static int      s_test = 0;                       /* mode test du ruban : 0 off, 1 blanc, 2 noir, 3 pixel, 4 chenille */
 static int      s_test_px = 0;
+static bool     s_veille = false;        /* appui long : éteinte quand seule */
+static float    s_awake_f = 1;           /* 1 éveillée .. 0 en veille, fondu */
 static bool     s_stream_on = false;              /* flux JSON périodique sur la console */
 
 static int64_t  s_offset_us = 0;
@@ -623,9 +625,9 @@ static void param_print(const l2_param_desc_t *d)
 /* État complet en une ligne JSON (commande « status » et flux « stream »). */
 static void status_print(int64_t now)
 {
-    printf("{\"t\":%lld,\"mac\":\"%s\",\"name\":\"%s\",\"fw\":\"%s\",\"leds\":%d,\"strip_max\":%d,\"ma\":%d,\"test\":%d,\"hue\":%.1f,\"coh\":%.3f,\"crowd\":%d,\"heard\":%.1f,\"interval\":%.2f,\"offset_ms\":%lld,\"phase\":%.3f,\"playing\":%s,\"nb\":[",
+    printf("{\"t\":%lld,\"mac\":\"%s\",\"name\":\"%s\",\"fw\":\"%s\",\"leds\":%d,\"strip_max\":%d,\"ma\":%d,\"test\":%d,\"hue\":%.1f,\"coh\":%.3f,\"crowd\":%d,\"heard\":%.1f,\"interval\":%.2f,\"offset_ms\":%lld,\"phase\":%.3f,\"playing\":%s,\"veille\":%s,\"nb\":[",
            (long long)(now / 1000), s_name, s_nick, L2_FW_VERSION, s_leds, s_strip_max, s_est_ma, s_test, s_hue, s_coh, s_crowd, s_heard_rate,
-           beacon_interval_us() / 1000000.0f, (long long)(s_offset_us / 1000), phase_at(now) / (float)L2_BAR_US, s_play_start >= 0 ? "true" : "false");
+           beacon_interval_us() / 1000000.0f, (long long)(s_offset_us / 1000), phase_at(now) / (float)L2_BAR_US, s_play_start >= 0 ? "true" : "false", s_veille ? "true" : "false");
     bool first = true;
     for (int i = 0; i < L2_MAX_NEIGHBORS; i++) {
         l2_neighbor_t *n = &s_neighbors[i];
@@ -652,7 +654,7 @@ static bool config_save_leds(int leds)
  * de stdin dans la boucle de rendu. */
 static void console_help(void)
 {
-    printf("commandes : get [cle] | set cle valeur | reset [cle] | status | stream on|off|ms | log on|off | leds [N] | name [surnom] | test off|white|black|chase|px N | onde | version | restart | help\n");
+    printf("commandes : get [cle] | set cle valeur | reset [cle] | status | stream on|off|ms | log on|off | leds [N] | name [surnom] | test off|white|black|chase|px N | onde | veille [on|off|toggle] | version | restart | help\n");
 }
 
 static void console_exec(char *line, int64_t now)
@@ -673,6 +675,11 @@ static void console_exec(char *line, int64_t now)
         printf("{\"leds\":%d,\"strip_max\":%d}\n", s_leds, s_strip_max);
     } else if (strcmp(line, "onde") == 0) {
         wave_emit(now);
+    } else if (strncmp(line, "veille", 6) == 0 && (line[6] == 0 || line[6] == ' ')) {
+        const char *arg = line + 6; while (*arg == ' ') arg++;
+        if (strcmp(arg, "on") == 0) s_veille = true; else if (strcmp(arg, "off") == 0) s_veille = false;
+        else if (strcmp(arg, "toggle") == 0) s_veille = !s_veille;
+        printf("{\"veille\":%s}\n", s_veille ? "true" : "false");
     } else if (strncmp(line, "name", 4) == 0 && (line[4] == 0 || line[4] == ' ')) {
         const char *arg = line + 4; while (*arg == ' ') arg++;
         if (*arg) {
@@ -756,10 +763,15 @@ static void render(int64_t now, float dt, float px[L2_STRIP_LEDS_MAX][3])
     /* Souffle : sinus sur la mesure commune, sommet au temps commun, sur tout
      * le ruban. Seule (cohésion 0) : luminosité fixe L2_RAINBOW_B. Plus la
      * cohésion monte, plus le souffle se creuse, jusqu'à MIN..MAX ensemble. */
+    /* Veille : la luminosité de base (celle de « seule ») fond vers zéro ; le
+     * souffle, lui, ne dépend que de la cohésion : avec des voisines, la
+     * luciole respire depuis le noir. */
+    s_awake_f += (dt / L2_VEILLE_TAU_S) * ((s_veille ? 0.0f : 1.0f) - s_awake_f);
+    float base = L2_RAINBOW_B * clamp01(s_awake_f);
     float x = phase_at(now) / (float)L2_BAR_US;
     float breath = 0.5f + 0.5f * cosf(2 * (float)M_PI * x);
-    float top = L2_RAINBOW_B + (L2_BREATH_MAX - L2_RAINBOW_B) * coh;
-    float bottom = L2_RAINBOW_B + (L2_BREATH_MIN - L2_RAINBOW_B) * coh;
+    float top = base + (L2_BREATH_MAX - base) * coh;
+    float bottom = base + (L2_BREATH_MIN - base) * coh;
     float b = bottom + (top - bottom) * breath;
 
     for (int p = 0; p < N; p++) {
@@ -841,7 +853,7 @@ static void luciole_task(void *arg)
     const float dt = L2_RENDER_MS / 1000.0f;
     float px[L2_STRIP_LEDS_MAX][3];
 #if L2_BUTTON_ENABLED
-    int btn_low_ms = 0; bool btn_pressed = false;
+    int btn_low_ms = 0; bool btn_pressed = false, btn_long = false;
 #endif
     s_heard_window = s_crowd_window = esp_timer_get_time();
 
@@ -865,10 +877,19 @@ static void luciole_task(void *arg)
             s_heard_count = 0; s_heard_window = now;
         }
 #if L2_BUTTON_ENABLED
+        /* Appui court (relâché avant L2_BUTTON_LONG_MS) : onde au relâchement.
+         * Appui long : veille basculée dès le seuil atteint, pas d'onde. */
         if (gpio_get_level(L2_BUTTON_GPIO) == 0) {
             btn_low_ms += L2_RENDER_MS;
-            if (!btn_pressed && btn_low_ms >= L2_BUTTON_DEBOUNCE_MS) { btn_pressed = true; wave_emit(now); }
-        } else { btn_low_ms = 0; btn_pressed = false; }
+            if (!btn_pressed && btn_low_ms >= L2_BUTTON_DEBOUNCE_MS) btn_pressed = true;
+            if (btn_pressed && !btn_long && btn_low_ms >= L2_BUTTON_LONG_MS) {
+                btn_long = true; s_veille = !s_veille;
+                ESP_LOGI(TAG, "bouton : appui long, %s", s_veille ? "veille (eteinte quand seule)" : "reveil");
+            }
+        } else {
+            if (btn_pressed && !btn_long) wave_emit(now);
+            btn_low_ms = 0; btn_pressed = false; btn_long = false;
+        }
 #endif
 
         int beat = (int)(phase_at(now) / L2_BEAT_US);

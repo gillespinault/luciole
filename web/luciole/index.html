@@ -90,8 +90,8 @@
       <span class="k" data-h="ma">Courant du ruban</span><span id="ma">–</span>
     </div>
     <div class="strip" id="strip"></div>
-    <p class="note">Ruban reconstitué : arc-en-ciel dont la profondeur de souffle vaut la cohésion (le rythme est celui de la page, pas la phase de la luciole). Courant estimé d'après les pixels affichés (20 mA par composante à fond), hors module.</p>
-    <div class="row"><button id="onde" disabled>Lancer une onde</button><button id="restart" disabled>Redémarrer</button>
+    <p class="note">Ruban reconstitué : arc-en-ciel dont la profondeur de souffle vaut la cohésion (le rythme est celui de la page, pas la phase de la luciole) ; en veille, éteint quand seule. Courant estimé d'après les pixels affichés (20 mA par composante à fond), hors module.</p>
+    <div class="row"><button id="onde" disabled>Lancer une onde</button><button id="veille" disabled>Mettre en veille</button><button id="restart" disabled>Redémarrer</button>
       <label class="chk"><input type="checkbox" id="freeze" disabled> geler la couleur commune</label></div>
     <div class="row"><span class="note">Test du ruban :</span><span class="seg" id="test"><button data-t="off" class="on">normal</button><button data-t="white">tout blanc</button><button data-t="black">tout noir</button><button data-t="chase">chenille</button></span>
       <label class="note">pixel <input type="number" id="test-px" min="0" max="143" value="0" style="width:70px"></label><button class="mini" id="test-px-btn" disabled>allumer ce pixel</button></div>
@@ -284,12 +284,13 @@ function renderStatus(d) {
   $('interval').textContent = 'toutes les ' + d.interval.toFixed(1) + ' s';
   $('offset').textContent = d.offset_ms + ' ms';
   $('waves').textContent = d.waves + (d.playing ? ' · onde en cours' : '');
+  if ('veille' in d) { $('veille').textContent = d.veille ? 'Réveiller' : 'Mettre en veille'; $('veille').classList.toggle('on', d.veille); }
   $('leds').textContent = `${d.leds} LED, plafond ${d.strip_max}/255`;
   if ('ma' in d) $('ma').textContent = `≈ ${d.ma} mA` + (d.test ? ' (mode test)' : '');
   if (!$('id').textContent) $('id').textContent = (d.name || d.mac) + ' · fw ' + d.fw;
   if ('test' in d) setTestUi(d.test);
   const st = $('strip'); const n = Math.min(d.leds, 30); if (st.children.length !== n) { st.innerHTML = ''; for (let p = 0; p < n; p++) st.append(document.createElement('i')); }
-  const breath = 0.5 + 0.5 * Math.cos(2 * Math.PI * (performance.now() / 2500)), top = 0.6 + (1 - 0.6) * d.coh, bottom = 0.6 + (0.08 - 0.6) * d.coh;
+  const base = d.veille ? 0 : 0.6, breath = 0.5 + 0.5 * Math.cos(2 * Math.PI * (performance.now() / 2500)), top = base + (1 - base) * d.coh, bottom = base + (0.08 - base) * d.coh;
   st.style.opacity = bottom + (top - bottom) * breath;
   for (let p = 0; p < n; p++) st.children[p].style.background = hsv(p * 360 / n);
   chartPush(d); if (recording) recPush(d);
@@ -381,6 +382,7 @@ async function diag() {
 }
 diag();
 $('onde').onclick = () => send('onde');
+$('veille').onclick = () => send('veille toggle');
 $('restart').onclick = () => send('restart');
 $('leds-set').onclick = () => send('leds ' + $('leds-in').value);
 $('reset-all').onclick = () => { if (confirm('Remettre tous les paramètres par défaut ?')) send('reset'); };

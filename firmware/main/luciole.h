@@ -9,10 +9,15 @@
  *  - en approchant : le même arc-en-ciel respire sur le temps commun, de plus
  *                    en plus profondément à mesure que la cohésion monte
  *  - ensemble      : souffle plein, toutes les lucioles du groupe en même temps
- *  - onde          : bouton → front blanc qui traverse le ruban, le ruban garde
- *                    quelques secondes la couleur de l'onde, puis revient à
- *                    l'arc-en-ciel ; l'onde gagne les voisines de proche en
+ *  - onde          : appui court → front blanc qui traverse le ruban, le ruban
+ *                    garde quelques secondes la couleur de l'onde, puis revient
+ *                    à l'arc-en-ciel ; l'onde gagne les voisines de proche en
  *                    proche (ondulation)
+ *  - veille        : appui long → éteint ou rallume la luciole, mais seulement
+ *                    pour l'état « seule » : dès qu'elle entend des voisines,
+ *                    elle respire quand même (depuis le noir), et se rendort
+ *                    quand elles s'éloignent. Pas enregistré : allumée au
+ *                    démarrage.
  *
  * Deux numéros de version, indépendants :
  *  - L2_FW_VERSION    : le firmware (rendu, réglages, cartes). Change souvent.
@@ -24,7 +29,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "6.3.0"
+#define L2_FW_VERSION       "6.4.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -140,6 +145,8 @@
 #define L2_WAVE_RECORDS     32      /* ondes récentes en mémoire (dédoublonnage) */
 #define L2_WAVE_FORGET_US   60000000
 #define L2_BUTTON_DEBOUNCE_MS 30
+#define L2_BUTTON_LONG_MS   800     /* appui tenu au-delà : veille, pas d'onde */
+#define L2_VEILLE_TAU_S     0.5f    /* fondu à l'extinction et au réveil */
 
 /* Rendu */
 #define L2_RENDER_MS        10
