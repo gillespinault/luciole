@@ -2,15 +2,17 @@
  * Luciole² — réglages. Tout est en microsecondes (esp_timer) sauf mention contraire.
  *
  * Un seul axe, « seule → ensemble », mesuré par la cohésion (règles locales,
- * sans coordinateur). Le ruban est une jauge :
- *  - seule         : arc-en-ciel qui défile de gauche (pixel 0) à droite
- *  - en approchant : une zone unie, dans la couleur commune, se remplit depuis
- *                    la droite sur cohésion × longueur ; elle respire sur le
- *                    temps commun, de plus en plus profondément
- *  - ensemble      : ruban uni, souffle plein
- *  - onde          : bouton → front blanc qui traverse le ruban, puis gagne les
- *                    voisines de proche en proche (ondulation) ; chacune adopte
- *                    sa couleur au passage
+ * sans coordinateur). Le ruban montre toujours le même arc-en-ciel, et c'est
+ * son souffle qui dit si on est accompagnée :
+ *  - seule         : arc-en-ciel qui défile lentement de gauche (pixel 0) à
+ *                    droite, luminosité fixe
+ *  - en approchant : le même arc-en-ciel respire sur le temps commun, de plus
+ *                    en plus profondément à mesure que la cohésion monte
+ *  - ensemble      : souffle plein, toutes les lucioles du groupe en même temps
+ *  - onde          : bouton → front blanc qui traverse le ruban, le ruban garde
+ *                    quelques secondes la couleur de l'onde, puis revient à
+ *                    l'arc-en-ciel ; l'onde gagne les voisines de proche en
+ *                    proche (ondulation)
  *
  * Deux numéros de version, indépendants :
  *  - L2_FW_VERSION    : le firmware (rendu, réglages, cartes). Change souvent.
@@ -22,7 +24,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "6.2.0"
+#define L2_FW_VERSION       "6.3.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -99,16 +101,14 @@
 #define L2_COH_TAU_S        1.5f    /* constante de temps vers la cible : réactif en approchant */
 #define L2_COH_SOCIAL_TAU_S 4.0f    /* vers la moyenne des voisines */
 
-/* Jauge : la zone unie occupe cohésion × nombre de LED pixels depuis la droite,
- * avec une frontière fondue sur un pixel. L'arc-en-ciel occupe le reste, à
- * luminosité fixe L2_RAINBOW_B, et défile vers la droite à L2_RAINBOW_FLOW
- * tours/s (un tour = le motif complet a parcouru le ruban). */
+/* Arc-en-ciel : dégradé plein spectre sur toute la longueur du ruban, qui
+ * défile vers la droite à L2_RAINBOW_FLOW tours/s (un tour = le motif complet
+ * a parcouru le ruban). Seule, luminosité fixe L2_RAINBOW_B. */
 #define L2_RAINBOW_B        0.45f
 #define L2_RAINBOW_FLOW     0.10f
-/* Souffle de la zone unie : sinus sur la mesure commune (L2_BAR_US), sommet au
- * temps commun. Autour de L2_SOLID_B, profondeur = cohésion : de MIN à MAX
- * quand elle est pleine. */
-#define L2_SOLID_B          0.5f
+/* Souffle : sinus sur la mesure commune (L2_BAR_US), sommet au temps commun,
+ * appliqué à tout le ruban. Autour de L2_RAINBOW_B, profondeur = cohésion :
+ * de MIN à MAX quand elle est pleine. */
 #define L2_BREATH_MIN       0.03f
 #define L2_BREATH_MAX       1.0f
 

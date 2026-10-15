@@ -79,7 +79,7 @@ for (const id of ids) {
   el.addEventListener('input', () => { upd(); if (['bikes','lucioles','peloton'].includes(id)) reset(); });
   upd();
 }
-const F = { sweep:0.5, trail:3, late:4, minEmit:10, forget:60, jitter:0.2, rainbowB:0.45, rainbowFlow:0.10, solidB:0.5, breathMin:0.03, breathMax:1, bar:2.5,
+const F = { sweep:0.5, trail:3, late:4, minEmit:10, forget:60, jitter:0.2, rainbowB:0.45, rainbowFlow:0.10, breathMin:0.03, breathMax:1, bar:2.5,
             cohTau:1.5, cohSocialTau:4, hueTau:3, hueDrift:2.4, hueWander:8, maxNeighbors:16, rssiNear:-80, rssiFar:-100, beaconMax:30, beat:0.5 };
 
 /* ---------- Utilitaires ---------- */
@@ -210,10 +210,8 @@ function regulate(l, dt) {
 function renderStrip(l) {
   const px = []; const coh = l.coh;
   const xph = (t % F.bar) / F.bar, breath = 0.5 + 0.5 * Math.cos(2 * Math.PI * xph);
-  const top = F.solidB + (F.breathMax - F.solidB) * coh, bottom = F.solidB + (F.breathMin - F.solidB) * coh, bS = bottom + (top - bottom) * breath;
-  const solid = hsv(l.hue), fill = coh * 10;
-  for (let p = 0; p < 10; p++) { const w = clamp01(fill - (9 - p)); const rain = hsv(360 * (p / 10 - l.rpos));
-    px.push([0, 1, 2].map(k => rain[k] * F.rainbowB * (1 - w) + solid[k] * bS * w)); }
+  const top = F.rainbowB + (F.breathMax - F.rainbowB) * coh, bottom = F.rainbowB + (F.breathMin - F.rainbowB) * coh, b = bottom + (top - bottom) * breath;
+  for (let p = 0; p < 10; p++) { const rain = hsv(360 * (p / 10 - l.rpos)); px.push(rain.map(v => v * b)); }
   if (l.playStart >= 0) {
     const tt = t - l.playStart, w = hsv(l.playHue); let presence;
     if (tt < F.sweep) presence = 1; else if (tt < F.sweep + F.trail) presence = 1 - (tt - F.sweep) / F.trail; else { l.playStart = -1; return px; }

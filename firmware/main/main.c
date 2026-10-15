@@ -1,5 +1,5 @@
 /*
- * Luciole² — firmware 6 : jauge de cohésion, couleur commune, souffle, ondulation.
+ * Luciole² — firmware 6 : arc-en-ciel dont le souffle dit la cohésion, ondulation.
  * Contrat radio v1 (luciole.h), nombre de LED en configuration, une table de
  * brochage par carte.
  * Règles locales uniquement : aucune unité n'est configurée ni appairée, tout
@@ -120,7 +120,7 @@ static int64_t  s_last_play = -100000000, s_last_emit = -100000000, s_last_relay
 typedef struct {
     float rssi_near, rssi_far, rssi_enter, rssi_leave;
     float coh_tau, coh_social, hue_tau, hue_drift, hue_wander, hue_wave;
-    float rainbow_b, rainbow_flow, solid_b, breath_min, breath_max;
+    float rainbow_b, rainbow_flow, breath_min, breath_max;
     float wave_sweep, wave_trail, wave_spread, wave_suppress, wave_relay_min, wave_min_play, wave_late, wave_min_emit, wave_max_hop;
     float beacon_rate, phase_gain, nb_replace_db, strip_max, hue_freeze;
 } l2_params_t;
@@ -139,9 +139,8 @@ static const l2_param_desc_t PARAMS[] = {
     PD(hue_drift,      L2_HUE_DRIFT_DPS,    0,    60,    "deg/s : derive commune de la couleur"),
     PD(hue_wander,     L2_HUE_WANDER_DPS,   0,    60,    "deg/s : vagabondage seule"),
     PD(hue_wave,       L2_HUE_WAVE_GAIN,    0,    1,     "0..1 : adoption de la couleur d'une onde"),
-    PD(rainbow_b,      L2_RAINBOW_B,        0,    1,     "0..1 : luminosite de l'arc-en-ciel"),
+    PD(rainbow_b,      L2_RAINBOW_B,        0,    1,     "0..1 : luminosite de l'arc-en-ciel seule, centre du souffle"),
     PD(rainbow_flow,   L2_RAINBOW_FLOW,     -2,   2,     "tours/s : defilement de l'arc-en-ciel"),
-    PD(solid_b,        L2_SOLID_B,          0,    1,     "0..1 : luminosite centrale de la zone unie"),
     PD(breath_min,     L2_BREATH_MIN,       0,    1,     "0..1 : creux du souffle a cohesion pleine"),
     PD(breath_max,     L2_BREATH_MAX,       0,    1,     "0..1 : sommet du souffle a cohesion pleine"),
     PD(wave_sweep,     L2_WAVE_SWEEP_US / 1000,     50,   5000,   "ms : traversee du ruban"),
@@ -176,7 +175,6 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #undef L2_HUE_WAVE_GAIN
 #undef L2_RAINBOW_B
 #undef L2_RAINBOW_FLOW
-#undef L2_SOLID_B
 #undef L2_BREATH_MIN
 #undef L2_BREATH_MAX
 #undef L2_WAVE_SWEEP_US
@@ -204,7 +202,6 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #define L2_HUE_WAVE_GAIN      P.hue_wave
 #define L2_RAINBOW_B          P.rainbow_b
 #define L2_RAINBOW_FLOW       P.rainbow_flow
-#define L2_SOLID_B            P.solid_b
 #define L2_BREATH_MIN         P.breath_min
 #define L2_BREATH_MAX         P.breath_max
 #define L2_WAVE_SWEEP_US      ((int64_t)(P.wave_sweep * 1000))
@@ -756,27 +753,24 @@ static void render(int64_t now, float dt, float px[L2_STRIP_LEDS_MAX][3])
     /* Arc-en-ciel : dégradé linéaire sur toute la longueur, qui défile vers la droite. */
     s_rainbow_pos = fmodf(s_rainbow_pos + L2_RAINBOW_FLOW * dt, 1.0f);
 
-    /* Zone unie : couleur commune, souffle sur la mesure commune, sommet au
-     * temps commun, profondeur donnée par la cohésion. */
+    /* Souffle : sinus sur la mesure commune, sommet au temps commun, sur tout
+     * le ruban. Seule (cohésion 0) : luminosité fixe L2_RAINBOW_B. Plus la
+     * cohésion monte, plus le souffle se creuse, jusqu'à MIN..MAX ensemble. */
     float x = phase_at(now) / (float)L2_BAR_US;
     float breath = 0.5f + 0.5f * cosf(2 * (float)M_PI * x);
-    float top = L2_SOLID_B + (L2_BREATH_MAX - L2_SOLID_B) * coh;
-    float bottom = L2_SOLID_B + (L2_BREATH_MIN - L2_SOLID_B) * coh;
-    float b_solid = bottom + (top - bottom) * breath;
-    float solid[3]; hue_to_rgb(s_hue, solid);
+    float top = L2_RAINBOW_B + (L2_BREATH_MAX - L2_RAINBOW_B) * coh;
+    float bottom = L2_RAINBOW_B + (L2_BREATH_MIN - L2_RAINBOW_B) * coh;
+    float b = bottom + (top - bottom) * breath;
 
-    /* Jauge : la zone unie occupe `fill` pixels depuis la droite, frontière fondue sur un pixel. */
-    float fill = coh * N;
     for (int p = 0; p < N; p++) {
-        float from_right = N - 1 - p;                           /* 0 pour le pixel de droite */
-        float w = clamp01(fill - from_right);                   /* part unie de ce pixel */
         float u = p / (float)N;
         float rain[3]; hue_to_rgb(360.0f * (u - s_rainbow_pos), rain);
-        for (int k = 0; k < 3; k++) px[p][k] = rain[k] * L2_RAINBOW_B * (1 - w) + solid[k] * b_solid * w;
+        for (int k = 0; k < 3; k++) px[p][k] = rain[k] * b;
     }
     /* Onde : front blanc qui traverse, halo dans la couleur de l'onde, puis le
      * ruban entier reste dans cette couleur et s'éteint lentement avec des
-     * paillettes. Pendant le passage, les autres couches s'effacent. */
+     * paillettes ; l'arc-en-ciel revient à mesure. Pendant le passage, il
+     * s'efface. */
     if (s_play_start >= 0) {
         int64_t t = now - s_play_start;
         float wrgb[3]; hue_to_rgb(s_play_hue, wrgb);

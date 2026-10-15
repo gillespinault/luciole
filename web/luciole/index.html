@@ -90,7 +90,7 @@
       <span class="k" data-h="ma">Courant du ruban</span><span id="ma">–</span>
     </div>
     <div class="strip" id="strip"></div>
-    <p class="note">Ruban reconstitué : longueur unie = cohésion, couleur = couleur commune, sans le souffle. Courant estimé d'après les pixels affichés (20 mA par composante à fond), hors module.</p>
+    <p class="note">Ruban reconstitué : arc-en-ciel dont la profondeur de souffle vaut la cohésion (le rythme est celui de la page, pas la phase de la luciole). Courant estimé d'après les pixels affichés (20 mA par composante à fond), hors module.</p>
     <div class="row"><button id="onde" disabled>Lancer une onde</button><button id="restart" disabled>Redémarrer</button>
       <label class="chk"><input type="checkbox" id="freeze" disabled> geler la couleur commune</label></div>
     <div class="row"><span class="note">Test du ruban :</span><span class="seg" id="test"><button data-t="off" class="on">normal</button><button data-t="white">tout blanc</button><button data-t="black">tout noir</button><button data-t="chase">chenille</button></span>
@@ -289,8 +289,9 @@ function renderStatus(d) {
   if (!$('id').textContent) $('id').textContent = (d.name || d.mac) + ' · fw ' + d.fw;
   if ('test' in d) setTestUi(d.test);
   const st = $('strip'); const n = Math.min(d.leds, 30); if (st.children.length !== n) { st.innerHTML = ''; for (let p = 0; p < n; p++) st.append(document.createElement('i')); }
-  const fill = d.coh * n;
-  for (let p = 0; p < n; p++) { const w = Math.min(1, Math.max(0, fill - (n - 1 - p))); st.children[p].style.background = w > 0.5 ? hsv(d.hue) : hsv(p * 360 / n); st.children[p].style.opacity = w > 0.5 ? 1 : 0.6; }
+  const breath = 0.5 + 0.5 * Math.cos(2 * Math.PI * (performance.now() / 2500)), top = 0.6 + (1 - 0.6) * d.coh, bottom = 0.6 + (0.08 - 0.6) * d.coh;
+  st.style.opacity = bottom + (top - bottom) * breath;
+  for (let p = 0; p < n; p++) st.children[p].style.background = hsv(p * 360 / n);
   chartPush(d); if (recording) recPush(d);
   const nb = d.nb.slice().sort((a, b) => b.rssi_f - a.rssi_f);
   $('nb').innerHTML = nb.map(n => `<tr style="opacity:${n.in ? 1 : .5}"><td>${label(n)}${n.in ? '' : ' (loin)'}</td><td>${n.rssi} dBm</td><td>${n.rssi_f.toFixed(1)}</td>
@@ -300,15 +301,15 @@ function renderStatus(d) {
 function setTestUi(t) { const map = { 0: 'off', 1: 'white', 2: 'black', 3: 'px', 4: 'chase' }; $('test').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === map[t])); }
 
 /* ---------- Paramètres : groupes et aide ---------- */
-const ESSENTIELS = ['rssi_near', 'rssi_far', 'coh_tau', 'hue_tau', 'rainbow_b', 'solid_b', 'wave_spread', 'wave_suppress', 'strip_max'];
+const ESSENTIELS = ['rssi_near', 'rssi_far', 'coh_tau', 'rainbow_b', 'breath_min', 'breath_max', 'wave_spread', 'wave_suppress', 'strip_max'];
 const GROUPES = {
   'Voisinage et cohésion': ['rssi_enter', 'rssi_leave', 'nb_replace_db', 'coh_social'],
-  'Couleur commune': ['hue_drift', 'hue_wander', 'hue_wave', 'hue_freeze'],
-  'Rendu du ruban': ['rainbow_flow', 'breath_min', 'breath_max'],
+  'Couleur commune (teinte des ondes)': ['hue_tau', 'hue_drift', 'hue_wander', 'hue_wave', 'hue_freeze'],
+  'Rendu du ruban': ['rainbow_flow'],
   'Onde': ['wave_sweep', 'wave_trail', 'wave_relay_min', 'wave_min_play', 'wave_late', 'wave_min_emit', 'wave_max_hop'],
   'Radio': ['beacon_rate', 'phase_gain'],
 };
-const TITRES = { rssi_near: 'Proximité pleine', rssi_far: 'Proximité nulle', rssi_enter: 'Entrée en voisine', rssi_leave: 'Sortie de voisine', coh_tau: 'Réactivité de la cohésion', coh_social: 'Corégulation', hue_tau: 'Accord sur la couleur', hue_drift: 'Dérive de la couleur', hue_wander: 'Vagabondage seule', hue_wave: 'Couleur adoptée après une onde', hue_freeze: 'Geler la couleur', rainbow_b: 'Luminosité de l\'arc-en-ciel', rainbow_flow: 'Vitesse de l\'arc-en-ciel', solid_b: 'Luminosité de la zone unie', breath_min: 'Creux du souffle', breath_max: 'Sommet du souffle', wave_sweep: 'Traversée du ruban', wave_trail: 'Traînée de l\'onde', wave_spread: 'Étalement de l\'onde', wave_suppress: 'Suppression des rediffusions', wave_relay_min: 'Délai entre rediffusions', wave_min_play: 'Délai entre lectures', wave_late: 'Abandon d\'une onde en retard', wave_min_emit: 'Délai entre appuis', wave_max_hop: 'Sauts au plus', beacon_rate: 'Débit visé sur le canal', phase_gain: 'Correction de phase', nb_replace_db: 'Marge de remplacement', strip_max: 'Plafond de luminosité' };
+const TITRES = { rssi_near: 'Proximité pleine', rssi_far: 'Proximité nulle', rssi_enter: 'Entrée en voisine', rssi_leave: 'Sortie de voisine', coh_tau: 'Réactivité de la cohésion', coh_social: 'Corégulation', hue_tau: 'Accord sur la couleur', hue_drift: 'Dérive de la couleur', hue_wander: 'Vagabondage seule', hue_wave: 'Couleur adoptée après une onde', hue_freeze: 'Geler la couleur', rainbow_b: 'Luminosité de l\'arc-en-ciel', rainbow_flow: 'Vitesse de l\'arc-en-ciel', breath_min: 'Creux du souffle', breath_max: 'Sommet du souffle', wave_sweep: 'Traversée du ruban', wave_trail: 'Traînée de l\'onde', wave_spread: 'Étalement de l\'onde', wave_suppress: 'Suppression des rediffusions', wave_relay_min: 'Délai entre rediffusions', wave_min_play: 'Délai entre lectures', wave_late: 'Abandon d\'une onde en retard', wave_min_emit: 'Délai entre appuis', wave_max_hop: 'Sauts au plus', beacon_rate: 'Débit visé sur le canal', phase_gain: 'Correction de phase', nb_replace_db: 'Marge de remplacement', strip_max: 'Plafond de luminosité' };
 const AIDE = {
   rssi_near: 'Niveau de signal (dBm) à partir duquel une voisine compte comme collée : sa proximité vaut 1. Entre ce seuil et « proximité nulle », la proximité descend linéairement. Monter la valeur (vers -70) rend la jauge plus exigeante : il faut être plus près pour remplir le ruban. Mesuré sur le hub à quelques centimètres : -76 à -89 dBm.',
   rssi_far: 'Niveau (dBm) en dessous duquel une voisine ne compte plus du tout dans la cohésion, même si on l\'entend encore. Avec -100, la limite d\'écoute en longue portée est environ -105.',
@@ -321,11 +322,10 @@ const AIDE = {
   hue_wander: 'Quand la luciole n\'entend personne, sa couleur erre en plus au hasard, à cette vitesse (°/s), pour que deux lucioles seules ne restent pas identiques.',
   hue_wave: 'Part (0 à 1) de la couleur de l\'onde que la luciole adopte quand elle la joue. 1 = elle prend entièrement la couleur de l\'onde ; 0 = l\'onde passe sans laisser de trace.',
   hue_freeze: '1 = la couleur commune ne bouge plus (ni dérive, ni vagabondage, ni consensus). Pour isoler un réglage sans que la couleur brouille ce qu\'on regarde. Remettre 0 avant une sortie.',
-  rainbow_b: 'Luminosité (0 à 1) de l\'arc-en-ciel, la partie du ruban qui n\'est pas encore unie. Fixe, sans souffle.',
+  rainbow_b: 'Luminosité (0 à 1) de l\'arc-en-ciel quand la luciole est seule. C\'est aussi le centre du souffle : plus la cohésion monte, plus le ruban oscille autour de cette valeur.',
   rainbow_flow: 'Vitesse de défilement de l\'arc-en-ciel en tours par seconde (un tour = le motif a parcouru tout le ruban). Négatif = vers la gauche. 0,1 = un tour en 10 s.',
-  solid_b: 'Luminosité centrale (0 à 1) de la zone unie. Le souffle oscille autour de cette valeur, de plus en plus fort avec la cohésion.',
-  breath_min: 'Creux du souffle (0 à 1) quand la cohésion est pleine. 0,03 = presque éteint au creux.',
-  breath_max: 'Sommet du souffle (0 à 1) quand la cohésion est pleine. 1 = pleine luminosité (sous le plafond).',
+  breath_min: 'Creux du souffle (0 à 1) quand la cohésion est pleine. 0,03 = presque éteint au creux. À cohésion intermédiaire, le creux est entre cette valeur et la luminosité de l\'arc-en-ciel.',
+  breath_max: 'Sommet du souffle (0 à 1) quand la cohésion est pleine. 1 = pleine luminosité (sous le plafond). À cohésion intermédiaire, le sommet est entre la luminosité de l\'arc-en-ciel et cette valeur.',
   wave_sweep: 'Durée (ms) du front blanc qui traverse le ruban quand la luciole joue une onde.',
   wave_trail: 'Durée (ms) pendant laquelle le ruban reste dans la couleur de l\'onde après le passage, avec des paillettes, avant de revenir au rendu normal.',
   wave_spread: 'Quand une onde est entendue, la luciole attend avant de la jouer : 0 ms si l\'émettrice est collée, cette valeur si elle est à la limite d\'écoute. C\'est ce qui fait que l\'ondulation s\'éloigne visiblement de l\'origine. Plus grand = vague plus lente et plus lisible.',

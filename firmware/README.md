@@ -4,7 +4,7 @@ Essaim de lumières de vélo pour M5Stack NanoC6 (ESP32-C6) et AtomS3 Lite (ESP3
 
 Documentation du projet : wiki Outline, collection Luciole². Simulation d'un Critical Mass avec les mêmes règles : `../sim/index.html`. Installation par USB depuis le navigateur : `../web/`.
 
-Deux numéros de version, indépendants : `L2_FW_VERSION` (le firmware, 6.0.0) et `L2_PROTO_VERSION` (le contrat radio, 1). Le contrat est décrit en bas de `main/luciole.h` et dans la page Architecture et protocole du wiki : canal, mode longue portée, cycle, format des trames, règles d'évolution. Une luciole déjà distribuée doit rester membre de l'essaim avec les firmwares futurs.
+Deux numéros de version, indépendants : `L2_FW_VERSION` (le firmware, 6.3.0) et `L2_PROTO_VERSION` (le contrat radio, 1). Le contrat est décrit en bas de `main/luciole.h` et dans la page Architecture et protocole du wiki : canal, mode longue portée, cycle, format des trames, règles d'évolution. Une luciole déjà distribuée doit rester membre de l'essaim avec les firmwares futurs.
 
 ## Cartes et configuration
 
@@ -39,14 +39,14 @@ Pendant un flux (`stream`), chaque événement d'onde sort aussi en JSON : `{"ev
 
 ## Comportement (firmware 6)
 
-Un seul axe, « seule → ensemble », mesuré par la cohésion. Le ruban est une jauge, pixel 0 à gauche (côté connecteur Grove).
+Un seul axe, « seule → ensemble », mesuré par la cohésion. Le ruban montre toujours le même arc-en-ciel, pixel 0 à gauche (côté connecteur Grove) ; c'est son souffle qui rend la cohésion.
 
 - Cohésion : chaque voisine entendue apporte une part égale à sa proximité (RSSI entre `L2_RSSI_FAR` -100 et `L2_RSSI_NEAR` -80 dBm). Les parts s'additionnent en saturant : une voisine collée suffit, trois voisines moyennes aussi. Puis elle glisse vers la moyenne annoncée par les voisines (corégulation). Constante de temps 1,5 s (`L2_COH_TAU_S`). Seule : zéro.
 - Seule : arc-en-ciel linéaire sur toute la longueur, qui défile de gauche à droite (`L2_RAINBOW_FLOW` tours/s), luminosité fixe `L2_RAINBOW_B`.
-- En approchant : une zone unie se remplit depuis la droite sur cohésion × 10 pixels, frontière fondue sur un pixel. Elle est dans la couleur commune et respire en sinus sur la mesure commune de 2,5 s, sommet au temps commun, autour de `L2_SOLID_B` avec une profondeur égale à la cohésion (de `L2_BREATH_MIN` à `L2_BREATH_MAX` quand elle est pleine). L'arc-en-ciel continue à défiler sur le reste et coule dans la zone unie.
-- Ensemble : ruban uni, souffle plein, synchronisé sur l'essaim.
-- Couleur : commune par consensus (moyenne circulaire des voisines, constante de temps 3 s), et elle voyage à 2,4°/s (`L2_HUE_DRIFT_DPS`), un tour en 2,5 min, même rythme partout. Seule, elle vagabonde en plus.
-- Onde : un appui sur G9 fait traverser le ruban par un front blanc, puis l'onde gagne les voisines de proche en proche (ondulation, voir ci-dessous). Elle porte la teinte opposée à celle du moment ; chaque unité traversée l'adopte.
+- En approchant : le même arc-en-ciel respire en sinus sur la mesure commune de 2,5 s, sommet au temps commun, autour de `L2_RAINBOW_B` avec une profondeur égale à la cohésion (de `L2_BREATH_MIN` à `L2_BREATH_MAX` quand elle est pleine).
+- Ensemble : souffle plein, synchronisé sur l'essaim.
+- Couleur commune : toujours calculée par consensus (moyenne circulaire des voisines, constante de temps 3 s) et diffusée dans la balise, elle voyage à 2,4°/s (`L2_HUE_DRIFT_DPS`). Depuis le firmware 6.3 elle n'est plus affichée en continu : elle ne sert qu'à choisir la teinte des ondes.
+- Onde : un appui sur G9 fait traverser le ruban par un front blanc (`L2_WAVE_SWEEP_US`), puis le ruban garde la couleur de l'onde en s'éteignant avec des paillettes (`L2_WAVE_TRAIL_US`, 3 s) et revient à l'arc-en-ciel. L'onde gagne les voisines de proche en proche (ondulation, voir ci-dessous). Elle porte la teinte opposée à la couleur commune du moment.
 - Balises : une par temps quand on est peu ; en foule, chacune ralentit pour que le canal reste autour de `L2_BEACON_CHANNEL_RATE` trames/s en tout. Voisines oubliées après 6 s ou quatre intervalles de balise.
 - LED intégrée : copie la LED centrale du ruban. LED bleue : métronome.
 

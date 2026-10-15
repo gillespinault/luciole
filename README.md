@@ -25,7 +25,7 @@ Web Serial exige HTTPS ou `localhost` : pour flasher depuis un autre poste, il f
 
 ## Régler une luciole sans la reflasher
 
-https://lucioles.limn-labs.xyz/luciole/ : la luciole branchée en USB envoie son état en JSON (commande `stream`) et accepte `set clé valeur` pour chacun de ses 29 réglages, enregistrés en NVS. La page trace le signal des voisines avec les seuils glissables, la cohésion, la phase, la radio et les ondes ; enregistre en CSV avec GPS ; gère des profils. Sur Android, elle parle à la luciole par WebUSB avec sa propre couche CDC (le Web Serial de Chrome Android ne sait pas ouvrir un appareil USB). Détail des commandes dans `firmware/README.md`.
+https://lucioles.limn-labs.xyz/luciole/ : la luciole branchée en USB envoie son état en JSON (commande `stream`) et accepte `set clé valeur` pour chacun de ses 28 réglages, enregistrés en NVS. La page trace le signal des voisines avec les seuils glissables, la cohésion, la phase, la radio et les ondes ; enregistre en CSV avec GPS ; gère des profils. Sur Android, elle parle à la luciole par WebUSB avec sa propre couche CDC (le Web Serial de Chrome Android ne sait pas ouvrir un appareil USB). Détail des commandes dans `firmware/README.md`.
 
 ## Faire évoluer le firmware sans casser l'essaim
 
