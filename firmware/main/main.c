@@ -120,7 +120,7 @@ static int64_t  s_last_play = -100000000, s_last_emit = -100000000, s_last_relay
 /* Les valeurs par défaut sont celles de luciole.h ; les macros du code   */
 /* sont redirigées vers ces champs juste après la table.                  */
 typedef struct {
-    float rssi_near, rssi_far, rssi_enter, rssi_leave;
+    float rssi_near, rssi_far, rssi_enter, rssi_leave, prox_curve;
     float coh_tau, coh_social, hue_tau, hue_drift, hue_wander, hue_wave;
     float rainbow_b, rainbow_flow, breath_min, breath_max;
     float wave_sweep, wave_trail, wave_spread, wave_suppress, wave_relay_min, wave_min_play, wave_late, wave_min_emit, wave_max_hop;
@@ -135,6 +135,7 @@ static const l2_param_desc_t PARAMS[] = {
     PD(rssi_far,       L2_RSSI_FAR,         -110, -40,   "dBm : proximite nulle"),
     PD(rssi_enter,     L2_RSSI_ENTER,       -110, -40,   "dBm : devient voisine"),
     PD(rssi_leave,     L2_RSSI_LEAVE,       -115, -40,   "dBm : cesse d'etre voisine"),
+    PD(prox_curve,     L2_PROX_CURVE,       0.25, 4,     "exposant de la proximite : 1 lineaire, 2 douce de loin"),
     PD(coh_tau,        L2_COH_TAU_S,        0.1,  30,    "s : cohesion vers la cible"),
     PD(coh_social,     L2_COH_SOCIAL_TAU_S, 0.1,  60,    "s : cohesion vers la moyenne des voisines"),
     PD(hue_tau,        L2_HUE_TAU_S,        0.1,  60,    "s : couleur vers la moyenne des voisines"),
@@ -169,6 +170,7 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #undef L2_RSSI_FAR
 #undef L2_RSSI_ENTER
 #undef L2_RSSI_LEAVE
+#undef L2_PROX_CURVE
 #undef L2_COH_TAU_S
 #undef L2_COH_SOCIAL_TAU_S
 #undef L2_HUE_TAU_S
@@ -196,6 +198,7 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #define L2_RSSI_FAR           P.rssi_far
 #define L2_RSSI_ENTER         P.rssi_enter
 #define L2_RSSI_LEAVE         P.rssi_leave
+#define L2_PROX_CURVE         P.prox_curve
 #define L2_COH_TAU_S          P.coh_tau
 #define L2_COH_SOCIAL_TAU_S   P.coh_social
 #define L2_HUE_TAU_S          P.hue_tau
@@ -230,7 +233,8 @@ static inline float norm_deg(float h) { while (h < 0) h += 360; while (h >= 360)
 static inline float clamp01(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 static inline float frand(void) { return (esp_random() & 0xffff) / 65535.0f; }
 static inline bool mac_eq(const uint8_t *a, const uint8_t *b) { return memcmp(a, b, 6) == 0; }
-static inline float proximity(float rssi) { return clamp01((rssi - L2_RSSI_FAR) / (float)(L2_RSSI_NEAR - L2_RSSI_FAR)); }
+/* Rampe linéaire en dBm entre FAR et NEAR, puis courbe : exposant > 1 = douce de loin. */
+static inline float proximity(float rssi) { return powf(clamp01((rssi - L2_RSSI_FAR) / (float)(L2_RSSI_NEAR - L2_RSSI_FAR)), L2_PROX_CURVE); }
 
 static inline uint64_t gpio_bit(int g) { return g >= 0 ? 1ULL << g : 0; }   /* -1 = broche absente */
 

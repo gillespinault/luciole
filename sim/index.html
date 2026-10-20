@@ -80,7 +80,7 @@ for (const id of ids) {
   upd();
 }
 const F = { sweep:0.5, trail:3, late:4, minEmit:10, forget:60, jitter:0.2, rainbowB:0.45, rainbowFlow:0.10, breathMin:0.03, breathMax:1, bar:2.5,
-            cohTau:1.5, cohSocialTau:4, hueTau:3, hueDrift:2.4, hueWander:8, maxNeighbors:16, rssiNear:-80, rssiFar:-100, beaconMax:30, beat:0.5 };
+            cohTau:1.5, cohSocialTau:4, hueTau:3, hueDrift:2.4, hueWander:8, maxNeighbors:16, rssiNear:-80, rssiFar:-100, proxCurve:2, beaconMax:30, beat:0.5 };
 
 /* ---------- Utilitaires ---------- */
 const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
@@ -89,7 +89,7 @@ const normDeg = h => ((h % 360) + 360) % 360;
 const wrapDeg = d => { d = ((d + 180) % 360 + 360) % 360 - 180; return d; };
 function hsv(h) { h = normDeg(h) / 60; const i = Math.floor(h), f = h - i, q = 1 - f;
   switch (i) { case 0: return [1, f, 0]; case 1: return [q, 1, 0]; case 2: return [0, 1, f]; case 3: return [0, q, 1]; case 4: return [f, 0, 1]; default: return [1, 0, q]; } }
-const prox = r => clamp01((r - F.rssiFar) / (F.rssiNear - F.rssiFar));
+const prox = r => Math.pow(clamp01((r - F.rssiFar) / (F.rssiNear - F.rssiFar)), F.proxCurve);
 let pathN = 25;
 function rssi(d) { return -40 - pathN * Math.log10(Math.max(1, d)) + 4 * gauss(); }
 

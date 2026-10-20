@@ -4,7 +4,7 @@ Essaim de lumières de vélo pour M5Stack NanoC6 (ESP32-C6) et AtomS3 Lite (ESP3
 
 Documentation du projet : wiki Outline, collection Luciole². Simulation d'un Critical Mass avec les mêmes règles : `../sim/index.html`. Installation par USB depuis le navigateur : `../web/`.
 
-Deux numéros de version, indépendants : `L2_FW_VERSION` (le firmware, 6.4.0) et `L2_PROTO_VERSION` (le contrat radio, 1). Le contrat est décrit en bas de `main/luciole.h` et dans la page Architecture et protocole du wiki : canal, mode longue portée, cycle, format des trames, règles d'évolution. Une luciole déjà distribuée doit rester membre de l'essaim avec les firmwares futurs.
+Deux numéros de version, indépendants : `L2_FW_VERSION` (le firmware, 6.5.0) et `L2_PROTO_VERSION` (le contrat radio, 1). Le contrat est décrit en bas de `main/luciole.h` et dans la page Architecture et protocole du wiki : canal, mode longue portée, cycle, format des trames, règles d'évolution. Une luciole déjà distribuée doit rester membre de l'essaim avec les firmwares futurs.
 
 ## Cartes et configuration
 
@@ -42,7 +42,7 @@ Pendant un flux (`stream`), chaque événement d'onde sort aussi en JSON : `{"ev
 
 Un seul axe, « seule → ensemble », mesuré par la cohésion. Le ruban montre toujours le même arc-en-ciel, pixel 0 à gauche (côté connecteur Grove) ; c'est son souffle qui rend la cohésion.
 
-- Cohésion : chaque voisine entendue apporte une part égale à sa proximité (RSSI entre `L2_RSSI_FAR` -100 et `L2_RSSI_NEAR` -80 dBm). Les parts s'additionnent en saturant : une voisine collée suffit, trois voisines moyennes aussi. Puis elle glisse vers la moyenne annoncée par les voisines (corégulation). Constante de temps 1,5 s (`L2_COH_TAU_S`). Seule : zéro.
+- Cohésion : chaque voisine entendue apporte une part égale à sa proximité (RSSI entre `L2_RSSI_FAR` -100 et `L2_RSSI_NEAR` -80 dBm, rampe élevée à la puissance `L2_PROX_CURVE` 2 : douce de loin, elle se creuse surtout en approchant). Les parts s'additionnent en saturant : une voisine collée suffit, trois voisines moyennes aussi. Puis elle glisse vers la moyenne annoncée par les voisines (corégulation). Constante de temps 1,5 s (`L2_COH_TAU_S`). Seule : zéro.
 - Seule : arc-en-ciel linéaire sur toute la longueur, qui défile de gauche à droite (`L2_RAINBOW_FLOW` tours/s), luminosité fixe `L2_RAINBOW_B`.
 - En approchant : le même arc-en-ciel respire en sinus sur la mesure commune de 2,5 s, sommet au temps commun, autour de `L2_RAINBOW_B` avec une profondeur égale à la cohésion (de `L2_BREATH_MIN` à `L2_BREATH_MAX` quand elle est pleine).
 - Ensemble : souffle plein, synchronisé sur l'essaim.

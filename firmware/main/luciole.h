@@ -29,7 +29,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "6.4.0"
+#define L2_FW_VERSION       "6.5.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -98,10 +98,14 @@
 #define L2_RSSI_ALPHA       0.3f
 #define L2_RSSI_NEAR        -80     /* dBm : proximité pleine. Sur le hub (quelques cm), la paire la plus faible reçoit -76…-89 : à ce niveau on est collées */
 #define L2_RSSI_FAR         -100    /* dBm : proximité nulle (limite d'écoute) */
+/* Courbe de la proximité entre FAR et NEAR : rampe linéaire en dBm élevée à
+ * cette puissance. 1 = linéaire ; 2 = adoucie, à peine perceptible de loin
+ * (à mi-chemin, 0,25 au lieu de 0,5) et qui se creuse surtout en approchant. */
+#define L2_PROX_CURVE       2.0f
 
 /* Cohésion 0 (seule) .. 1 (ensemble), mise à jour à chaque trame de rendu.
  * Chaque voisine entendue apporte une part égale à sa proximité (RSSI entre
- * FAR et NEAR) ; les parts s'additionnent en saturant : cible = 1 - Π(1 - prox).
+ * FAR et NEAR, courbe L2_PROX_CURVE) ; les parts s'additionnent en saturant : cible = 1 - Π(1 - prox).
  * Puis on glisse vers la moyenne annoncée par les voisines (corégulation). */
 #define L2_COH_TAU_S        1.5f    /* constante de temps vers la cible : réactif en approchant */
 #define L2_COH_SOCIAL_TAU_S 4.0f    /* vers la moyenne des voisines */
