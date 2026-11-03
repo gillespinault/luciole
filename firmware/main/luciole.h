@@ -1,23 +1,24 @@
 /*
  * Luciole² — réglages. Tout est en microsecondes (esp_timer) sauf mention contraire.
  *
- * Un seul axe, « seule → ensemble », mesuré par la cohésion (règles locales,
- * sans coordinateur). Le ruban montre toujours le même arc-en-ciel, et c'est
- * son souffle qui dit si on est accompagnée :
- *  - seule         : arc-en-ciel qui défile lentement de gauche (pixel 0) à
- *                    droite, luminosité fixe
- *  - en approchant : le même arc-en-ciel respire sur le temps commun, de plus
- *                    en plus profondément à mesure que la cohésion monte
- *  - ensemble      : souffle plein, toutes les lucioles du groupe en même temps
- *  - onde          : appui court → front blanc qui traverse le ruban, le ruban
- *                    garde quelques secondes la couleur de l'onde, puis revient
- *                    à l'arc-en-ciel ; l'onde gagne les voisines de proche en
- *                    proche (ondulation)
- *  - veille        : appui long → éteint ou rallume la luciole, mais seulement
- *                    pour l'état « seule » : dès qu'elle entend des voisines,
- *                    elle respire quand même (depuis le noir), et se rendort
- *                    quand elles s'éloignent. Pas enregistré : allumée au
- *                    démarrage.
+ * Deux états et une horloge partagée. Rien d'autre n'est affiché, parce que
+ * rien d'autre n'est comparable entre deux vélos à dix mètres, de nuit :
+ *  - seule     : arc-en-ciel calme qui défile lentement de gauche (pixel 0)
+ *                à droite. Rien ne bat.
+ *  - ensemble  : dès qu'une voisine est entendue assez fort, le ruban prend la
+ *                couleur commune et bat le cœur du groupe : rythme fixe,
+ *                pleine amplitude, au même instant sur tous les vélos (le cycle
+ *                commun de 2,5 s sert de métronome). Fondu de deux secondes
+ *                entre les deux états.
+ *  - onde      : appui court → front qui traverse le ruban, le ruban garde la
+ *                couleur de l'onde avec des paillettes, puis le cœur reprend
+ *                dans cette nouvelle couleur : l'appui change durablement la
+ *                couleur commune. L'onde gagne tout le groupe tout de suite
+ *                (inondation). Période réfractaire : pas d'appui tant qu'une
+ *                animation est en cours, qu'elle vienne de moi ou d'une autre.
+ *  - veille    : appui long → la luciole seule est éteinte (ou rallumée) ;
+ *                avec des voisines elle bat quand même. Pas enregistré :
+ *                allumée au démarrage.
  *
  * Deux numéros de version, indépendants :
  *  - L2_FW_VERSION    : le firmware (rendu, réglages, cartes). Change souvent.
@@ -29,7 +30,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "6.5.0"
+#define L2_FW_VERSION       "7.0.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -38,7 +39,7 @@
 #define L2_RGB_DATA_GPIO    20      /* LED RGB intégrée (WS2812) */
 #define L2_RGB_POWER_GPIO   19      /* alimentation de cette LED */
 #define L2_BUTTON_GPIO      9       /* bouton utilisateur, actif bas */
-#define L2_BLUE_LED_GPIO    7       /* LED bleue : métronome */
+#define L2_BLUE_LED_GPIO    7       /* LED bleue : bat avec le cœur */
 #define L2_STRIP_GPIO       2       /* Grove, fil jaune = G2 (mesuré le 12 octobre) */
 #elif CONFIG_IDF_TARGET_ESP32S3
 #define L2_BOARD            "M5AtomS3Lite"
@@ -59,6 +60,7 @@
 
 /* LED intégrée */
 #define L2_MAX_BRIGHTNESS   255
+#define L2_NIGHTLIGHT       8       /* /255 : lueur de la LED intégrée quand le ruban est noir et le bouton prêt */
 
 /* Radio (fait partie du contrat radio : une unité sur un autre canal ou un autre mode est invisible) */
 #define L2_WIFI_CHANNEL     1
@@ -75,7 +77,7 @@
 #define L2_BEACON_CHANNEL_RATE 60.0f
 #define L2_BEACON_MAX_MS    30000
 #define L2_CROWD_WINDOW_US  20000000 /* deux fenêtres tuilées : on compte sur 20 à 40 s */
-#define L2_CROWD_BITS       2048     /* 256 octets par fenêtre ; ~10 % de sous-estimation à 1000 unités */
+#define L2_CROWD_BITS       8192     /* 1 Ko par fenêtre ; ~6 % de sous-estimation à 1000 unités, 17 % à 3000 (2048 bits saturaient : 48 % à 3000) */
 
 /* Synchronisation de phase */
 #define L2_PHASE_GAIN       0.3f
@@ -84,68 +86,64 @@
 
 /* Voisines : la table garde les 16 plus fortes. Oubliées après L2_NEIGHBOR_TTL_US
  * ou quatre intervalles de balise si c'est plus long (en foule les balises sont
- * rares : une balise perdue ne doit pas faire tomber la cohésion). */
+ * rares : une balise perdue ne doit pas faire tomber le groupe). */
 #define L2_MAX_NEIGHBORS    16
 #define L2_NEIGHBOR_TTL_US  6000000
 #define L2_NEIGHBOR_TTL_INTERVALS 4
 #define L2_NEIGHBOR_REPLACE_DB 3    /* une inconnue ne remplace la plus faible que si elle est plus forte d'autant */
+#define L2_RSSI_ALPHA       0.3f
 /* En longue portée le récepteur descend vers -105 dBm : toute luciole entendue
- * compte comme voisine, le RSSI ne sert qu'à graduer la proximité (lien).
- * Mesures du 12 octobre : quelques cm sur le hub -36…-69 dBm, 7,5 m en
- * intérieur -93…-97 dBm. Le 13 octobre, hub : paire la plus faible -76…-89 dBm. */
+ * est en table (ENTER/LEAVE), et compte pour la couleur commune. */
 #define L2_RSSI_ENTER       -100
 #define L2_RSSI_LEAVE       -106
-#define L2_RSSI_ALPHA       0.3f
-#define L2_RSSI_NEAR        -80     /* dBm : proximité pleine. Sur le hub (quelques cm), la paire la plus faible reçoit -76…-89 : à ce niveau on est collées */
-#define L2_RSSI_FAR         -100    /* dBm : proximité nulle (limite d'écoute) */
-/* Courbe de la proximité entre FAR et NEAR : rampe linéaire en dBm élevée à
- * cette puissance. 1 = linéaire ; 2 = adoucie, à peine perceptible de loin
- * (à mi-chemin, 0,25 au lieu de 0,5) et qui se creuse surtout en approchant. */
-#define L2_PROX_CURVE       2.0f
 
-/* Cohésion 0 (seule) .. 1 (ensemble), mise à jour à chaque trame de rendu.
- * Chaque voisine entendue apporte une part égale à sa proximité (RSSI entre
- * FAR et NEAR, courbe L2_PROX_CURVE) ; les parts s'additionnent en saturant : cible = 1 - Π(1 - prox).
- * Puis on glisse vers la moyenne annoncée par les voisines (corégulation). */
-#define L2_COH_TAU_S        1.5f    /* constante de temps vers la cible : réactif en approchant */
-#define L2_COH_SOCIAL_TAU_S 4.0f    /* vers la moyenne des voisines */
+/* Ensemble : une voisine entendue au-dessus de TOGETHER (signal lissé) nous
+ * met ensemble ; on le reste tant qu'elle est au-dessus d'APART et vue depuis
+ * moins de HOLD (ou 2,5 intervalles de balise, en foule). Un seuil, pas une
+ * courbe. Mesures du 12 octobre : quelques cm sur le hub -36…-89 dBm, 7,5 m
+ * en intérieur -93…-97 dBm. */
+#define L2_RSSI_TOGETHER    -92
+#define L2_RSSI_APART       -99
+#define L2_TOGETHER_HOLD_US 6000000
+#define L2_TOGETHER_HOLD_INTERVALS 2.5f
+#define L2_TOGETHER_FADE_S  0.7f    /* constante de temps du fondu seule ↔ ensemble (~2 s) */
 
-/* Arc-en-ciel : dégradé plein spectre sur toute la longueur du ruban, qui
- * défile vers la droite à L2_RAINBOW_FLOW tours/s (un tour = le motif complet
- * a parcouru le ruban). Seule, luminosité fixe L2_RAINBOW_B. */
-#define L2_RAINBOW_B        0.45f
+/* Couleur commune, degrés : moyenne circulaire des voisines entendues, et
+ * chaque onde l'emporte (teinte opposée à ±40° de hasard). Pas de dérive. */
+#define L2_HUE_TAU_S        3.0f
+#define L2_WAVE_HUE_TURN    180.0f
+#define L2_WAVE_HUE_SPREAD  80.0f
+
+/* Arc-en-ciel (seule) : dégradé plein spectre sur le ruban, qui défile à
+ * L2_RAINBOW_FLOW tours/s, luminosité L2_RAINBOW_B. */
+#define L2_RAINBOW_B        0.7f
 #define L2_RAINBOW_FLOW     0.10f
-/* Souffle : sinus sur la mesure commune (L2_BAR_US), sommet au temps commun,
- * appliqué à tout le ruban. Autour de L2_RAINBOW_B, profondeur = cohésion :
- * de MIN à MAX quand elle est pleine. */
-#define L2_BREATH_MIN       0.03f
-#define L2_BREATH_MAX       1.0f
 
-/* Couleur par consensus, degrés */
-#define L2_HUE_TAU_S        3.0f    /* vers la moyenne circulaire des voisines */
-#define L2_HUE_DRIFT_DPS    2.4f    /* la couleur commune voyage : un tour en 2,5 min, même rythme partout */
-#define L2_HUE_WANDER_DPS   8.0f    /* seule : vagabondage aléatoire en plus */
-#define L2_HUE_WAVE_GAIN    1.0f    /* trace laissée par une onde : on adopte la couleur de l'origine */
+/* Cœur (ensemble) : L2_HEART_BPB battements par cycle commun de 2,5 s, donc
+ * 48 bpm à 2, 72 à 3, 96 à 4. Un nombre entier par cycle garde toutes les
+ * lucioles alignées sans horloge absolue. Forme « lub-dub » : attaque nette,
+ * décroissance exponentielle, deuxième coup plus faible. Repos à FLOOR. */
+#define L2_HEART_BPB        3
+#define L2_HEART_FLOOR      0.25f
+#define L2_HEART_TAU_MS     120
+#define L2_HEART_DUB        0.6f
+#define L2_HEART_GAP_MS     180
 
-/* Onde (ondulation de proche en proche, sans accusé ni destinataire).
- * Appui → je joue tout de suite et je diffuse (origine, id, saut 0, teinte).
- * Première copie entendue → je la jouerai dans (1 - proximité) × SPREAD :
- * les proches d'abord, l'ondulation s'éloigne de l'origine. Puis je rediffuse
- * une fois (saut + 1), les lointaines d'abord (SWEEP + SPREAD × (1 + proximité)),
- * sauf si j'ai déjà entendu SUPPRESS copies : mes voisines s'en sont chargées.
- * Une lecture par seconde, une rediffusion par 1,5 s : les appuis concurrents
- * se superposent sans tempête ; au-delà, une onde en retard est abandonnée. */
+/* Onde (inondation de proche en proche, sans accusé ni destinataire).
+ * Appui → je joue tout de suite, j'adopte la couleur, je diffuse (origine, id,
+ * saut 0, teinte). Première copie entendue → j'adopte la couleur, je joue si
+ * rien n'est en cours, et je rediffuse une fois dans 0…JITTER, sauf si j'ai
+ * déjà entendu SUPPRESS copies : mes voisines s'en sont chargées. RELAY_MIN
+ * borne mon débit de rediffusion ; une rediffusion en retard de LATE est
+ * abandonnée. Période réfractaire : pas d'appui pendant une animation. */
 #define L2_BUTTON_ENABLED   1
 #define L2_WAVE_SWEEP_US    500000  /* traversée du ruban */
 #define L2_WAVE_TRAIL_US    3000000 /* traînée après le passage */
-#define L2_WAVE_SPREAD_US   1500000 /* étalement du délai de lecture selon la proximité */
-#define L2_WAVE_MAX_HOP     12      /* sauts radio au plus */
+#define L2_WAVE_JITTER_US   150000  /* rediffusion dans 0…JITTER après la première copie */
 #define L2_WAVE_SUPPRESS    3       /* copies entendues au-delà desquelles on ne rediffuse pas */
-#define L2_WAVE_RELAY_JITTER_US 200000
-#define L2_WAVE_RELAY_MIN_US 1500000 /* au plus une rediffusion toutes les 1,5 s */
-#define L2_WAVE_MIN_PLAY_US 1000000 /* au plus une onde jouée par seconde */
-#define L2_WAVE_LATE_US     4000000 /* lecture ou rediffusion en retard de 4 s : abandonnée */
-#define L2_WAVE_MIN_EMIT_US 10000000 /* au plus une onde émise toutes les 10 s */
+#define L2_WAVE_RELAY_MIN_US 200000 /* au plus une rediffusion toutes les 200 ms */
+#define L2_WAVE_LATE_US     2000000 /* rediffusion en retard de 2 s : abandonnée */
+#define L2_WAVE_MAX_HOP     12      /* sauts radio au plus */
 #define L2_WAVE_RECORDS     32      /* ondes récentes en mémoire (dédoublonnage) */
 #define L2_WAVE_FORGET_US   60000000
 #define L2_BUTTON_DEBOUNCE_MS 30
@@ -155,26 +153,28 @@
 /* Rendu */
 #define L2_RENDER_MS        10
 #define L2_GAMMA            2.2f    /* fondus perçus comme linéaires */
-#define L2_TICK_US          15000
+#define L2_TICK_US          15000   /* LED bleue : éclair à chaque battement */
 
-/* Ruban SK6812 sur le Grove. 5 V = VBUS direct. Le nombre de LED est une
+/* Ruban SK6812 sur le Grove. 5 V = VBUS direct, derrière le fusible
+ * réarmable de 1 A de la carte (NanoC6 et AtomS3). Le nombre de LED est une
  * configuration (NVS, clé « leds », commande série « leds N »), pas une
- * constante : un seul binaire par carte. Le plafond de luminosité suit le
- * nombre de LED pour rester sous L2_STRIP_BUDGET_MA. */
+ * constante : un seul binaire par carte. La luminosité est bornée par un
+ * limiteur de courant par image (L2_STRIP_PEAK_MA, estimation à L2_LED_MA
+ * par composante à fond), pas par un plafond calculé pour le tout blanc. */
 #define L2_STRIP_ENABLED        1
 #define L2_STRIP_TEST           0
 #define L2_STRIP_LEDS_DEFAULT   10
 #define L2_STRIP_LEDS_MAX       144
-#define L2_STRIP_MAX_BRIGHTNESS 120     /* ~47 %, plafond absolu quel que soit le nombre de LED */
-#define L2_STRIP_BUDGET_MA      300     /* courant de pic admis pour le ruban (tout blanc) */
-#define L2_LED_FULL_MA          60      /* une SK6812 blanche à fond */
+#define L2_STRIP_MAX_BRIGHTNESS 255     /* plafond de goût, /255 */
+#define L2_STRIP_PEAK_MA        900     /* courant de pic admis pour le ruban, par image */
+#define L2_LED_MA               20      /* une composante (R, G ou B) à fond : 20 mA tant qu'on n'a pas mesuré (fiches SK6812 : 8 à 12) */
+#define L2_LED_IDLE_MA          0.8f    /* une SK6812 éteinte */
 
 /* Configuration persistante (NVS) */
 #define L2_NVS_NAMESPACE    "luciole"
 #define L2_NVS_KEY_LEDS     "leds"
 #define L2_NVS_KEY_NAME     "name"
 #define L2_NAME_LEN         8       /* surnom, 7 caractères + fin de chaîne */
-#define L2_LED_CHANNEL_MA   20      /* une composante (R, G ou B) à fond : estimation du courant */
 
 /* ------------------------------------------------------------------ */
 /* Contrat radio v1 (13 octobre 2026). Tout ce qui suit est partagé par  */
@@ -187,13 +187,15 @@
 /*  - un nouveau champ va toujours à la fin d'une trame existante, avec */
 /*    une valeur par défaut qui garde l'ancien comportement ;           */
 /*  - la trame d'onde ne se remplace jamais : une ancienne luciole qui  */
-/*    ne la comprendrait pas ne la rediffuserait pas, et l'ondulation   */
+/*    ne la comprendrait pas ne la rediffuserait pas, et l'inondation   */
 /*    aurait des trous ;                                                */
 /*  - canal, mode longue portée, débit, cycle de 2,5 s et échelles      */
 /*    (teinte 0-255, cohésion 0-255, phase en µs) ne changent pas.      */
 /*  - L2_PROTO_VERSION n'est incrémenté que si l'une de ces règles doit */
 /*    être rompue ; L2_PROTO_MIN_VERSION reste à la plus ancienne       */
 /*    version encore lisible.                                           */
+/* Depuis le firmware 7 : « cohésion » annoncée = 255 ensemble, 0 seule */
+/* (une luciole 6.x la lit comme une cohésion pleine ou nulle).         */
 #define L2_PROTO_VERSION     1
 #define L2_PROTO_MIN_VERSION 1
 #define L2_MSG_BEACON    0
@@ -211,9 +213,9 @@ typedef struct __attribute__((packed)) {
 #define L2_BEACON_MIN_LEN 16
 typedef struct __attribute__((packed)) {
     l2_hdr_t hdr;
-    uint8_t  density;       /* voisines à portée (0-255), information */
+    uint8_t  density;       /* voisines proches (0-255), information */
     uint8_t  hue;           /* teinte commune, 0-255 pour 0-360° */
-    uint8_t  coh;           /* cohésion, 0-255 */
+    uint8_t  coh;           /* cohésion, 0-255 (firmware 7 : 255 ensemble, 0 seule) */
     uint8_t  flags;         /* réservé, 0 : capacités futures */
     uint32_t phase_us;      /* position dans le cycle de L2_BAR_US à l'envoi */
     uint32_t seq;           /* compteur d'émission */

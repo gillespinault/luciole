@@ -25,11 +25,11 @@ Web Serial exige HTTPS ou `localhost` : pour flasher depuis un autre poste, il f
 
 ## Régler une luciole sans la reflasher
 
-https://lucioles.limn-labs.xyz/luciole/ : la luciole branchée en USB envoie son état en JSON (commande `stream`) et accepte `set clé valeur` pour chacun de ses 28 réglages, enregistrés en NVS. La page trace le signal des voisines avec les seuils glissables, la cohésion, la phase, la radio et les ondes ; enregistre en CSV avec GPS ; gère des profils. Sur Android, elle parle à la luciole par WebUSB avec sa propre couche CDC (le Web Serial de Chrome Android ne sait pas ouvrir un appareil USB). Détail des commandes dans `firmware/README.md`.
+https://lucioles.limn-labs.xyz/luciole/ : la luciole branchée en USB envoie son état en JSON (commande `stream`) et accepte `set clé valeur` pour chacun de ses 16 réglages, enregistrés en NVS. La page trace le signal des voisines avec les seuils « ensemble » glissables, l'état, la phase, la radio et les ondes ; enregistre en CSV avec GPS ; gère des profils. Sur Android, elle parle à la luciole par WebUSB avec sa propre couche CDC (le Web Serial de Chrome Android ne sait pas ouvrir un appareil USB). Détail des commandes dans `firmware/README.md`.
 
 ## Faire évoluer le firmware sans casser l'essaim
 
-Le contrat radio v1 (`firmware/main/luciole.h`, section « Contrat radio ») fixe le canal, le mode longue portée, le cycle de 2,5 s et le format des trames. Une luciole déjà distribuée doit rester membre de l'essaim : les nouveaux champs vont en fin de trame, les octets inconnus sont ignorés, la trame d'onde ne se remplace jamais. Le rendu (jauge, couleurs, ondulation) est local et change librement. Vérifier les changements d'échelle dans `sim/index.html` avant de flasher.
+Le contrat radio v1 (`firmware/main/luciole.h`, section « Contrat radio ») fixe le canal, le mode longue portée, le cycle de 2,5 s et le format des trames. Une luciole déjà distribuée doit rester membre de l'essaim : les nouveaux champs vont en fin de trame, les octets inconnus sont ignorés, la trame d'onde ne se remplace jamais. Le rendu (arc-en-ciel, cœur, couleurs, onde) est local et change librement. Vérifier les changements d'échelle dans `sim/index.html` avant de flasher.
 
 ## Licence
 
