@@ -16,9 +16,11 @@
  *                couleur commune. L'onde gagne tout le groupe tout de suite
  *                (inondation). Période réfractaire : pas d'appui tant qu'une
  *                animation est en cours, qu'elle vienne de moi ou d'une autre.
+ *                Une onde entendue pendant la traînée relance l'animation ;
+ *                pendant le front, elle ne change que la couleur.
  *  - veille    : appui long → la luciole seule est éteinte (ou rallumée) ;
- *                avec des voisines elle bat quand même. Pas enregistré :
- *                allumée au démarrage.
+ *                avec des voisines elle bat quand même, et une onde reste
+ *                visible. Pas enregistré : allumée au démarrage.
  *
  * Deux numéros de version, indépendants :
  *  - L2_FW_VERSION    : le firmware (rendu, réglages, cartes). Change souvent.
@@ -30,7 +32,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "7.0.0"
+#define L2_FW_VERSION       "7.0.1"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -99,14 +101,14 @@
 
 /* Ensemble : une voisine entendue au-dessus de TOGETHER (signal lissé) nous
  * met ensemble ; on le reste tant qu'elle est au-dessus d'APART et vue depuis
- * moins de HOLD (ou 2,5 intervalles de balise, en foule). Un seuil, pas une
- * courbe. Mesures du 12 octobre : quelques cm sur le hub -36…-89 dBm, 7,5 m
+ * moins de HOLD (ou 2,5 intervalles de balise, en foule : une balise perdue
+ * ne doit pas nous rendre seules). Un seuil, pas une courbe. Mesures du 12 octobre : quelques cm sur le hub -36…-89 dBm, 7,5 m
  * en intérieur -93…-97 dBm. */
 #define L2_RSSI_TOGETHER    -92
 #define L2_RSSI_APART       -99
-#define L2_TOGETHER_HOLD_US 6000000
+#define L2_TOGETHER_HOLD_US 3000000
 #define L2_TOGETHER_HOLD_INTERVALS 2.5f
-#define L2_TOGETHER_FADE_S  0.7f    /* constante de temps du fondu seule ↔ ensemble (~2 s) */
+#define L2_TOGETHER_FADE_S  0.35f   /* constante de temps du fondu seule ↔ ensemble (~1 s) */
 
 /* Couleur commune, degrés : moyenne circulaire des voisines entendues, et
  * chaque onde l'emporte (teinte opposée à ±40° de hasard). Pas de dérive. */

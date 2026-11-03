@@ -64,7 +64,7 @@ typedef struct {
 
 /* Une onde connue : où j'en suis avec elle. */
 typedef struct {
-    bool     used, mine, relayed;
+    bool     used, relayed;
     uint8_t  origin[6];
     uint16_t id;
     uint8_t  hue, hop;      /* hop : plus petit saut entendu */
@@ -387,14 +387,18 @@ static void wave_send(const l2_wave_rec_t *r, uint8_t hop)
 }
 
 /* Une onde arrive (la mienne ou une entendue) : la couleur commune devient
- * celle de l'onde, et l'animation part si rien n'est en cours. */
-static void wave_take(const l2_wave_rec_t *r, int64_t now)
+ * celle de l'onde, et l'animation part, sauf si un front est en train de
+ * traverser (on ne hache pas un front) : alors la couleur change seulement.
+ * Pendant la traînée, l'animation repart : une voisine dont l'animation
+ * finit 100 ms après la mienne doit jouer l'onde que je viens de lancer. */
+static bool wave_take(const l2_wave_rec_t *r, int64_t now)
 {
     float hue = r->hue * 360.0f / 255.0f;
     s_hue = hue;
-    if (animating()) return;        /* période réfractaire : la couleur change, pas l'animation */
+    if (animating() && now - s_play_start < L2_WAVE_SWEEP_US) return false;
     s_play_start = now;
     s_play_hue = hue;
+    return true;
 }
 
 /* Copie reçue. La première fixe l'heure de rediffusion ; les suivantes comptent
@@ -407,11 +411,11 @@ static void handle_wave(const l2_rx_t *rx)
     if (!r) {
         r = wave_add(w->origin, w->id, w->hue, w->hop, rx->rx_us);
         r->relay_at = rx->rx_us + (int64_t)(frand() * L2_WAVE_JITTER_US);
-        ESP_LOGI(TAG, "onde %02x%02x#%u entendue de %02x%02x (saut %u, %d dBm)%s", w->origin[4], w->origin[5], w->id,
-                 rx->mac[4], rx->mac[5], w->hop, rx->rssi, animating() ? ", animation en cours : couleur seulement" : "");
         wave_event("heard", r, w->hop, rx->rssi, rx->rx_us);
-        wave_take(r, rx->rx_us);
-        if (animating() && s_play_start == rx->rx_us) wave_event("play", r, w->hop, rx->rssi, rx->rx_us);
+        bool played = wave_take(r, rx->rx_us);
+        ESP_LOGI(TAG, "onde %02x%02x#%u entendue de %02x%02x (saut %u, %d dBm)%s", w->origin[4], w->origin[5], w->id,
+                 rx->mac[4], rx->mac[5], w->hop, rx->rssi, played ? "" : ", front en cours : couleur seulement");
+        if (played) wave_event("play", r, w->hop, rx->rssi, rx->rx_us);
     }
     if (r->copies < 255) r->copies++;
     if (w->hop < r->hop) r->hop = w->hop;
@@ -424,7 +428,7 @@ static void wave_emit(int64_t now)
      * opposée, à ±40° de hasard pour que deux appuis ne se ressemblent pas. */
     float wave_hue = norm_deg(s_hue + L2_WAVE_HUE_TURN + (frand() - 0.5f) * L2_WAVE_HUE_SPREAD);
     l2_wave_rec_t *r = wave_add(s_mac, ++s_wave_id, (uint8_t)(wave_hue * 255.0f / 360.0f), 0, now);
-    r->mine = true; r->relayed = true;
+    r->relayed = true;
     ESP_LOGI(TAG, "bouton : onde #%u emise, teinte %.0f -> %.0f", r->id, s_hue, wave_hue);
     wave_event("emit", r, 0, 0, now);
     wave_take(r, now);
@@ -723,6 +727,10 @@ static void render(int64_t now, float px[L2_STRIP_LEDS_MAX][3])
         float rain[3]; hue_to_rgb(360.0f * (u - s_rainbow_pos), rain);
         for (int k = 0; k < 3; k++) px[p][k] = rain[k] * L2_RAINBOW_B * (1 - f) + solid[k] * heart * f;
     }
+    /* Veille : seule, le fond s'éteint ; ensemble, il bat quand même. Une onde
+     * reste visible dans tous les cas : c'est un acte, pas un état. */
+    float lit = f + (1 - f) * clamp01(s_awake_f);
+    if (lit < 0.999f) for (int p = 0; p < N; p++) for (int k = 0; k < 3; k++) px[p][k] *= lit;
     /* Onde : front blanc qui traverse, halo dans la couleur de l'onde, puis le
      * ruban entier reste dans cette couleur et s'éteint lentement avec des
      * paillettes ; le rendu normal revient à mesure. Pendant le passage, il
@@ -754,9 +762,6 @@ static void render(int64_t now, float px[L2_STRIP_LEDS_MAX][3])
             }
         }
     }
-    /* Veille : seule, le ruban s'éteint ; ensemble, il bat quand même. */
-    float lit = f + (1 - f) * clamp01(s_awake_f);
-    if (lit < 0.999f) for (int p = 0; p < N; p++) for (int k = 0; k < 3; k++) px[p][k] *= lit;
 }
 
 static void show(float px[L2_STRIP_LEDS_MAX][3])

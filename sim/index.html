@@ -80,7 +80,7 @@ for (const id of ids) {
   el.addEventListener('input', () => { upd(); if (['bikes','lucioles','peloton'].includes(id)) reset(); });
   upd();
 }
-const F = { sweep:0.5, trail:3, late:2, forget:60, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, hueTau:3, togetherFade:0.7,
+const F = { sweep:0.5, trail:3, late:2, forget:60, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, hueTau:3, togetherFade:0.35,
             heartBpb:3, heartFloor:0.25, heartTau:0.12, heartDub:0.6, heartGap:0.18, maxNeighbors:16, rssiFar:-100, beaconMax:30, beat:0.5 };
 
 /* ---------- Utilitaires ---------- */
@@ -158,7 +158,7 @@ function send(l, origin, id, hop, hue) {
 function take(l, hue, key) {
   l.hue = hue;
   const w = waves.get(key); if (w) { w.reached++; w.tLast = t; const ds = Math.min(Math.abs(bikeArr.s[l.bike] - w.s0), C - Math.abs(bikeArr.s[l.bike] - w.s0)); w.reach = Math.max(w.reach, ds); }
-  if (l.playStart >= 0) return;
+  if (l.playStart >= 0 && t - l.playStart < F.sweep) return;   /* front en cours : couleur seulement ; pendant la traînée, on relance */
   l.playStart = t; l.playHue = hue;
 }
 function receive(l, from, r, origin, id, hop, hue) {
