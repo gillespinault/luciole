@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# flash.sh — flashe un NanoC6 et affiche sa console quelques secondes.
+# flash.sh — flashe un NanoC6 ou un AtomS3 Lite et affiche sa console quelques
+# secondes. La puce est détectée sur chaque port (esp32c6 → build/, esp32s3 →
+# build-esp32s3/).
 #
 # Piège géré : le conteneur limn-adopt-bridge tient les ports série ouverts et
 # corrompt tout flash long ("Invalid head of packet", "chip stopped responding").
@@ -32,7 +34,7 @@ else
 fi
 # shellcheck disable=SC1090
 source "${IDF_EXPORT:-$HOME/esp/esp-idf-v5.5/export.sh}" >/dev/null 2>&1
-[ "$BUILD" = 1 ] && idf.py build | tail -2
+[ "$BUILD" = 1 ] && { idf.py build | tail -2; idf.py -B build-esp32s3 -D SDKCONFIG=build-esp32s3/sdkconfig set-target esp32s3 build | tail -2; }
 
 BRIDGE_RUNNING=false
 if docker inspect limn-adopt-bridge >/dev/null 2>&1; then
@@ -48,13 +50,24 @@ FAILED=()
 for P in "${PORTS[@]}"; do
   PORT="$(readlink -f "$P")"
   NAME="${P##*unit_}"; NAME="${NAME%-if00}"
-  OK=0
+  OK=0; CHIP=""; DIR=""
+  for TRY in 1 2 3; do
+    CHIP="$(python -m esptool --chip auto -p "$PORT" -b 115200 --before default_reset --after no_reset chip_id 2>/dev/null \
+            | sed -n 's/^Chip is \(ESP32-[CS][0-9]\).*/\1/p' | head -1 | tr 'A-Z' 'a-z' | tr -d -)"
+    [ -n "$CHIP" ] && break; sleep 2
+  done
+  case "$CHIP" in
+    esp32c6) DIR=build;;
+    esp32s3) DIR=build-esp32s3;;
+    *) echo "=== $PORT ($NAME) : puce non reconnue (« $CHIP »), ignoré"; FAILED+=("$NAME"); continue;;
+  esac
+  [ -f "$DIR/flash_args" ] || { echo "=== $PORT ($NAME) : $CHIP mais pas de $DIR/flash_args, compile d'abord"; FAILED+=("$NAME"); continue; }
   for TRY in 1 2 3 4 5; do
     BAUD=460800; [ "$TRY" -gt 1 ] && BAUD=115200   # plus lent, mais tient sur un hub capricieux
-    echo "=== flash $PORT ($NAME) essai $TRY à $BAUD bauds"
-    if (cd build && python -m esptool --chip esp32c6 -p "$PORT" -b "$BAUD" --before default_reset --after hard_reset \
+    echo "=== flash $PORT ($NAME, $CHIP) essai $TRY à $BAUD bauds"
+    if (cd "$DIR" && python -m esptool --chip "$CHIP" -p "$PORT" -b "$BAUD" --before default_reset --after hard_reset \
         write_flash "@flash_args") > /tmp/luciole-flash.log 2>&1; then
-      grep -E "Wrote 8" /tmp/luciole-flash.log; OK=1; break
+      grep -E "Wrote .* at 0x00010000" /tmp/luciole-flash.log || true; OK=1; break
     fi
     grep -E "rror|fatal" /tmp/luciole-flash.log | tail -1; sleep 2
   done
