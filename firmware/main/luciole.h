@@ -32,7 +32,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "7.0.1"
+#define L2_FW_VERSION       "7.0.2"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */

@@ -48,8 +48,9 @@ typedef struct {
     float    rssi_f;
     int8_t   last_rssi;
     uint8_t  level, hue, coh;
-    int64_t  diffs[3];
-    uint8_t  ndiffs;
+    int64_t  diffs[3];      /* trois derniers écarts de phase (anneau) */
+    uint8_t  diff_idx;      /* prochaine case à écrire, 0..2 */
+    uint8_t  ndiffs;        /* échantillons valides, plafonné à 3 */
     int64_t  last_diff_us;  /* dernier écart de phase retenu (médiane) */
     char     name[L2_NAME_LEN];
 } l2_neighbor_t;
@@ -331,8 +332,13 @@ static void handle_beacon(const l2_rx_t *rx)
 
     int64_t theirs = (int64_t)b->phase_us + L2_LINK_LATENCY_US;
     int64_t raw = wrap_half(theirs - phase_at(rx->rx_us));
-    n->diffs[n->ndiffs % 3] = raw;
-    if (n->ndiffs < 255) n->ndiffs++;
+    /* Anneau à index séparé : un compteur plafonné servant d'index figeait
+     * deux cases sur trois après 255 balises, et la médiane restait bornée
+     * par ces valeurs anciennes, donc dans la bande morte : plus aucune
+     * correction, dérive libre des quartz sur la nuit (vu le 5 novembre). */
+    n->diffs[n->diff_idx] = raw;
+    n->diff_idx = (n->diff_idx + 1) % 3;
+    if (n->ndiffs < 3) n->ndiffs++;
     int64_t diff = raw;
     if (n->ndiffs >= 3) {
         int64_t a = n->diffs[0], c = n->diffs[1], d = n->diffs[2];
