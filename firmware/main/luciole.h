@@ -32,7 +32,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "7.0.2"
+#define L2_FW_VERSION       "7.0.3"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -137,10 +137,14 @@
  * rien n'est en cours, et je rediffuse une fois dans 0…JITTER, sauf si j'ai
  * déjà entendu SUPPRESS copies : mes voisines s'en sont chargées. RELAY_MIN
  * borne mon débit de rediffusion ; une rediffusion en retard de LATE est
- * abandonnée. Période réfractaire : pas d'appui pendant une animation. */
+ * abandonnée. Période réfractaire : pas d'appui pendant une animation.
+ * L'origine émet sa trame deux fois (la seconde après REPEAT) : une trame
+ * directe se perd même à 30 cm, et un groupe serré ne rediffuse que deux
+ * fois. La seconde copie de l'origine ne compte pas pour la suppression. */
 #define L2_BUTTON_ENABLED   1
 #define L2_WAVE_SWEEP_US    500000  /* traversée du ruban */
 #define L2_WAVE_TRAIL_US    3000000 /* traînée après le passage */
+#define L2_WAVE_REPEAT_US   70000   /* seconde émission par l'origine */
 #define L2_WAVE_JITTER_US   150000  /* rediffusion dans 0…JITTER après la première copie */
 #define L2_WAVE_SUPPRESS    3       /* copies entendues au-delà desquelles on ne rediffuse pas */
 #define L2_WAVE_RELAY_MIN_US 200000 /* au plus une rediffusion toutes les 200 ms */

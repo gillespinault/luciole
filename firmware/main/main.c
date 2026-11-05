@@ -66,11 +66,13 @@ typedef struct {
 /* Une onde connue : où j'en suis avec elle. */
 typedef struct {
     bool     used, relayed;
+    bool     from_origin;   /* la trame de l'origine (saut 0) a été entendue */
     uint8_t  origin[6];
     uint16_t id;
     uint8_t  hue, hop;      /* hop : plus petit saut entendu */
-    uint8_t  copies;        /* copies entendues */
+    uint8_t  copies;        /* copies entendues (la répétition de l'origine n'en est pas une) */
     int64_t  t_first, relay_at;
+    int64_t  repeat_at;     /* mes ondes : seconde émission due, -1 sinon */
 } l2_wave_rec_t;
 
 static l2_neighbor_t  s_neighbors[L2_MAX_NEIGHBORS];
@@ -351,10 +353,18 @@ static void handle_beacon(const l2_rx_t *rx)
 
 /* ------------------------------------------------------------------ */
 /* Ondes                                                               */
-static l2_wave_rec_t *wave_find(const uint8_t *origin, uint16_t id)
+/* Un enregistrement périmé ne compte plus : les numéros repartent de zéro à
+ * chaque démarrage (tirés au hasard depuis la 7.0.3), et les premiers appuis
+ * d'une unité rebranchée passaient pour des doublons tant qu'aucune autre
+ * onde n'était venue faire le ménage. */
+static l2_wave_rec_t *wave_find(const uint8_t *origin, uint16_t id, int64_t now)
 {
-    for (int i = 0; i < L2_WAVE_RECORDS; i++)
-        if (s_waves[i].used && s_waves[i].id == id && mac_eq(s_waves[i].origin, origin)) return &s_waves[i];
+    for (int i = 0; i < L2_WAVE_RECORDS; i++) {
+        l2_wave_rec_t *r = &s_waves[i];
+        if (!r->used) continue;
+        if (now - r->t_first > L2_WAVE_FORGET_US) { r->used = false; continue; }
+        if (r->id == id && mac_eq(r->origin, origin)) return r;
+    }
     return NULL;
 }
 
@@ -373,7 +383,7 @@ static l2_wave_rec_t *wave_add(const uint8_t *origin, uint16_t id, uint8_t hue, 
     slot->used = true;
     memcpy(slot->origin, origin, 6);
     slot->id = id; slot->hue = hue; slot->hop = hop; slot->t_first = now;
-    slot->relay_at = -1;
+    slot->relay_at = slot->repeat_at = -1;
     return slot;
 }
 
@@ -413,7 +423,7 @@ static void handle_wave(const l2_rx_t *rx)
 {
     const l2_wave_t *w = (const l2_wave_t *)rx->data;
     if (mac_eq(w->origin, s_mac)) return;
-    l2_wave_rec_t *r = wave_find(w->origin, w->id);
+    l2_wave_rec_t *r = wave_find(w->origin, w->id, rx->rx_us);
     if (!r) {
         r = wave_add(w->origin, w->id, w->hue, w->hop, rx->rx_us);
         r->relay_at = rx->rx_us + (int64_t)(frand() * L2_WAVE_JITTER_US);
@@ -423,7 +433,11 @@ static void handle_wave(const l2_rx_t *rx)
                  rx->mac[4], rx->mac[5], w->hop, rx->rssi, played ? "" : ", front en cours : couleur seulement");
         if (played) wave_event("play", r, w->hop, rx->rssi, rx->rx_us);
     }
-    if (r->copies < 255) r->copies++;
+    /* La seconde trame de l'origine ne compte pas : sinon elle suffirait,
+     * avec une seule rediffusion, à faire taire tout le groupe. */
+    bool again = (w->hop == 0 && r->from_origin);
+    if (w->hop == 0) r->from_origin = true;
+    if (!again && r->copies < 255) r->copies++;
     if (w->hop < r->hop) r->hop = w->hop;
 }
 
@@ -435,19 +449,27 @@ static void wave_emit(int64_t now)
     float wave_hue = norm_deg(s_hue + L2_WAVE_HUE_TURN + (frand() - 0.5f) * L2_WAVE_HUE_SPREAD);
     l2_wave_rec_t *r = wave_add(s_mac, ++s_wave_id, (uint8_t)(wave_hue * 255.0f / 360.0f), 0, now);
     r->relayed = true;
+    r->repeat_at = now + L2_WAVE_REPEAT_US;
     ESP_LOGI(TAG, "bouton : onde #%u emise, teinte %.0f -> %.0f", r->id, s_hue, wave_hue);
     wave_event("emit", r, 0, 0, now);
     wave_take(r, now);
     wave_send(r, 0);
 }
 
-/* Rediffusions dues : supprimées si les voisines ont déjà couvert, bornées en
- * débit, abandonnées si trop en retard (foule qui appuie beaucoup). */
+/* Seconde émission de mes ondes, puis rediffusions dues : supprimées si les
+ * voisines ont déjà couvert, bornées en débit, abandonnées si trop en retard
+ * (foule qui appuie beaucoup). */
 static void wave_tick(int64_t now)
 {
     for (int i = 0; i < L2_WAVE_RECORDS; i++) {
         l2_wave_rec_t *r = &s_waves[i];
-        if (!r->used || r->relayed || r->relay_at < 0 || now < r->relay_at) continue;
+        if (!r->used) continue;
+        if (r->repeat_at >= 0 && now >= r->repeat_at) {
+            r->repeat_at = -1;
+            wave_send(r, 0);
+            wave_event("repeat", r, 0, 0, now);
+        }
+        if (r->relayed || r->relay_at < 0 || now < r->relay_at) continue;
         if (r->copies >= L2_WAVE_SUPPRESS || r->hop + 1 > L2_WAVE_MAX_HOP) {
             r->relayed = true;
             ESP_LOGI(TAG, "onde %02x%02x#%u : pas rediffusee (%u copies, saut %u)", r->origin[4], r->origin[5], r->id, r->copies, r->hop);
@@ -965,6 +987,7 @@ void app_main(void)
     led_init();
     radio_init();
     s_offset_us = esp_random() % L2_BAR_US;
+    s_wave_id = (uint16_t)esp_random();     /* numéros d'onde : jamais les mêmes qu'avant un redémarrage */
     s_native_hue = (s_mac[3] * 97 + s_mac[4] * 31 + s_mac[5] * 151) % 360;
     s_hue = s_native_hue;
     ESP_LOGI(TAG, "Luciole² %s | fw %s | carte %s | protocole %d (min %d) | canal %d | %d temps x %d ms | teinte propre %.0f | ruban %d LED, plafond %d/255, pic %.0f mA",

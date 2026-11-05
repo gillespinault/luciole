@@ -80,7 +80,7 @@ for (const id of ids) {
   el.addEventListener('input', () => { upd(); if (['bikes','lucioles','peloton'].includes(id)) reset(); });
   upd();
 }
-const F = { sweep:0.5, trail:3, late:2, forget:60, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, hueTau:3, togetherFade:0.35,
+const F = { sweep:0.5, trail:3, late:2, forget:60, repeat:0.07, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, hueTau:3, togetherFade:0.35,
             heartBpb:3, heartFloor:0.25, heartTau:0.12, heartDub:0.6, heartGap:0.18, maxNeighbors:16, rssiFar:-100, beaconMax:30, beat:0.5 };
 
 /* ---------- Utilitaires ---------- */
@@ -165,8 +165,10 @@ function receive(l, from, r, origin, id, hop, hue) {
   if (origin === l.name) return;
   const key = waveKey(origin, id);
   let rec = l.recs.get(key);
-  if (!rec) { rec = { hop, hue, copies:0, tFirst:t, relayAt:t + Math.random() * P.jitter / 1000, relayed:false }; l.recs.set(key, rec); take(l, hue, key); }
-  rec.copies++; rec.hop = Math.min(rec.hop, hop);
+  if (!rec) { rec = { hop, hue, copies:0, fromOrigin:false, tFirst:t, relayAt:t + Math.random() * P.jitter / 1000, relayed:false }; l.recs.set(key, rec); take(l, hue, key); }
+  if (!(hop === 0 && rec.fromOrigin)) rec.copies++;     /* la seconde trame de l'origine ne compte pas pour la suppression */
+  if (hop === 0) rec.fromOrigin = true;
+  rec.hop = Math.min(rec.hop, hop);
 }
 function emit(l) {
   if (l.playStart >= 0) return false;                   /* période réfractaire */
@@ -174,7 +176,7 @@ function emit(l) {
   const key = waveKey(l.name, id);
   const w = { key, origin:l.name, id, t0:t, tLast:t, hue, reached:0, tx:0, reach:0, s0:bikeArr.s[l.bike] };
   waves.set(key, w); waveLog.unshift(w); if (waveLog.length > 12) waveLog.pop();
-  l.recs.set(key, { hop:0, hue, copies:0, tFirst:t, relayAt:-1, relayed:true });
+  l.recs.set(key, { hop:0, hue, copies:0, tFirst:t, relayAt:-1, relayed:true, repeatAt:t + F.repeat });   /* l'origine émet deux fois */
   take(l, hue, key);
   send(l, l.name, id, 0, hue);
   return true;
@@ -182,6 +184,7 @@ function emit(l) {
 function waveTick(l) {
   for (const [key, rec] of l.recs) {
     if (t - rec.tFirst > F.forget) { l.recs.delete(key); continue; }
+    if (rec.repeatAt >= 0 && t >= rec.repeatAt) { rec.repeatAt = -1; const [origin, id] = dueKeyParts(key); send(l, origin, parseInt(id), 0, rec.hue); }
     if (rec.relayed || rec.relayAt < 0 || t < rec.relayAt) continue;
     if (rec.copies >= P.suppress || rec.hop + 1 > P.maxHop) rec.relayed = true;
     else if (t - rec.relayAt > F.late) rec.relayed = true;
