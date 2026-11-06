@@ -12,8 +12,9 @@
  *                entre les deux états.
  *  - onde      : appui court → front qui traverse le ruban, le ruban garde la
  *                couleur de l'onde avec des paillettes, puis le cœur reprend
- *                dans cette nouvelle couleur : l'appui change durablement la
- *                couleur commune. L'onde gagne tout le groupe tout de suite
+ *                dans cette couleur et revient en une demi-minute à l'ambre,
+ *                la couleur de base : l'appui colore le groupe un moment, pas
+ *                pour de bon. L'onde gagne tout le groupe tout de suite
  *                (inondation). Période réfractaire : pas d'appui tant qu'une
  *                animation est en cours, qu'elle vienne de moi ou d'une autre.
  *                Une onde entendue pendant la traînée relance l'animation ;
@@ -32,7 +33,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "7.0.3"
+#define L2_FW_VERSION       "7.1.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -110,11 +111,18 @@
 #define L2_TOGETHER_HOLD_INTERVALS 2.5f
 #define L2_TOGETHER_FADE_S  0.35f   /* constante de temps du fondu seule ↔ ensemble (~1 s) */
 
-/* Couleur commune, degrés : moyenne circulaire des voisines entendues, et
- * chaque onde l'emporte (teinte opposée à ±40° de hasard). Pas de dérive. */
+/* Couleur commune, degrés. Au repos, l'ambre (L2_BASE_HUE) : chaud comme un
+ * cœur, mais pas rouge, qui est la couleur d'un feu arrière et se noie dans
+ * ceux des autres vélos ; deux canaux allumés, donc plus visible que le rouge
+ * aux faibles niveaux. Chaque onde l'emporte avec une teinte tirée au hasard
+ * à plus de L2_WAVE_HUE_MIN de la base, puis la teinte revient vers la base
+ * (constante de temps L2_BASE_TAU_S) tout en suivant la moyenne circulaire
+ * des voisines entendues (L2_HUE_TAU_S), ce qui garde le groupe accordé
+ * pendant le retour. Pas de dérive. */
+#define L2_BASE_HUE         30.0f
+#define L2_BASE_TAU_S       10.0f
 #define L2_HUE_TAU_S        3.0f
-#define L2_WAVE_HUE_TURN    180.0f
-#define L2_WAVE_HUE_SPREAD  80.0f
+#define L2_WAVE_HUE_MIN     60.0f
 
 /* Arc-en-ciel (seule) : dégradé plein spectre sur le ruban, qui défile à
  * L2_RAINBOW_FLOW tours/s, luminosité L2_RAINBOW_B. */

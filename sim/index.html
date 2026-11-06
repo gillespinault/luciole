@@ -80,7 +80,7 @@ for (const id of ids) {
   el.addEventListener('input', () => { upd(); if (['bikes','lucioles','peloton'].includes(id)) reset(); });
   upd();
 }
-const F = { sweep:0.5, trail:3, late:2, forget:60, repeat:0.07, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, hueTau:3, togetherFade:0.35,
+const F = { sweep:0.5, trail:3, late:2, forget:60, repeat:0.07, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, baseHue:30, baseTau:10, hueTau:3, waveHueMin:60, togetherFade:0.35,
             heartBpb:3, heartFloor:0.25, heartTau:0.12, heartDub:0.6, heartGap:0.18, maxNeighbors:16, rssiFar:-100, beaconMax:30, beat:0.5 };
 
 /* ---------- Utilitaires ---------- */
@@ -108,7 +108,7 @@ function reset() {
   const picks = new Set(); while (picks.size < Math.min(P.lucioles, n)) picks.add(Math.floor(Math.random() * n));
   for (const i of picks) {
     bikeArr.isLuc[i] = 1;
-    lucs.push({ bike:i, hue:Math.random() * 360, together:false, tf:0, rpos:Math.random(), nb:[], crowd:0, load:0, interval:F.beat,
+    lucs.push({ bike:i, hue:F.baseHue, together:false, tf:0, rpos:Math.random(), nb:[], crowd:0, load:0, interval:F.beat,
                 recs:new Map(), lastRelay:-1e9, playStart:-1, playHue:0, id:0, name:lucs.length, wburst:0, wrate:0 });
   }
   nextPress = t + nextPressDelay();
@@ -172,7 +172,7 @@ function receive(l, from, r, origin, id, hop, hue) {
 }
 function emit(l) {
   if (l.playStart >= 0) return false;                   /* période réfractaire */
-  const id = ++l.id; const hue = normDeg(l.hue + 180 + (Math.random() - 0.5) * 80);
+  const id = ++l.id; const hue = normDeg(F.baseHue + F.waveHueMin + Math.random() * (360 - 2 * F.waveHueMin));   /* au hasard, loin de la base */
   const key = waveKey(l.name, id);
   const w = { key, origin:l.name, id, t0:t, tLast:t, hue, reached:0, tx:0, reach:0, s0:bikeArr.s[l.bike] };
   waves.set(key, w); waveLog.unshift(w); if (waveLog.length > 12) waveLog.pop();
@@ -198,6 +198,7 @@ function regulate(l, dt) {
   let x = 0, y = 0, n = 0;
   for (const { o } of l.nb) { const a = o.hue * Math.PI / 180; x += Math.cos(a); y += Math.sin(a); n++; }
   if (n) { const mean = Math.atan2(y, x) * 180 / Math.PI; l.hue = normDeg(l.hue + dt / F.hueTau * wrapDeg(mean - l.hue)); }
+  l.hue = normDeg(l.hue + dt / F.baseTau * wrapDeg(F.baseHue - l.hue));   /* retour vers l'ambre */
   l.tf += dt / F.togetherFade * ((l.together ? 1 : 0) - l.tf); l.tf = clamp01(l.tf);
   if (l.playStart >= 0 && t - l.playStart >= F.sweep + F.trail) l.playStart = -1;   /* fin de l'animation : période réfractaire levée (ici, pas dans le rendu) */
   l.rpos = (l.rpos + F.rainbowFlow * dt) % 1;

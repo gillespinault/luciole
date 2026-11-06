@@ -106,7 +106,7 @@ static int      s_crowd_cur = 0;
 static int64_t  s_crowd_window = 0;
 static int      s_crowd = 0;
 
-static float s_hue = 0, s_native_hue = 0;
+static float s_hue = 0;
 static bool  s_together = false;         /* au moins une voisine proche */
 static float s_together_f = 0;           /* fondu seule (0) ↔ ensemble (1) */
 static int   s_near_count = 0;           /* voisines proches, diffusé dans la balise */
@@ -125,7 +125,7 @@ static int64_t  s_last_relay = -100000000;
 /* Les valeurs par défaut sont celles de luciole.h ; les macros du code   */
 /* sont redirigées vers ces champs juste après la table.                  */
 typedef struct {
-    float rssi_together, rssi_apart, hue_tau, rainbow_b, rainbow_flow, heart_bpb, heart_floor;
+    float rssi_together, rssi_apart, base_hue, base_tau, hue_tau, rainbow_b, rainbow_flow, heart_bpb, heart_floor;
     float wave_sweep, wave_trail, wave_jitter, wave_suppress, wave_relay_min;
     float beacon_rate, strip_max, strip_peak_ma, led_ma;
 } l2_params_t;
@@ -136,6 +136,8 @@ typedef struct { const char *key; size_t off; float def, min, max; const char *d
 static const l2_param_desc_t PARAMS[] = {
     PD(rssi_together,  L2_RSSI_TOGETHER,            -105, -40,   "dBm : une voisine au-dessus nous met ensemble"),
     PD(rssi_apart,     L2_RSSI_APART,               -110, -40,   "dBm : en dessous, elle ne nous tient plus ensemble"),
+    PD(base_hue,       L2_BASE_HUE,                 0,    360,   "deg : couleur de base (30 = ambre), ou la teinte revient apres une onde"),
+    PD(base_tau,       L2_BASE_TAU_S,               1,    600,   "s : retour de la couleur vers la base"),
     PD(hue_tau,        L2_HUE_TAU_S,                0.1,  60,    "s : couleur vers la moyenne des voisines"),
     PD(rainbow_b,      L2_RAINBOW_B,                0,    1,     "0..1 : luminosite de l'arc-en-ciel (seule)"),
     PD(rainbow_flow,   L2_RAINBOW_FLOW,             -2,   2,     "tours/s : defilement de l'arc-en-ciel"),
@@ -158,6 +160,8 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 /* Le corps du code garde les noms de luciole.h : on les redirige. */
 #undef L2_RSSI_TOGETHER
 #undef L2_RSSI_APART
+#undef L2_BASE_HUE
+#undef L2_BASE_TAU_S
 #undef L2_HUE_TAU_S
 #undef L2_RAINBOW_B
 #undef L2_RAINBOW_FLOW
@@ -174,6 +178,8 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #undef L2_LED_MA
 #define L2_RSSI_TOGETHER      P.rssi_together
 #define L2_RSSI_APART         P.rssi_apart
+#define L2_BASE_HUE           P.base_hue
+#define L2_BASE_TAU_S         P.base_tau
 #define L2_HUE_TAU_S          P.hue_tau
 #define L2_RAINBOW_B          P.rainbow_b
 #define L2_RAINBOW_FLOW       P.rainbow_flow
@@ -444,9 +450,10 @@ static void handle_wave(const l2_rx_t *rx)
 static void wave_emit(int64_t now)
 {
     if (animating()) { ESP_LOGI(TAG, "bouton : animation en cours, appui ignore"); return; }
-    /* L'onde porte une couleur très différente de celle du moment : la teinte
-     * opposée, à ±40° de hasard pour que deux appuis ne se ressemblent pas. */
-    float wave_hue = norm_deg(s_hue + L2_WAVE_HUE_TURN + (frand() - 0.5f) * L2_WAVE_HUE_SPREAD);
+    /* L'onde porte une couleur tirée au hasard, à plus de L2_WAVE_HUE_MIN de la
+     * base pour qu'elle tranche sur l'ambre, et pour que deux appuis ne se
+     * ressemblent pas. */
+    float wave_hue = norm_deg(L2_BASE_HUE + L2_WAVE_HUE_MIN + frand() * (360.0f - 2 * L2_WAVE_HUE_MIN));
     l2_wave_rec_t *r = wave_add(s_mac, ++s_wave_id, (uint8_t)(wave_hue * 255.0f / 360.0f), 0, now);
     r->relayed = true;
     r->repeat_at = now + L2_WAVE_REPEAT_US;
@@ -516,6 +523,9 @@ static void regulate(float dt, int64_t now)
         float mean_hue = atan2f(y, x) * 180.0f / (float)M_PI;
         s_hue = norm_deg(s_hue + dt / L2_HUE_TAU_S * wrap_deg(mean_hue - s_hue));
     }
+    /* Retour vers la base. Même base, même constante partout : le groupe
+     * revient ensemble, et la moyenne des voisines gomme les écarts. */
+    s_hue = norm_deg(s_hue + dt / L2_BASE_TAU_S * wrap_deg(L2_BASE_HUE - s_hue));
     s_rainbow_pos = fmodf(s_rainbow_pos + L2_RAINBOW_FLOW * dt, 1.0f);
     s_awake_f += (dt / L2_VEILLE_TAU_S) * ((s_veille ? 0.0f : 1.0f) - s_awake_f);
 }
@@ -988,10 +998,9 @@ void app_main(void)
     radio_init();
     s_offset_us = esp_random() % L2_BAR_US;
     s_wave_id = (uint16_t)esp_random();     /* numéros d'onde : jamais les mêmes qu'avant un redémarrage */
-    s_native_hue = (s_mac[3] * 97 + s_mac[4] * 31 + s_mac[5] * 151) % 360;
-    s_hue = s_native_hue;
-    ESP_LOGI(TAG, "Luciole² %s | fw %s | carte %s | protocole %d (min %d) | canal %d | %d temps x %d ms | teinte propre %.0f | ruban %d LED, plafond %d/255, pic %.0f mA",
-             s_name, L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, L2_WIFI_CHANNEL, L2_BEATS_PER_BAR, L2_BEAT_MS, s_native_hue, s_leds, L2_STRIP_MAX_BRIGHTNESS, L2_STRIP_PEAK_MA);
+    s_hue = L2_BASE_HUE;
+    ESP_LOGI(TAG, "Luciole² %s | fw %s | carte %s | protocole %d (min %d) | canal %d | %d temps x %d ms | base %.0f deg | ruban %d LED, plafond %d/255, pic %.0f mA",
+             s_name, L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, L2_WIFI_CHANNEL, L2_BEATS_PER_BAR, L2_BEAT_MS, L2_BASE_HUE, s_leds, L2_STRIP_MAX_BRIGHTNESS, L2_STRIP_PEAK_MA);
     if (s_nick[0]) ESP_LOGI(TAG, "surnom : %s", s_nick);
     console_help();
     xTaskCreate(luciole_task, "luciole", 6144, NULL, 5, NULL);

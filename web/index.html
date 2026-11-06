@@ -72,9 +72,9 @@
     <div class="strip" id="s-seule"></div>
     <figcaption>Seule : un arc-en-ciel calme qui défile lentement de gauche à droite. Rien ne bat.</figcaption>
     <div class="strip" id="s-ensemble"></div>
-    <figcaption>Ensemble : dès qu'une autre luciole est assez près, le ruban prend la couleur du groupe et bat son cœur, au même instant sur tous les vélos.</figcaption>
+    <figcaption>Ensemble : dès qu'une autre luciole est assez près, le ruban prend la couleur du groupe, ambre au repos, et bat son cœur, au même instant sur tous les vélos.</figcaption>
   </figure>
-  <p>Chaque luciole a un bouton. Un appui court envoie une onde : un front blanc traverse le ruban, qui garde quelques secondes la couleur de l'onde avec des paillettes, puis le cœur reprend dans cette nouvelle couleur. L'onde gagne tout le groupe en un clin d'œil, de proche en proche, et change sa couleur pour de bon. Tant qu'une onde est en cours, le bouton attend.</p>
+  <p>Chaque luciole a un bouton. Un appui court envoie une onde : un front blanc traverse le ruban, qui garde quelques secondes la couleur de l'onde avec des paillettes, puis le cœur reprend dans cette couleur et revient peu à peu à l'ambre, la couleur de repos du groupe. L'onde gagne tout le groupe en un clin d'œil, de proche en proche. Tant qu'une onde est en cours, le bouton attend.</p>
   <p>Un appui long met la luciole en veille, ou la réveille. La veille ne vaut que pour l'état « seule » : une luciole en veille reste éteinte tant qu'elle n'entend personne de près, bat dès que d'autres approchent, et se rendort quand elles s'éloignent. Au démarrage, elle est toujours allumée.</p>
   <p>Tout cela repose sur des règles locales. Chaque luciole ne connaît que ce qu'elle entend autour d'elle, et les figures d'ensemble naissent de ces règles sans coordination centrale. La <a href="simulation/">simulation</a> montre ces règles sur un peloton de 20 000 vélos dont 1 000 lucioles.</p>
 </section>
@@ -150,7 +150,7 @@
   const hsv = h => { h = ((h % 360) + 360) % 360 / 60; const i = Math.floor(h), f = h - i, q = 1 - f;
     const c = [[1,f,0],[q,1,0],[0,1,f],[0,q,1],[f,0,1],[1,0,q]][i]; return `rgb(${c.map(v => Math.round(40 + 215 * v)).join(',')})`; };
   const mk = (id, color) => { const el = document.getElementById(id); el.innerHTML = ''; for (let p = 0; p < 10; p++) { const i = document.createElement('i'); i.style.background = color(p); el.append(i); } return el; };
-  const seule = mk('s-seule', p => hsv(p * 36)), ensemble = mk('s-ensemble', () => hsv(200));
+  const seule = mk('s-seule', p => hsv(p * 36)), ensemble = mk('s-ensemble', () => hsv(30));
   const heart = x => { const tt = ((x * 3) % 1) * 2500 / 3; let e = Math.exp(-tt / 120); if (tt >= 180) e += 0.6 * Math.exp(-(tt - 180) / 120); return 0.25 + 0.75 * Math.min(1, e); };
   const beat = () => { seule.style.opacity = 0.75; ensemble.style.opacity = heart((performance.now() / 2500) % 1); requestAnimationFrame(beat); };
   beat();
