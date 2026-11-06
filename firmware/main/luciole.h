@@ -5,7 +5,7 @@
  * rien d'autre n'est comparable entre deux vélos à dix mètres, de nuit :
  *  - seule     : arc-en-ciel calme qui défile lentement de gauche (pixel 0)
  *                à droite. Rien ne bat.
- *  - ensemble  : dès qu'une voisine est entendue assez fort, le ruban prend la
+ *  - ensemble  : dès qu'une voisine est entendue, le ruban prend la
  *                couleur commune et bat le cœur du groupe : rythme fixe,
  *                pleine amplitude, au même instant sur tous les vélos (le cycle
  *                commun de 2,5 s sert de métronome). Fondu de deux secondes
@@ -33,7 +33,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "7.1.0"
+#define L2_FW_VERSION       "7.1.1"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -103,10 +103,14 @@
 /* Ensemble : une voisine entendue au-dessus de TOGETHER (signal lissé) nous
  * met ensemble ; on le reste tant qu'elle est au-dessus d'APART et vue depuis
  * moins de HOLD (ou 2,5 intervalles de balise, en foule : une balise perdue
- * ne doit pas nous rendre seules). Un seuil, pas une courbe. Mesures du 12 octobre : quelques cm sur le hub -36…-89 dBm, 7,5 m
- * en intérieur -93…-97 dBm. */
-#define L2_RSSI_TOGETHER    -92
-#define L2_RSSI_APART       -99
+ * ne doit pas nous rendre seules). Un seuil, pas une courbe. Depuis 7.1.1,
+ * les seuils sont ceux de la table (ENTER/LEAVE) : entendue, c'est ensemble.
+ * Le seuil de proximité de 7.0.0 (-92/-99) coupait à 7 m en intérieur
+ * (mesures du 12 octobre : quelques cm sur le hub -36…-89 dBm, 7,5 m en
+ * intérieur -93…-97 dBm), et laissait une luciole seule au bord d'un
+ * groupe qu'elle entendait. Le but est de favoriser le lien. */
+#define L2_RSSI_TOGETHER    -100
+#define L2_RSSI_APART       -106
 #define L2_TOGETHER_HOLD_US 3000000
 #define L2_TOGETHER_HOLD_INTERVALS 2.5f
 #define L2_TOGETHER_FADE_S  0.35f   /* constante de temps du fondu seule ↔ ensemble (~1 s) */
