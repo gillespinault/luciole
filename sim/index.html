@@ -51,12 +51,11 @@
     <div class="row"><label>Portée d'écoute (m)</label><input type="range" id="range" min="30" max="600" step="10" value="250"><output>250</output></div>
     <div class="row"><label>Trame (ms d'antenne)</label><input type="range" id="air" min="1" max="12" step="0.5" value="5"><output>5</output></div>
     <div class="row"><label>Canal visé (trames/s)</label><input type="range" id="chanRate" min="10" max="200" step="5" value="60"><output>60</output></div>
-    <div class="row"><label>Seuil ensemble (dBm)</label><input type="range" id="together" min="-100" max="-60" step="1" value="-100"><output>-100</output></div>
+    <div class="row"><label>Régulière : % de balises reçues</label><input type="range" id="nearEnter" min="5" max="95" step="5" value="70"><output>70</output></div>
     <h2>Onde (firmware)</h2>
     <div class="row"><label>Rediffusion dans 0… (ms)</label><input type="range" id="jitter" min="0" max="2000" step="10" value="150"><output>150</output></div>
     <div class="row"><label>Suppression (copies)</label><input type="range" id="suppress" min="1" max="10" step="1" value="3"><output>3</output></div>
     <div class="row"><label>Rediffusion min (s)</label><input type="range" id="relayMin" min="0" max="5" step="0.1" value="0.2"><output>0.2</output></div>
-    <div class="row"><label>Sauts max</label><input type="range" id="maxHop" min="1" max="30" step="1" value="12"><output>12</output></div>
     <div class="row"><label>Sauts max</label><input type="range" id="maxHop" min="1" max="30" step="1" value="12"><output>12</output></div>
     <h2>Mesures</h2>
     <div class="stats" id="stats"></div>
@@ -67,12 +66,12 @@
     <table><thead><tr><th>Onde</th><th>atteinte</th><th>trames</th><th>portée</th><th>durée</th></tr></thead><tbody id="waves"></tbody></table>
   </aside>
 </main>
-<footer>Modèle radio : RSSI = −40 − n·log10(d) ± 4 dB, n réglé pour que −100 dBm tombe à la portée choisie. Collisions : ALOHA pur, perte = 1 − e<sup>−2G</sup> avec G la charge du canal entendue par la réceptrice. Phase supposée synchronisée.</footer>
+<footer>Modèle radio : RSSI = −40 − n·log10(d) ± 4 dB, n réglé pour que −100 dBm tombe à la portée choisie ; sous −100, la balise ne passe pas. Collisions : ALOHA pur, perte = 1 − e<sup>−2G</sup> avec G la charge du canal entendue par la réceptrice. Ensemble : une voisine dont on reçoit plus de « régulière » % des balises (moyenne glissante, poids 0,15 par balise), jusqu'à moins de 20 points en dessous (le curseur à 5 % rejoue le firmware 7.1.1 : entendue, c'est ensemble). Phase supposée synchronisée.</footer>
 <script>
 'use strict';
 /* ---------- Réglages (lus depuis les curseurs) ---------- */
 const P = {};
-const ids = ['speed','bikes','lucioles','peloton','pressRate','range','air','chanRate','together','jitter','suppress','relayMin','maxHop'];
+const ids = ['speed','bikes','lucioles','peloton','pressRate','range','air','chanRate','nearEnter','jitter','suppress','relayMin','maxHop'];
 for (const id of ids) {
   const el = document.getElementById(id);
   const out = el.parentElement.querySelector('output');
@@ -81,7 +80,8 @@ for (const id of ids) {
   upd();
 }
 const F = { sweep:0.5, trail:3, late:2, forget:60, repeat:0.07, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, baseHue:30, baseTau:10, hueTau:3, waveHueMin:60, togetherFade:0.35,
-            heartBpb:3, heartFloor:0.25, heartTau:0.12, heartDub:0.6, heartGap:0.18, maxNeighbors:16, rssiFar:-100, beaconMax:30, beat:0.5 };
+            heartBpb:3, heartFloor:0.25, heartTau:0.12, heartDub:0.6, heartGap:0.18, maxNeighbors:16, rssiFar:-100, beaconMax:30, beat:0.5,
+            nearAlpha:0.15, nearHyst:0.2, hold:3, holdIntervals:2.5 };
 
 /* ---------- Utilitaires ---------- */
 const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
@@ -90,7 +90,6 @@ const normDeg = h => ((h % 360) + 360) % 360;
 const wrapDeg = d => { d = ((d + 180) % 360 + 360) % 360 - 180; return d; };
 function hsv(h) { h = normDeg(h) / 60; const i = Math.floor(h), f = h - i, q = 1 - f;
   switch (i) { case 0: return [1, f, 0]; case 1: return [q, 1, 0]; case 2: return [0, 1, f]; case 3: return [0, q, 1]; case 4: return [f, 0, 1]; default: return [1, 0, q]; } }
-const prox = r => Math.pow(clamp01((r - F.rssiFar) / (F.rssiNear - F.rssiFar)), F.proxCurve);
 let pathN = 25;
 function rssi(d) { return -40 - pathN * Math.log10(Math.max(1, d)) + 4 * gauss(); }
 
@@ -108,8 +107,8 @@ function reset() {
   const picks = new Set(); while (picks.size < Math.min(P.lucioles, n)) picks.add(Math.floor(Math.random() * n));
   for (const i of picks) {
     bikeArr.isLuc[i] = 1;
-    lucs.push({ bike:i, hue:F.baseHue, together:false, tf:0, rpos:Math.random(), nb:[], crowd:0, load:0, interval:F.beat,
-                recs:new Map(), lastRelay:-1e9, playStart:-1, playHue:0, id:0, name:lucs.length, wburst:0, wrate:0 });
+    lucs.push({ bike:i, hue:F.baseHue, together:false, tf:0, rpos:Math.random(), nb:[], crowd:0, load:0, loss:0, interval:F.beat,
+                heard:new Map(), recs:new Map(), lastRelay:-1e9, playStart:-1, playHue:0, id:0, name:lucs.length, wburst:0, wrate:0 });
   }
   nextPress = t + nextPressDelay();
   refreshNeighbors();
@@ -128,18 +127,39 @@ function candidates(l) {
   push(lo, hi); if (lo < 0) push(C + lo, C); if (hi > C) push(0, hi - C);
   return out;
 }
+/* Toutes les F.beat secondes (un temps). Chaque voisine émet une balise avec
+ * la probabilité temps / son intervalle ; elle est reçue si le RSSI (retiré à
+ * chaque fois, ± 4 dB) passe le plancher et si elle échappe aux collisions.
+ * Mêmes règles que main.c : par voisine, taux de balises reçues en moyenne
+ * glissante (une balise émise non reçue est une perte, comme un numéro sauté
+ * dans le firmware) ; régulière au-dessus de nearEnter, plus en dessous de
+ * nearEnter − nearHyst ; ensemble = une régulière entendue depuis moins de
+ * hold. */
 function refreshNeighbors() {
   sorted = lucs.slice().sort((a, b) => bikeArr.s[a.bike] - bikeArr.s[b.bike]);
   for (const l of lucs) {
-    const inr = []; let crowd = 0, rate = 0, best = -200;
-    for (const o of candidates(l)) { const r = rssi(dist(l, o)); if (r >= F.rssiFar) { crowd++; rate += 1 / o.interval; inr.push({ o, r }); if (r > best) best = r; } }
+    const inr = []; let crowd = 0, rate = 0;
+    for (const o of candidates(l)) { const r = rssi(dist(l, o));
+      if (r >= F.rssiFar) { crowd++; rate += 1 / o.interval; inr.push({ o, r }); }
+      if (Math.random() >= Math.min(1, F.beat / o.interval)) continue;          /* pas de balise ce temps-ci */
+      const received = r >= F.rssiFar && Math.random() >= l.loss;
+      let h = l.heard.get(o.name);
+      if (!h) { if (!received) continue; h = { prr:0, near:false, last:t }; l.heard.set(o.name, h); }
+      h.prr += F.nearAlpha * ((received ? 1 : 0) - h.prr); if (received) h.last = t;
+    }
     inr.sort((a, b) => b.r - a.r);
     l.nb = inr.slice(0, F.maxNeighbors); l.crowd = crowd;
-    /* ensemble : une voisine au-dessus du seuil ; on le reste tant qu'une est au-dessus de seuil - 7 dB (hystérésis) */
-    l.together = best >= P.together || (l.together && best >= P.together - 7);
     l.interval = Math.min(F.beaconMax, Math.max(F.beat, (crowd + 1) / P.chanRate));
     l.load = rate * P.air / 1000;                       /* charge du canal entendue (fraction du temps) */
     l.loss = 1 - Math.exp(-2 * l.load);
+    const hold = Math.max(F.hold, F.holdIntervals * l.interval), enter = P.nearEnter / 100, leave = enter - F.nearHyst;
+    let near = 0;
+    for (const [name, h] of l.heard) {
+      if (t - h.last >= hold) { l.heard.delete(name); continue; }
+      if (h.prr >= enter) h.near = true; else if (h.prr < leave) h.near = false;
+      if (h.near) near++;
+    }
+    l.near = near; l.together = near > 0;
   }
 }
 
@@ -286,7 +306,7 @@ function stats() {
     ['ondes vivantes', waves.size], ['lucioles en train de jouer', playing]];
   document.getElementById('stats').innerHTML = kv.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
   const sel = selected >= 0 ? lucs[selected] : null;
-  document.getElementById('selStats').innerHTML = sel ? [['luciole', '#' + sel.name], ['état', sel.together ? 'ensemble' : 'seule'], ['teinte', sel.hue.toFixed(0) + '°'], ['voisines à portée', sel.crowd],
+  document.getElementById('selStats').innerHTML = sel ? [['luciole', '#' + sel.name], ['état', sel.together ? 'ensemble' : 'seule'], ['voisines régulières', sel.near], ['teinte', sel.hue.toFixed(0) + '°'], ['voisines à portée', sel.crowd],
     ['intervalle balise', sel.interval.toFixed(1) + ' s'], ['charge canal', (100 * sel.load).toFixed(0) + ' %'], ['ondes en mémoire', sel.recs.size]].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('') : '<span>aucune (clic sur la route)</span><span></span>';
   document.getElementById('waves').innerHTML = waveLog.map(w => `<tr><td>#${w.origin}·${w.id}</td><td>${(100 * w.reached / L).toFixed(0)} %</td><td>${w.tx}</td><td>${w.reach.toFixed(0)} m</td><td>${(w.tLast - w.t0).toFixed(1)} s</td></tr>`).join('');
 }

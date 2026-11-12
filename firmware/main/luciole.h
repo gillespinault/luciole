@@ -5,10 +5,11 @@
  * rien d'autre n'est comparable entre deux vélos à dix mètres, de nuit :
  *  - seule     : arc-en-ciel calme qui défile lentement de gauche (pixel 0)
  *                à droite. Rien ne bat.
- *  - ensemble  : dès qu'une voisine est entendue, le ruban prend la
+ *  - ensemble  : dès qu'une voisine est entendue régulièrement (plus de
+ *                70 % de ses balises reçues), le ruban prend la
  *                couleur commune et bat le cœur du groupe : rythme fixe,
  *                pleine amplitude, au même instant sur tous les vélos (le cycle
- *                commun de 2,5 s sert de métronome). Fondu de deux secondes
+ *                commun de 2,5 s sert de métronome). Fondu d'une seconde
  *                entre les deux états.
  *  - onde      : appui court → front qui traverse le ruban, le ruban garde la
  *                couleur de l'onde avec des paillettes, puis le cœur reprend
@@ -33,7 +34,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "7.1.1"
+#define L2_FW_VERSION       "7.2.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -69,11 +70,15 @@
 #define L2_WIFI_CHANNEL     1
 #define L2_LONG_RANGE       1       /* mode longue portée Espressif (250 kbit/s, ~+10 dB) : toutes les unités doivent l'avoir */
 #define L2_TX_POWER         80      /* quarts de dBm : 80 = 20 dBm, le maximum */
-#define L2_SEND_JITTER_MS   60
 
 /* Balises : une par temps quand on est peu. En foule, chacune ralentit pour que
  * le canal reste autour de L2_BEACON_CHANNEL_RATE trames/s en tout (une trame
  * longue portée occupe l'antenne ~4 ms : 60/s ≈ un quart du temps d'antenne).
+ * Les instants d'émission sont étalés uniformément sur ±50 % de l'intervalle,
+ * sans lien avec le cycle commun : jusqu'en 7.1.1 chaque balise partait au
+ * temps suivant, dans une fenêtre de 60 ms, et six unités sur un banc s'y
+ * télescopaient (6 balises/s entendues sur 10, 10 novembre) ; en foule, tout
+ * le canal serait tombé dans ces fenêtres.
  * La taille de la foule est le nombre d'émettrices distinctes entendues sur
  * une fenêtre glissante (bitmap de hachage : une seule balise reçue suffit à
  * compter, donc l'estimation ne s'effondre pas quand les collisions montent). */
@@ -87,32 +92,36 @@
 #define L2_LINK_LATENCY_US  3000
 #define L2_PHASE_DEADBAND_US 5000
 
-/* Voisines : la table garde les 16 plus fortes. Oubliées après L2_NEIGHBOR_TTL_US
- * ou quatre intervalles de balise si c'est plus long (en foule les balises sont
- * rares : une balise perdue ne doit pas faire tomber le groupe). */
+/* Voisines : la table garde les 16 plus fortes ; toute luciole entendue y est
+ * (en longue portée le récepteur descend vers -105 dBm) et compte pour la
+ * couleur commune. Une voisine est oubliée après HOLD sans balise, ou 2,5
+ * intervalles de balise si c'est plus long (en foule les balises sont rares :
+ * une balise perdue ne doit pas nous rendre seules). Le RSSI lissé ne sert
+ * qu'au journal et à choisir qui remplacer quand la table est pleine. */
 #define L2_MAX_NEIGHBORS    16
-#define L2_NEIGHBOR_TTL_US  6000000
-#define L2_NEIGHBOR_TTL_INTERVALS 4
+#define L2_NEIGHBOR_HOLD_US 3000000
+#define L2_NEIGHBOR_HOLD_INTERVALS 2.5f
 #define L2_NEIGHBOR_REPLACE_DB 3    /* une inconnue ne remplace la plus faible que si elle est plus forte d'autant */
 #define L2_RSSI_ALPHA       0.3f
-/* En longue portée le récepteur descend vers -105 dBm : toute luciole entendue
- * est en table (ENTER/LEAVE), et compte pour la couleur commune. */
-#define L2_RSSI_ENTER       -100
-#define L2_RSSI_LEAVE       -106
 
-/* Ensemble : une voisine entendue au-dessus de TOGETHER (signal lissé) nous
- * met ensemble ; on le reste tant qu'elle est au-dessus d'APART et vue depuis
- * moins de HOLD (ou 2,5 intervalles de balise, en foule : une balise perdue
- * ne doit pas nous rendre seules). Un seuil, pas une courbe. Depuis 7.1.1,
- * les seuils sont ceux de la table (ENTER/LEAVE) : entendue, c'est ensemble.
- * Le seuil de proximité de 7.0.0 (-92/-99) coupait à 7 m en intérieur
- * (mesures du 12 octobre : quelques cm sur le hub -36…-89 dBm, 7,5 m en
- * intérieur -93…-97 dBm), et laissait une luciole seule au bord d'un
- * groupe qu'elle entendait. Le but est de favoriser le lien. */
-#define L2_RSSI_TOGETHER    -100
-#define L2_RSSI_APART       -106
-#define L2_TOGETHER_HOLD_US 3000000
-#define L2_TOGETHER_HOLD_INTERVALS 2.5f
+/* Ensemble : une voisine régulière nous met ensemble, et on le reste tant
+ * qu'elle est en table. Régulière : on reçoit plus de L2_NEAR_ENTER de ses
+ * balises ; elle cesse de l'être sous L2_NEAR_LEAVE (hystérésis). Le taux est
+ * une moyenne glissante (poids L2_NEAR_ALPHA par balise) sur le compteur seq
+ * de la balise : chaque numéro sauté est une balise perdue. Ainsi le critère
+ * ne dépend ni du signal ni de l'intervalle de balise (en foule, les balises
+ * sont rares mais numérotées pareil). Partant de zéro, une voisine à côté
+ * (presque tout passe) est régulière après ~8 balises, 4 s en petit groupe.
+ * Pas de seuil de signal : le RSSI varie de 10 dB d'un instant à l'autre et
+ * la limite de portée est une zone de dizaines de mètres où une balise sur
+ * dix passe. Un seuil au plancher (7.1.1, -100/-106 dBm) y faisait clignoter
+ * « ensemble » au rythme des balises d'une luciole lointaine ; un seuil de
+ * proximité (7.0.0, -92/-99) coupait à 7 m en intérieur. Le taux de
+ * réception, lui, tombe net au bord de la portée : à côté, presque toutes
+ * les balises arrivent ; au loin, une sur trois ou moins. */
+#define L2_NEAR_ALPHA       0.15f
+#define L2_NEAR_ENTER       0.7f
+#define L2_NEAR_LEAVE       0.5f
 #define L2_TOGETHER_FADE_S  0.35f   /* constante de temps du fondu seule ↔ ensemble (~1 s) */
 
 /* Couleur commune, degrés. Au repos, l'ambre (L2_BASE_HUE) : chaud comme un
@@ -153,7 +162,6 @@
  * L'origine émet sa trame deux fois (la seconde après REPEAT) : une trame
  * directe se perd même à 30 cm, et un groupe serré ne rediffuse que deux
  * fois. La seconde copie de l'origine ne compte pas pour la suppression. */
-#define L2_BUTTON_ENABLED   1
 #define L2_WAVE_SWEEP_US    500000  /* traversée du ruban */
 #define L2_WAVE_TRAIL_US    3000000 /* traînée après le passage */
 #define L2_WAVE_REPEAT_US   70000   /* seconde émission par l'origine */
@@ -179,8 +187,6 @@
  * constante : un seul binaire par carte. La luminosité est bornée par un
  * limiteur de courant par image (L2_STRIP_PEAK_MA, estimation à L2_LED_MA
  * par composante à fond), pas par un plafond calculé pour le tout blanc. */
-#define L2_STRIP_ENABLED        1
-#define L2_STRIP_TEST           0
 #define L2_STRIP_LEDS_DEFAULT   10
 #define L2_STRIP_LEDS_MAX       144
 #define L2_STRIP_MAX_BRIGHTNESS 255     /* plafond de goût, /255 */

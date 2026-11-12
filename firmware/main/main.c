@@ -42,15 +42,16 @@ static const uint8_t BROADCAST[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 /* ------------------------------------------------------------------ */
 typedef struct {
-    bool     used, in_range, near;  /* near : au-dessus du seuil « ensemble » (hystérésis) */
+    bool     used, near;    /* near : régulière (hystérésis, voir neighbor_near) */
     uint8_t  mac[6];
     int64_t  last_seen_us;
-    float    rssi_f;
+    float    rssi_f;        /* lissé : journal, et qui remplacer quand la table est pleine */
     int8_t   last_rssi;
-    uint8_t  level, hue, coh;
-    int64_t  diffs[3];      /* trois derniers écarts de phase (anneau) */
-    uint8_t  diff_idx;      /* prochaine case à écrire, 0..2 */
-    uint8_t  ndiffs;        /* échantillons valides, plafonné à 3 */
+    uint8_t  hue, coh;
+    float    prr;           /* part de ses balises reçues, 0..1, moyenne glissante sur seq */
+    uint32_t last_seq;
+    int64_t  diffs[3];      /* trois derniers écarts de phase (anneau) pour la médiane */
+    uint8_t  idx, n;        /* idx : prochaine case à écrire ; n : cases valides, plafonné à 3 */
     int64_t  last_diff_us;  /* dernier écart de phase retenu (médiane) */
     char     name[L2_NAME_LEN];
 } l2_neighbor_t;
@@ -77,10 +78,7 @@ typedef struct {
 
 static l2_neighbor_t  s_neighbors[L2_MAX_NEIGHBORS];
 static QueueHandle_t  s_rx_queue;
-static led_strip_handle_t s_strip;
-#if L2_STRIP_ENABLED
-static led_strip_handle_t s_ext;
-#endif
+static led_strip_handle_t s_strip, s_ext;
 static uint8_t  s_mac[6];
 static char     s_name[8];
 static int      s_leds = L2_STRIP_LEDS_DEFAULT;   /* configuration NVS */
@@ -95,7 +93,6 @@ static bool     s_stream_on = false;              /* flux JSON périodique sur l
 
 static int64_t  s_offset_us = 0;
 static uint32_t s_seq = 0;
-static int64_t  s_last_beacon_tx = 0;
 static float    s_heard_rate = 0;        /* balises/s entendues, lissé (journal) */
 static int      s_heard_count = 0;
 static int64_t  s_heard_window = 0;
@@ -107,9 +104,9 @@ static int64_t  s_crowd_window = 0;
 static int      s_crowd = 0;
 
 static float s_hue = 0;
-static bool  s_together = false;         /* au moins une voisine proche */
+static bool  s_together = false;         /* au moins une voisine régulière */
 static float s_together_f = 0;           /* fondu seule (0) ↔ ensemble (1) */
-static int   s_near_count = 0;           /* voisines proches, diffusé dans la balise */
+static int   s_near_count = 0;           /* voisines régulières, diffusé dans la balise */
 static float s_rainbow_pos = 0;          /* défilement de l'arc-en-ciel, en tours */
 static int   s_heart_beat = -1;          /* dernier battement vu (LED bleue) */
 
@@ -125,7 +122,7 @@ static int64_t  s_last_relay = -100000000;
 /* Les valeurs par défaut sont celles de luciole.h ; les macros du code   */
 /* sont redirigées vers ces champs juste après la table.                  */
 typedef struct {
-    float rssi_together, rssi_apart, base_hue, base_tau, hue_tau, rainbow_b, rainbow_flow, heart_bpb, heart_floor;
+    float base_hue, base_tau, hue_tau, rainbow_b, rainbow_flow, heart_bpb, heart_floor;
     float wave_sweep, wave_trail, wave_jitter, wave_suppress, wave_relay_min;
     float beacon_rate, strip_max, strip_peak_ma, led_ma;
 } l2_params_t;
@@ -134,8 +131,6 @@ typedef struct { const char *key; size_t off; float def, min, max; const char *d
 
 #define PD(field, def, min, max, desc) { #field, offsetof(l2_params_t, field), def, min, max, desc }
 static const l2_param_desc_t PARAMS[] = {
-    PD(rssi_together,  L2_RSSI_TOGETHER,            -105, -40,   "dBm : une voisine au-dessus nous met ensemble"),
-    PD(rssi_apart,     L2_RSSI_APART,               -110, -40,   "dBm : en dessous, elle ne nous tient plus ensemble"),
     PD(base_hue,       L2_BASE_HUE,                 0,    360,   "deg : couleur de base (30 = ambre), ou la teinte revient apres une onde"),
     PD(base_tau,       L2_BASE_TAU_S,               1,    600,   "s : retour de la couleur vers la base"),
     PD(hue_tau,        L2_HUE_TAU_S,                0.1,  60,    "s : couleur vers la moyenne des voisines"),
@@ -158,8 +153,6 @@ static l2_params_t P;
 static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((char *)&P + d->off); }
 
 /* Le corps du code garde les noms de luciole.h : on les redirige. */
-#undef L2_RSSI_TOGETHER
-#undef L2_RSSI_APART
 #undef L2_BASE_HUE
 #undef L2_BASE_TAU_S
 #undef L2_HUE_TAU_S
@@ -176,8 +169,6 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #undef L2_STRIP_MAX_BRIGHTNESS
 #undef L2_STRIP_PEAK_MA
 #undef L2_LED_MA
-#define L2_RSSI_TOGETHER      P.rssi_together
-#define L2_RSSI_APART         P.rssi_apart
 #define L2_BASE_HUE           P.base_hue
 #define L2_BASE_TAU_S         P.base_tau
 #define L2_HUE_TAU_S          P.hue_tau
@@ -283,16 +274,22 @@ static int64_t beacon_interval_us(void)
     return us;
 }
 
-static int64_t neighbor_ttl_us(void)
+/* Une voisine est gardée tant qu'elle a été entendue depuis moins de HOLD. */
+static int64_t neighbor_hold_us(void)
 {
-    int64_t us = L2_NEIGHBOR_TTL_INTERVALS * beacon_interval_us();
-    return us > L2_NEIGHBOR_TTL_US ? us : L2_NEIGHBOR_TTL_US;
+    int64_t us = (int64_t)(L2_NEIGHBOR_HOLD_INTERVALS * beacon_interval_us());
+    return us > L2_NEIGHBOR_HOLD_US ? us : L2_NEIGHBOR_HOLD_US;
 }
 
-static int64_t together_hold_us(void)
+/* Régulière : plus de L2_NEAR_ENTER de ses balises reçues ; ne l'est plus
+ * sous L2_NEAR_LEAVE. Le taux est mis à jour à chaque balise reçue (voir
+ * handle_beacon) ; entre deux, il ne bouge pas, et la table l'oublie après
+ * HOLD. */
+static bool neighbor_near(l2_neighbor_t *n)
 {
-    int64_t us = (int64_t)(L2_TOGETHER_HOLD_INTERVALS * beacon_interval_us());
-    return us > L2_TOGETHER_HOLD_US ? us : L2_TOGETHER_HOLD_US;
+    if (n->prr >= L2_NEAR_ENTER) n->near = true;
+    else if (n->prr < L2_NEAR_LEAVE) n->near = false;
+    return n->near;
 }
 
 /* ------------------------------------------------------------------ */
@@ -315,7 +312,7 @@ static l2_neighbor_t *neighbor_find_or_add(const uint8_t *mac, int8_t rssi, int6
     memset(free_slot, 0, sizeof(*free_slot));
     free_slot->used = true;
     memcpy(free_slot->mac, mac, 6);
-    free_slot->rssi_f = -100.0f;
+    free_slot->rssi_f = rssi;
     free_slot->last_seen_us = now;
     ESP_LOGD(TAG, "voisine %02x%02x apparue", mac[4], mac[5]);
     return free_slot;
@@ -328,15 +325,11 @@ static void handle_beacon(const l2_rx_t *rx)
     crowd_note(rx->mac);
     l2_neighbor_t *n = neighbor_find_or_add(rx->mac, rx->rssi, rx->rx_us);
     if (!n) return;
-    n->rssi_f = (n->rssi_f <= -99.0f) ? rx->rssi : n->rssi_f + L2_RSSI_ALPHA * (rx->rssi - n->rssi_f);
+    n->rssi_f += L2_RSSI_ALPHA * (rx->rssi - n->rssi_f);
     n->last_rssi = rx->rssi;
     n->last_seen_us = rx->rx_us;
-    n->level = b->density; n->hue = b->hue; n->coh = b->coh;
+    n->hue = b->hue; n->coh = b->coh;
     if (rx->len >= (int)sizeof(l2_beacon_t)) { memcpy(n->name, b->name, L2_NAME_LEN); n->name[L2_NAME_LEN - 1] = 0; }
-    if (!n->in_range && n->rssi_f >= L2_RSSI_ENTER) { n->in_range = true;  ESP_LOGD(TAG, "voisine %02x%02x a portee (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
-    else if (n->in_range && n->rssi_f <= L2_RSSI_LEAVE) { n->in_range = false; ESP_LOGD(TAG, "voisine %02x%02x trop loin (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
-    if (!n->near && n->rssi_f >= L2_RSSI_TOGETHER) { n->near = true;  ESP_LOGI(TAG, "voisine %02x%02x proche (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
-    else if (n->near && n->rssi_f <= L2_RSSI_APART) { n->near = false; ESP_LOGI(TAG, "voisine %02x%02x s'eloigne (%.0f dBm)", n->mac[4], n->mac[5], n->rssi_f); }
 
     int64_t theirs = (int64_t)b->phase_us + L2_LINK_LATENCY_US;
     int64_t raw = wrap_half(theirs - phase_at(rx->rx_us));
@@ -344,11 +337,21 @@ static void handle_beacon(const l2_rx_t *rx)
      * deux cases sur trois après 255 balises, et la médiane restait bornée
      * par ces valeurs anciennes, donc dans la bande morte : plus aucune
      * correction, dérive libre des quartz sur la nuit (vu le 5 novembre). */
-    n->diffs[n->diff_idx] = raw;
-    n->diff_idx = (n->diff_idx + 1) % 3;
-    if (n->ndiffs < 3) n->ndiffs++;
+    n->diffs[n->idx] = raw;
+    n->idx = (n->idx + 1) % 3;
+    if (n->n < 3) n->n++;
+    /* Taux de réception : les numéros sautés depuis sa dernière balise sont
+     * des pertes (au plus 20 d'un coup : un redémarrage de la voisine repart
+     * de zéro, et un seq qui recule ne compte pas de perte). */
+    uint32_t lost = (n->n > 1 && b->seq > n->last_seq) ? b->seq - n->last_seq - 1 : 0;
+    if (lost > 20) lost = 20;
+    for (uint32_t i = 0; i < lost; i++) n->prr -= L2_NEAR_ALPHA * n->prr;
+    n->prr += L2_NEAR_ALPHA * (1 - n->prr);
+    n->last_seq = b->seq;
+    bool was_near = n->near;
+    if (neighbor_near(n) != was_near) ESP_LOGI(TAG, "voisine %02x%02x %s (%.0f %% recues, %.0f dBm)", n->mac[4], n->mac[5], n->near ? "reguliere" : "irreguliere", n->prr * 100, n->rssi_f);
     int64_t diff = raw;
-    if (n->ndiffs >= 3) {
+    if (n->n >= 3) {
         int64_t a = n->diffs[0], c = n->diffs[1], d = n->diffs[2];
         diff = (a > c) ? ((c > d) ? c : (a > d ? d : a)) : ((a > d) ? a : (c > d ? d : c));
     }
@@ -495,28 +498,29 @@ static void wave_tick(int64_t now)
 /* ------------------------------------------------------------------ */
 static void neighbors_expire(int64_t now)
 {
-    int64_t ttl = neighbor_ttl_us();
+    int64_t hold = neighbor_hold_us();
     for (int i = 0; i < L2_MAX_NEIGHBORS; i++) {
         l2_neighbor_t *n = &s_neighbors[i];
-        if (n->used && now - n->last_seen_us > ttl) { ESP_LOGD(TAG, "voisine %02x%02x disparue", n->mac[4], n->mac[5]); n->used = false; }
+        if (n->used && now - n->last_seen_us > hold) { ESP_LOGD(TAG, "voisine %02x%02x disparue", n->mac[4], n->mac[5]); n->used = false; }
     }
 }
 
-/* À chaque trame : ensemble si une voisine proche a été vue récemment ; la
- * couleur commune glisse vers la moyenne des voisines entendues. dt en secondes. */
+/* À chaque trame : ensemble si une voisine régulière a été entendue depuis
+ * moins de HOLD ; la couleur commune glisse vers la moyenne des voisines
+ * entendues. dt en secondes. */
 static void regulate(float dt, int64_t now)
 {
-    float x = 0, y = 0; int n_in = 0, near = 0; int64_t hold = together_hold_us();
+    float x = 0, y = 0; int n_in = 0, near = 0; int64_t hold = neighbor_hold_us();
     for (int i = 0; i < L2_MAX_NEIGHBORS; i++) {
         l2_neighbor_t *n = &s_neighbors[i];
-        if (!n->used || !n->in_range) continue;
+        if (!n->used || now - n->last_seen_us >= hold) continue;
         float a = n->hue * 360.0f / 255.0f * (float)M_PI / 180.0f;
         x += cosf(a); y += sinf(a); n_in++;
-        if (n->near && now - n->last_seen_us < hold) near++;
+        if (neighbor_near(n)) near++;
     }
     s_near_count = near;
     bool together = near > 0;
-    if (together != s_together) { s_together = together; ESP_LOGI(TAG, "%s (%d voisine%s proche%s)", together ? "ensemble" : "seule", near, near > 1 ? "s" : "", near > 1 ? "s" : ""); }
+    if (together != s_together) { s_together = together; ESP_LOGI(TAG, "%s (%d voisine%s reguliere%s)", together ? "ensemble" : "seule", near, near > 1 ? "s" : "", near > 1 ? "s" : ""); }
     s_together_f += (dt / L2_TOGETHER_FADE_S) * ((together ? 1.0f : 0.0f) - s_together_f);
     s_together_f = clamp01(s_together_f);
     if (n_in) {
@@ -530,16 +534,16 @@ static void regulate(float dt, int64_t now)
     s_awake_f += (dt / L2_VEILLE_TAU_S) * ((s_veille ? 0.0f : 1.0f) - s_awake_f);
 }
 
-static void log_bar(void)
+static void log_bar(int64_t now)
 {
     char buf[200] = ""; int pos = 0;
     for (int i = 0; i < L2_MAX_NEIGHBORS && pos < (int)sizeof(buf) - 30; i++) {
         l2_neighbor_t *n = &s_neighbors[i];
         if (!n->used) continue;
         pos += snprintf(buf + pos, sizeof(buf) - pos, " %02x%02x:%ddBm/%.0f%s", n->mac[4], n->mac[5], n->last_rssi,
-                        n->hue * 360.0f / 255.0f, n->near ? "*" : n->in_range ? "" : "(loin)");
+                        n->hue * 360.0f / 255.0f, n->near ? "*" : "");
     }
-    ESP_LOGI(TAG, "cycle | decalage=%lld ms | teinte=%.0f %s (%d proche%s) | foule %d, balises %.1f/s, intervalle %.1f s | ruban %d mA%s |%s",
+    ESP_LOGI(TAG, "cycle | decalage=%lld ms | teinte=%.0f %s (%d reguliere%s) | foule %d, balises %.1f/s, intervalle %.1f s | ruban %d mA%s |%s",
              (long long)(s_offset_us / 1000), s_hue, s_together ? "ensemble" : "seule", s_near_count, s_near_count > 1 ? "s" : "",
              s_crowd, s_heard_rate, beacon_interval_us() / 1000000.0f, s_est_ma, s_limiter < 0.999f ? " (limite)" : "", buf[0] ? buf : " personne");
 }
@@ -554,7 +558,6 @@ static void send_beacon(int64_t now)
     memcpy(b.name, s_nick, L2_NAME_LEN);
     esp_err_t err = esp_now_send(BROADCAST, (const uint8_t *)&b, sizeof(b));
     if (err != ESP_OK) ESP_LOGW(TAG, "esp_now_send: %s", esp_err_to_name(err));
-    s_last_beacon_tx = now;
 }
 
 /* ------------------------------------------------------------------ */
@@ -630,9 +633,10 @@ static void status_print(int64_t now)
     for (int i = 0; i < L2_MAX_NEIGHBORS; i++) {
         l2_neighbor_t *n = &s_neighbors[i];
         if (!n->used) continue;
-        printf("%s{\"id\":\"%02x%02x\",\"name\":\"%s\",\"rssi\":%d,\"rssi_f\":%.1f,\"near\":%s,\"hue\":%.0f,\"together\":%s,\"in\":%s,\"age\":%lld,\"ph\":%.1f}",
-               first ? "" : ",", n->mac[4], n->mac[5], n->name, n->last_rssi, n->rssi_f, n->near ? "true" : "false", n->hue * 360.0f / 255.0f,
-               n->coh >= 128 ? "true" : "false", n->in_range ? "true" : "false", (long long)((now - n->last_seen_us) / 1000), n->last_diff_us / 1000.0f);
+        printf("%s{\"id\":\"%02x%02x\",\"name\":\"%s\",\"rssi\":%d,\"rssi_f\":%.1f,\"near\":%s,\"prr\":%.2f,\"hue\":%.0f,\"together\":%s,\"age\":%lld,\"ph\":%.1f}",
+               first ? "" : ",", n->mac[4], n->mac[5], n->name, n->last_rssi, n->rssi_f, n->near ? "true" : "false",
+               n->prr, n->hue * 360.0f / 255.0f,
+               n->coh >= 128 ? "true" : "false", (long long)((now - n->last_seen_us) / 1000), n->last_diff_us / 1000.0f);
         first = false;
     }
     int nw = 0; for (int i = 0; i < L2_WAVE_RECORDS; i++) if (s_waves[i].used) nw++;
@@ -826,10 +830,8 @@ static void show(float px[L2_STRIP_LEDS_MAX][3])
         ma = L2_STRIP_PEAK_MA;
     }
     s_est_ma = (int)(ma + 0.5f);
-#if L2_STRIP_ENABLED
     for (int p = 0; p < s_leds; p++) led_strip_set_pixel(s_ext, p, c[p][0], c[p][1], c[p][2]);
     led_strip_refresh(s_ext);
-#endif
     /* LED intégrée : copie le pixel central tant que le bouton est prêt, et
      * s'éteint pendant la période réfractaire (« pas prêt »). Ruban noir et
      * bouton prêt : veilleuse, pour voir que la luciole vit. */
@@ -843,26 +845,14 @@ static void show(float px[L2_STRIP_LEDS_MAX][3])
     led_strip_refresh(s_strip);
 }
 
-#if L2_STRIP_ENABLED && L2_STRIP_TEST
-static void strip_rainbow(int64_t now)
-{
-    float base = (now / 1000) % 5000 / 5000.0f * 360.0f, k = L2_STRIP_MAX_BRIGHTNESS / 255.0f;
-    for (int p = 0; p < s_leds; p++) { float c[3]; hue_to_rgb(base + p * 360.0f / s_leds, c);
-        led_strip_set_pixel(s_ext, p, (uint8_t)(c[0] * 255 * k), (uint8_t)(c[1] * 255 * k), (uint8_t)(c[2] * 255 * k)); }
-    led_strip_refresh(s_ext);
-}
-#endif
-
 /* ------------------------------------------------------------------ */
 static void luciole_task(void *arg)
 {
     int last_beat = -1;
-    int64_t tick_off = -1, send_due = -1;
+    int64_t tick_off = -1, send_due = esp_timer_get_time() + esp_random() % L2_BEAT_US;
     const float dt = L2_RENDER_MS / 1000.0f;
     static float px[L2_STRIP_LEDS_MAX][3];
-#if L2_BUTTON_ENABLED
     int btn_low_ms = 0; bool btn_pressed = false, btn_long = false;
-#endif
     s_heard_window = s_crowd_window = esp_timer_get_time();
 
     while (true) {
@@ -884,7 +874,6 @@ static void luciole_task(void *arg)
             s_heard_rate = 0.5f * s_heard_rate + 0.5f * (s_heard_count / 2.0f);
             s_heard_count = 0; s_heard_window = now;
         }
-#if L2_BUTTON_ENABLED
         /* Appui court (relâché avant L2_BUTTON_LONG_MS) : onde au relâchement.
          * Appui long : veille basculée dès le seuil atteint, pas d'onde. */
         if (gpio_get_level(L2_BUTTON_GPIO) == 0) {
@@ -898,28 +887,23 @@ static void luciole_task(void *arg)
             if (btn_pressed && !btn_long) wave_emit(now);
             btn_low_ms = 0; btn_pressed = false; btn_long = false;
         }
-#endif
 
         int beat = (int)(phase_at(now) / L2_BEAT_US);
         if (beat != last_beat) {
             last_beat = beat;
-            if (beat == 0) { neighbors_expire(now); log_bar(); }
-            if (now - s_last_beacon_tx >= beacon_interval_us() - L2_BEAT_US / 2)
-                send_due = now + (int64_t)(esp_random() % (L2_SEND_JITTER_MS + 1)) * 1000;
+            if (beat == 0) { neighbors_expire(now); log_bar(now); }
         }
+        /* Balise : à un instant tiré dans ±50 % de l'intervalle, sans lien avec
+         * le cycle (voir luciole.h). */
+        if (now >= send_due) { int64_t iv = beacon_interval_us(); send_beacon(now); send_due = now + iv / 2 + esp_random() % (iv + 1); }
         /* LED bleue : un éclair à chaque battement du cœur. */
         int hb = (int)(phase_at(now) / (float)L2_BAR_US * L2_HEART_BPB);
         if (hb != s_heart_beat) { s_heart_beat = hb; if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 1); tick_off = now + L2_TICK_US; }
         if (tick_off >= 0 && now >= tick_off) { if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 0); tick_off = -1; }
-        if (send_due >= 0 && now >= send_due) { send_beacon(now); send_due = -1; }
 
         regulate(dt, now);
-#if L2_STRIP_ENABLED && L2_STRIP_TEST
-        strip_rainbow(now);
-#else
         render(now, px);
         show(px);
-#endif
         vTaskDelay(pdMS_TO_TICKS(L2_RENDER_MS));
     }
 }
@@ -942,12 +926,10 @@ static void led_init(void)
                                      .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB };
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_strip));
     led_strip_clear(s_strip);
-#if L2_STRIP_ENABLED
     led_strip_config_t ext_cfg = { .strip_gpio_num = L2_STRIP_GPIO, .max_leds = s_leds, .led_model = LED_MODEL_SK6812,
                                    .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB };
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&ext_cfg, &rmt_cfg, &s_ext));
     led_strip_clear(s_ext);
-#endif
 }
 
 static void radio_init(void)

@@ -100,12 +100,12 @@
 
   <div class="card">
     <h2>Voisines</h2>
-    <table><thead><tr><th>Luciole</th><th>RSSI</th><th>lissé</th><th>proche</th><th>teinte</th><th>son état</th><th>phase</th><th>vue il y a</th></tr></thead><tbody id="nb"></tbody></table>
+    <table><thead><tr><th>Luciole</th><th>RSSI</th><th>lissé</th><th>régulière</th><th>teinte</th><th>son état</th><th>phase</th><th>vue il y a</th></tr></thead><tbody id="nb"></tbody></table>
     <p class="note" id="nb-note">–</p>
   </div>
 
   <div class="card wide viz" style="position:relative">
-    <h2>Signal des voisines <span class="note">(RSSI lissé, dBm ; glissez les deux lignes de seuil « ensemble » pour les régler ; triangles = ondes)</span></h2>
+    <h2>Signal des voisines <span class="note">(RSSI lissé, dBm ; triangles = ondes)</span></h2>
     <div class="row"><span class="seg" id="range"><button data-s="60" class="on">1 min</button><button data-s="180">3 min</button><button data-s="600">10 min</button></span>
       <span class="note" id="chart-note">en attente de données</span></div>
     <canvas class="chart" id="rssi-chart"></canvas>
@@ -151,7 +151,7 @@
 
   <div class="card wide">
     <h2>Console</h2>
-    <div class="row"><input type="text" class="full" id="cmd" placeholder="commande (help, get, set rssi_together -85, status, stream 500, log off…)" disabled></div>
+    <div class="row"><input type="text" class="full" id="cmd" placeholder="commande (help, get, set heart_bpb 3, status, stream 500, log off…)" disabled></div>
     <div id="log"></div>
   </div>
 </main>
@@ -278,7 +278,7 @@ const label = n => n.name ? `${n.name} (${n.id})` : n.id;
 
 function renderStatus(d) {
   const tf = d.together_f ?? (d.together ? 1 : 0);
-  $('together').textContent = (d.together ? 'ensemble' : 'seule') + (d.near ? ` (${d.near} proche${d.near > 1 ? 's' : ''})` : '') + (d.heart_bpb ? ` · cœur ${Math.round(24 * d.heart_bpb)} bpm` : '');
+  $('together').textContent = (d.together ? 'ensemble' : 'seule') + (d.near ? ` (${d.near} régulière${d.near > 1 ? 's' : ''})` : '') + (d.heart_bpb ? ` · cœur ${Math.round(24 * d.heart_bpb)} bpm` : '');
   $('g-tog').style.width = (100 * tf) + '%';
   $('ready').textContent = d.ready === false ? 'pas prêt (animation en cours)' : 'prêt';
   $('hue').textContent = d.hue.toFixed(0) + '°'; $('hue-sw').style.background = hsv(d.hue);
@@ -300,23 +300,21 @@ function renderStatus(d) {
   for (let p = 0; p < n; p++) st.children[p].style.background = tf > 0.5 ? hsv(d.hue) : hsv(p * 360 / n);
   chartPush(d); if (recording) recPush(d);
   const nb = d.nb.slice().sort((a, b) => b.rssi_f - a.rssi_f);
-  $('nb').innerHTML = nb.map(n => `<tr style="opacity:${n.in ? 1 : .5}"><td>${label(n)}${n.in ? '' : ' (loin)'}</td><td>${n.rssi} dBm</td><td>${n.rssi_f.toFixed(1)}</td>
-    <td>${n.near ? '<span class="bar" style="width:40px"></span> oui' : 'non'}</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${hsv(n.hue)}"></span> ${n.hue}°</td><td>${n.together ? 'ensemble' : 'seule'}</td><td>${n.ph != null ? n.ph.toFixed(0) + ' ms' : '–'}</td><td>${(n.age / 1000).toFixed(1)} s</td></tr>`).join('');
-  $('nb-note').textContent = nb.length ? `${nb.length} voisine${nb.length > 1 ? 's' : ''} en table (16 au plus, les plus fortes)` : 'aucune voisine entendue';
+  $('nb').innerHTML = nb.map(n => `<tr><td>${label(n)}</td><td>${n.rssi} dBm</td><td>${n.rssi_f.toFixed(1)}</td>
+    <td>${n.near ? '<span class="bar" style="width:40px"></span> oui' : 'non'}${n.prr != null ? ` <small>(${Math.round(n.prr * 100)} % reçues)</small>` : ''}</td><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${hsv(n.hue)}"></span> ${n.hue}°</td><td>${n.together ? 'ensemble' : 'seule'}</td><td>${n.ph != null ? n.ph.toFixed(0) + ' ms' : '–'}</td><td>${(n.age / 1000).toFixed(1)} s</td></tr>`).join('');
+  $('nb-note').textContent = nb.length ? `${nb.length} voisine${nb.length > 1 ? 's' : ''} en table (16 au plus, les plus fortes). Régulière : plus de 70 % de ses balises reçues (moyenne glissante sur ses numéros de balise), jusqu'à moins de 50 %.` : 'aucune voisine entendue';
 }
 function setTestUi(t) { const map = { 0: 'off', 1: 'white', 2: 'black', 3: 'px', 4: 'chase' }; $('test').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === map[t])); }
 
 /* ---------- Paramètres : groupes et aide ---------- */
-const ESSENTIELS = ['rssi_together', 'rssi_apart', 'rainbow_b', 'heart_bpb', 'heart_floor', 'wave_trail', 'strip_max', 'strip_peak_ma', 'led_ma'];
+const ESSENTIELS = ['rainbow_b', 'heart_bpb', 'heart_floor', 'wave_trail', 'strip_max', 'strip_peak_ma', 'led_ma'];
 const GROUPES = {
   'Couleur et rendu': ['hue_tau', 'rainbow_flow', 'wave_sweep'],
   'Onde (inondation)': ['wave_jitter', 'wave_suppress', 'wave_relay_min'],
   'Radio': ['beacon_rate'],
 };
-const TITRES = { rssi_together: 'Seuil « ensemble »', rssi_apart: 'Seuil « seule »', hue_tau: 'Accord sur la couleur', rainbow_b: 'Luminosité de l\'arc-en-ciel', rainbow_flow: 'Vitesse de l\'arc-en-ciel', heart_bpb: 'Rythme du cœur', heart_floor: 'Repos entre deux battements', wave_sweep: 'Traversée du ruban', wave_trail: 'Traînée de l\'onde (période réfractaire)', wave_jitter: 'Délai de rediffusion', wave_suppress: 'Suppression des rediffusions', wave_relay_min: 'Délai entre rediffusions', beacon_rate: 'Débit visé sur le canal', strip_max: 'Plafond de luminosité', strip_peak_ma: 'Courant de pic admis', led_ma: 'Courant d\'une composante' };
+const TITRES = { hue_tau: 'Accord sur la couleur', rainbow_b: 'Luminosité de l\'arc-en-ciel', rainbow_flow: 'Vitesse de l\'arc-en-ciel', heart_bpb: 'Rythme du cœur', heart_floor: 'Repos entre deux battements', wave_sweep: 'Traversée du ruban', wave_trail: 'Traînée de l\'onde (période réfractaire)', wave_jitter: 'Délai de rediffusion', wave_suppress: 'Suppression des rediffusions', wave_relay_min: 'Délai entre rediffusions', beacon_rate: 'Débit visé sur le canal', strip_max: 'Plafond de luminosité', strip_peak_ma: 'Courant de pic admis', led_ma: 'Courant d\'une composante' };
 const AIDE = {
-  rssi_together: 'Signal lissé (dBm) au-dessus duquel une voisine nous met « ensemble » : le ruban passe de l\'arc-en-ciel à la couleur commune et bat le cœur du groupe. Monter la valeur (vers -80) exige d\'être plus près. Mesuré sur le hub à quelques centimètres : -36 à -89 dBm ; à 7,5 m en intérieur : -93 à -97.',
-  rssi_apart: 'Signal lissé (dBm) en dessous duquel une voisine ne nous tient plus « ensemble ». L\'écart avec le seuil « ensemble » évite qu\'une luciole en limite fasse basculer l\'état sans arrêt. On reste aussi ensemble 3 s après la dernière balise d\'une voisine proche (2,5 intervalles de balise en foule).',
   hue_tau: 'Constante de temps (s) avec laquelle la couleur commune rejoint la moyenne des voisines entendues. Plus petit = un groupe s\'accorde plus vite. Une onde, elle, impose sa couleur d\'un coup.',
   rainbow_b: 'Luminosité (0 à 1) de l\'arc-en-ciel quand la luciole est seule. Ensemble, c\'est le cœur qui fixe la luminosité (repos … 1).',
   rainbow_flow: 'Vitesse de défilement de l\'arc-en-ciel en tours par seconde (un tour = le motif a parcouru tout le ruban). Négatif = vers la gauche. 0,1 = un tour en 10 s.',
@@ -332,7 +330,7 @@ const AIDE = {
   strip_peak_ma: 'Courant (mA) que le ruban ne dépasse jamais sur une image : si l\'image en demande plus, tout est atténué du même facteur. Les cartes ont un fusible réarmable de 1 A sur le 5 V, et le module prend ~110 mA : 900 convient à une power bank d\'au moins 1 A.',
   led_ma: 'Courant (mA) d\'une composante rouge, verte ou bleue à fond, pour estimer le courant du ruban. 20 est l\'hypothèse haute ; les fiches des SK6812 disent 8 à 12. À mesurer : ampèremètre sur le 5 V du Grove, « test black » puis « test white » avec le plafond à 255, (différence) / (nombre de LED × 3).',
 };
-const AIDE_ETAT = { together: 'Seule : arc-en-ciel calme. Ensemble : dès qu\'une voisine est entendue au-dessus du seuil « ensemble », couleur commune et cœur du groupe. Le fondu entre les deux dure une seconde.', ready: 'Le bouton est verrouillé tant qu\'une animation d\'onde est en cours (traversée + traînée), qu\'elle vienne de cette luciole ou d\'une autre. La LED intégrée s\'éteint pendant ce temps.', crowd: 'Nombre d\'émettrices distinctes entendues sur les 20 à 40 dernières secondes. Sert à espacer les balises.', heard: 'Balises reçues par seconde, toutes lucioles confondues.', interval: 'Espacement de mes propres balises : un temps (0,5 s) quand on est peu, jusqu\'à 30 s en foule.', offset: 'Correction de phase accumulée depuis le démarrage. Doit se stabiliser quand plusieurs lucioles sont allumées.', waves: 'Ondes récentes gardées en mémoire pour ne pas rejouer deux fois la même (origine + numéro).', ma: 'Estimation du courant du ruban d\'après les pixels affichés, après le limiteur de pic, sans le module.' };
+const AIDE_ETAT = { together: 'Seule : arc-en-ciel calme. Ensemble : dès qu\'une voisine est entendue régulièrement (plus de 70 % de ses balises reçues, d\'après ses numéros de balise ; elle cesse de compter sous 50 %), couleur commune et cœur du groupe. Pas de seuil de signal : au bord de la portée une balise sur trois passe, ce qui faisait clignoter l\'état. On reste ensemble 3 s après sa dernière balise (2,5 intervalles en foule). Le fondu entre les deux dure une seconde.', ready: 'Le bouton est verrouillé tant qu\'une animation d\'onde est en cours (traversée + traînée), qu\'elle vienne de cette luciole ou d\'une autre. La LED intégrée s\'éteint pendant ce temps.', crowd: 'Nombre d\'émettrices distinctes entendues sur les 20 à 40 dernières secondes. Sert à espacer les balises.', heard: 'Balises reçues par seconde, toutes lucioles confondues.', interval: 'Espacement de mes propres balises : un temps (0,5 s) quand on est peu, jusqu\'à 30 s en foule.', offset: 'Correction de phase accumulée depuis le démarrage. Doit se stabiliser quand plusieurs lucioles sont allumées.', waves: 'Ondes récentes gardées en mémoire pour ne pas rejouer deux fois la même (origine + numéro).', ma: 'Estimation du courant du ruban d\'après les pixels affichés, après le limiteur de pic, sans le module.' };
 
 function paramRow(p) {
   const t = TITRES[p.k] || p.k, a = (AIDE[p.k] || p.d).replace(/"/g, '&quot;');
@@ -388,7 +386,7 @@ const diffText = () => Object.values(params).filter(p => p.v !== p.def).map(p =>
 const hist = new Map();            /* id -> [{t, f, r, ph}] */
 const cohHist = [], heardHist = [], intervalHist = [], events = [];
 const order = [];                  /* ordre d'apparition : attribution fixe des couleurs */
-let rangeS = 60, lastT = 0, drag = null;
+let rangeS = 60, lastT = 0;
 const Y0 = -110, Y1 = -30, PAD = { l: 44, r: 64, t: 10, b: 22 };
 const css = v => getComputedStyle(document.querySelector('.viz')).getPropertyValue(v).trim();
 const seriesColor = id => { const i = order.indexOf(id); return i >= 0 && i < 8 ? css('--series-' + (i + 1)) : css('--series-other'); };
@@ -424,7 +422,6 @@ function setupCanvas(c) {
 }
 const xOf = (t, w) => PAD.l + (w - PAD.l - PAD.r) * (1 - (lastT - t) / rangeS);
 const yOf = (v, h) => PAD.t + (h - PAD.t - PAD.b) * (Y1 - v) / (Y1 - Y0);
-const vOf = (y, h) => Y1 - (y - PAD.t) / (h - PAD.t - PAD.b) * (Y1 - Y0);
 function timeAxis(ctx, w, h) {
   ctx.fillStyle = css('--text-secondary'); ctx.textAlign = 'center';
   const step = rangeS <= 60 ? 10 : rangeS <= 180 ? 30 : 120;
@@ -445,8 +442,6 @@ function drawSeries(ctx, w, h, pts, yFn, col, key = 'v') {
 function chartDraw() {
   const { ctx, w, h } = setupCanvas($('rssi-chart'));
   ctx.clearRect(0, 0, w, h);
-  const tog = params.rssi_together?.v ?? -92, apart = params.rssi_apart?.v ?? -99;
-  ctx.fillStyle = 'rgba(255,209,102,0.07)'; ctx.fillRect(PAD.l, PAD.t, w - PAD.l - PAD.r, yOf(tog, h) - PAD.t);
   ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.fillStyle = css('--text-secondary'); ctx.textAlign = 'right';
   for (let v = Y1; v >= Y0; v -= 10) { const y = yOf(v, h); ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke(); ctx.fillText(v, PAD.l - 6, y); }
   timeAxis(ctx, w, h);
@@ -458,15 +453,7 @@ function chartDraw() {
     if (last) { ctx.fillStyle = seriesColor(id); ctx.beginPath(); ctx.arc(xOf(last.t, w), yOf(last.f, h), 4, 0, 2 * Math.PI); ctx.fill(); ends.push({ id, y: yOf(last.f, h), col: seriesColor(id) }); } }
   spreadLabels(ends); ctx.textAlign = 'left';
   for (const e of ends) { ctx.fillStyle = e.col; ctx.fillRect(w - PAD.r + 6, e.y - 1.5, 10, 3); ctx.fillStyle = css('--text-primary'); ctx.fillText(names.get(e.id) || e.id, w - PAD.r + 20, e.y); }
-  /* seuils : forts (pleine, nulle) étiquetés au-dessus, faibles (entre, sort) en dessous, à gauche */
-  const line = (v, label, dash, strong) => { if (v == null) return; const y = yOf(v, h);
-    ctx.setLineDash(dash); ctx.strokeStyle = strong ? '#ffd166' : css('--text-secondary'); ctx.lineWidth = strong ? 2 : 1;
-    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(w - PAD.r, y); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = strong ? '#ffd166' : css('--text-secondary'); ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(`${label} ${v}`, PAD.l + 6, strong ? y - 2 : y + 15); ctx.textBaseline = 'middle'; };
-  line(tog, 'ensemble', [6, 4], true); line(apart, 'seule', [2, 4], false);
-  if (drag) { ctx.fillStyle = '#ffd166'; ctx.textAlign = 'left'; ctx.fillText(`${LBL[drag.key]} → ${drag.v} dBm`, PAD.l + 8, yOf(drag.v, h) - 14); }
   $('legend').innerHTML = [...hist.keys()].map(id => `<span><i style="background:${seriesColor(id)}"></i>${names.get(id) || id}</span>`).join('') +
-    `<span><i style="background:#ffd166"></i>seuil « ensemble »</span><span><i style="background:${css('--text-secondary')};height:1px"></i>seuil « seule »</span>` +
     Object.entries({ emit: 'émise', heard: 'entendue', play: 'jouée', relay: 'rediffusée', skip: 'supprimée', late: 'abandonnée' }).map(([k, v]) => `<span><i style="background:${EV_COLOR[k]};width:8px;height:8px;border-radius:0"></i>${v}</span>`).join('');
   smallChart('coh-chart', [{ pts: cohHist, col: css('--series-1') }], 0, 1, [0, 0.5, 1], v => v.toFixed(2));
   const phSeries = [...hist.entries()].map(([id, pts]) => ({ pts, col: seriesColor(id), id }));
@@ -476,8 +463,6 @@ function chartDraw() {
   smallChart('heard-chart', [{ pts: heardHist, col: css('--series-3') }], 0, Math.max(10, ...heardHist.map(p => p.v)) * 1.1, null, v => v.toFixed(1));
   smallChart('interval-chart', [{ pts: intervalHist, col: css('--series-2') }], 0, Math.max(1, ...intervalHist.map(p => p.v)) * 1.1, null, v => v.toFixed(1) + ' s');
 }
-const LBL = { rssi_together: 'ensemble', rssi_apart: 'seule' };
-
 function smallChart(id, series, lo, hi, ticks, fmt, key = 'v') {
   const { ctx, w, h } = setupCanvas($(id)); ctx.clearRect(0, 0, w, h);
   const y = v => 8 + (h - 8 - 18) * (1 - (v - lo) / (hi - lo));
@@ -489,18 +474,10 @@ function smallChart(id, series, lo, hi, ticks, fmt, key = 'v') {
   for (const e of ends) { ctx.fillStyle = e.col; ctx.fillRect(w - PAD.r + 6, e.y - 1.5, 10, 3); ctx.fillStyle = css('--text-primary'); ctx.fillText(e.txt, w - PAD.r + 20, e.y); }
 }
 
-/* seuils glissables + survol */
+/* survol du graphe */
 const rc = $('rssi-chart');
-function nearThreshold(ev) {
-  const r = rc.getBoundingClientRect(), y = ev.clientY - r.top, h = r.height; let best = null, bd = 8;
-  for (const key of ['rssi_together', 'rssi_apart']) { const p = params[key]; if (!p) continue; const d = Math.abs(yOf(p.v, h) - y); if (d < bd) { bd = d; best = key; } }
-  return best;
-}
-rc.addEventListener('pointerdown', ev => { const key = nearThreshold(ev); if (!key || !link) return; drag = { key, v: params[key].v }; rc.setPointerCapture(ev.pointerId); });
 rc.addEventListener('pointermove', ev => {
-  const r = rc.getBoundingClientRect(), h = r.height, y = ev.clientY - r.top;
-  if (drag) { const p = params[drag.key]; drag.v = Math.round(Math.min(p.max, Math.max(p.min, vOf(y, h)))); chartDraw(); return; }
-  rc.style.cursor = nearThreshold(ev) ? 'ns-resize' : 'crosshair';
+  const r = rc.getBoundingClientRect();
   const t = lastT - rangeS * (1 - (ev.clientX - r.left - PAD.l) / (r.width - PAD.l - PAD.r));
   const rows = [];
   for (const [id, pts] of hist) { let best = null; for (const p of pts) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p; if (best && Math.abs(best.t - t) < 2) rows.push(`<span style="color:${seriesColor(id)}">●</span> ${names.get(id) || id} : ${best.f.toFixed(1)} dBm (brut ${best.r})`); }
@@ -510,13 +487,12 @@ rc.addEventListener('pointermove', ev => {
   const card = rc.closest('.card').getBoundingClientRect(); tip.style.left = Math.min(ev.clientX - card.left + 14, card.width - 220) + 'px'; tip.style.top = (ev.clientY - card.top - 10) + 'px';
 });
 rc.addEventListener('pointerleave', () => { $('tip').style.display = 'none'; });
-rc.addEventListener('pointerup', () => { if (!drag) return; const { key, v } = drag; drag = null; if (v !== params[key].v) send(`set ${key} ${v}`); else chartDraw(); });
 $('range').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { rangeS = +b.dataset.s; $('range').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); chartDraw(); }));
 window.addEventListener('resize', chartDraw);
 
 /* ---------- Enregistrement CSV (+ GPS) ---------- */
 let recording = false, recRows = [], watchId = null; const pos = { lat: '', lon: '', acc: '' };
-const HEADER = 'horodatage,t_luciole_ms,lat,lon,precision_m,ma_mac,ensemble,teinte,foule,balises_s,intervalle_s,voisine,nom,rssi,rssi_lisse,proche,teinte_voisine,ensemble_voisine,age_ms_ou_id_onde,phase_ms_ou_saut';
+const HEADER = 'horodatage,t_luciole_ms,lat,lon,precision_m,ma_mac,ensemble,teinte,foule,balises_s,intervalle_s,voisine,nom,rssi,rssi_lisse,reguliere,teinte_voisine,ensemble_voisine,age_ms_ou_id_onde,phase_ms_ou_saut';
 function recStart() {
   recording = true; recRows = [HEADER]; $('rec').textContent = 'Arrêter'; $('rec-dot').classList.add('rec'); $('rec-dl').disabled = true;
   if ($('gps').checked && navigator.geolocation) watchId = navigator.geolocation.watchPosition(p => { pos.lat = p.coords.latitude.toFixed(6); pos.lon = p.coords.longitude.toFixed(6); pos.acc = Math.round(p.coords.accuracy); },

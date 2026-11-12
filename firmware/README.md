@@ -4,7 +4,7 @@ Essaim de lumières de vélo pour M5Stack NanoC6 (ESP32-C6) et AtomS3 Lite (ESP3
 
 Documentation du projet : wiki Outline, collection Luciole². Simulation d'un Critical Mass avec les mêmes règles : `../sim/index.html`. Installation par USB depuis le navigateur : `../web/`.
 
-Deux numéros de version, indépendants : `L2_FW_VERSION` (le firmware, 7.0.0) et `L2_PROTO_VERSION` (le contrat radio, 1). Le contrat est décrit en bas de `main/luciole.h` et dans la page Architecture et protocole du wiki : canal, mode longue portée, cycle, format des trames, règles d'évolution. Une luciole déjà distribuée doit rester membre de l'essaim avec les firmwares futurs.
+Deux numéros de version, indépendants : `L2_FW_VERSION` (le firmware, 7.2.0) et `L2_PROTO_VERSION` (le contrat radio, 1). Le contrat est décrit en bas de `main/luciole.h` et dans la page Architecture et protocole du wiki : canal, mode longue portée, cycle, format des trames, règles d'évolution. Une luciole déjà distribuée doit rester membre de l'essaim avec les firmwares futurs.
 
 ## Cartes et configuration
 
@@ -12,16 +12,16 @@ Une table de brochage par cible dans `luciole.h` (`L2_BOARD`, broches du bouton,
 
 Le nombre de LED du ruban est une configuration en NVS (espace `luciole`, clé `leds`, 10 par défaut, 144 au plus), écrite par la page de flashage ou par la commande série `leds N`. Le courant est tenu par un limiteur par image : si l'image demande plus que `strip_peak_ma` (900 mA par défaut, estimation à `led_ma` par composante à fond), tout est atténué du même facteur. Les deux cartes ont un fusible réarmable de 1 A sur le 5 V, et le module prend ~110 mA ; une power bank d'au moins 1 A convient. Un cœur à pleine amplitude ne tire en moyenne que 10 à 25 % de son pic, l'autonomie n'est pas le facteur limitant.
 
-Les réglages (seuils « ensemble », couleur, arc-en-ciel, cœur, onde, débit de balises, plafond et courant du ruban : 16 paramètres) sont des variables modifiées en direct par la console et enregistrées en NVS sous leur nom de clé ; les valeurs par défaut restent celles de `luciole.h`. Page web de mise au point : https://lucioles.limn-labs.xyz/luciole/.
+Les réglages (couleur, arc-en-ciel, cœur, onde, débit de balises, plafond et courant du ruban : 16 paramètres) sont des variables modifiées en direct par la console et enregistrées en NVS sous leur nom de clé ; les valeurs par défaut restent celles de `luciole.h`. Page web de mise au point : https://lucioles.limn-labs.xyz/luciole/.
 
 Console série (USB, 115200 bauds), une commande par ligne, réponses en JSON sur une ligne :
 
 ```
 version              fw, carte, protocole, MAC, nombre de LED
 get                  tous les paramètres : [{"k","v","def","min","max","d"}, …]
-get rssi_together    un paramètre
-set rssi_together -85   applique et enregistre (refusé hors limites)
-reset [rssi_together]   retour au défaut, pour un paramètre ou tous
+get heart_bpb        un paramètre
+set heart_bpb 4      applique et enregistre (refusé hors limites)
+reset [heart_bpb]    retour au défaut, pour un paramètre ou tous
 status               état complet : ensemble/seule, teinte, foule, bouton prêt, courant, voisines (RSSI, proche, teinte, état, âge)…
 stream 500 | off     même état toutes les 500 ms (100 au moins)
 log off | on         coupe ou rétablit le journal humain (utile pendant un flux)
@@ -40,7 +40,7 @@ Pendant un flux (`stream`), chaque événement d'onde sort aussi en JSON : `{"ev
 Deux états et une horloge partagée. Rien d'autre n'est affiché, parce que rien d'autre n'est comparable entre deux vélos à dix mètres, de nuit : l'instant et la couleur. Pixel 0 à gauche (côté connecteur Grove).
 
 - Seule : arc-en-ciel linéaire sur toute la longueur, qui défile de gauche à droite (`L2_RAINBOW_FLOW` tours/s), luminosité fixe `L2_RAINBOW_B`. Rien ne bat.
-- Ensemble : dès qu'une voisine est entendue au-dessus de `L2_RSSI_TOGETHER` (-100 dBm depuis 7.1.1, soit le plancher de réception : entendue, c'est ensemble), le ruban prend la couleur commune et bat le cœur du groupe : `L2_HEART_BPB` battements par cycle commun de 2,5 s (3 = 72 bpm), forme « lub-dub » (attaque nette, décroissance en 120 ms, deuxième coup à 60 %), repos à `L2_HEART_FLOOR`. Un nombre entier de battements par cycle garde toutes les lucioles alignées sans horloge absolue. On reste ensemble tant qu'une voisine proche est au-dessus de `L2_RSSI_APART` (-99) et vue depuis moins de 3 s (ou 2,5 intervalles de balise, en foule). Fondu d'une seconde entre les deux états.
+- Ensemble : dès qu'une voisine est entendue régulièrement (on reçoit plus de `L2_NEAR_ENTER` = 70 % de ses balises, et elle cesse de compter sous `L2_NEAR_LEAVE` = 50 % ; le taux est une moyenne glissante sur le compteur de la balise, chaque numéro sauté étant une balise perdue, et une voisine à côté devient régulière en 8 balises environ, soit 4 s en petit groupe ; depuis 7.2.0, plus de seuil de signal : le RSSI varie de 10 dB d'un instant à l'autre, et au bord de la portée une balise sur dix passe, ce qui faisait clignoter l'état au rythme des balises d'une luciole lointaine), le ruban prend la couleur commune et bat le cœur du groupe : `L2_HEART_BPB` battements par cycle commun de 2,5 s (3 = 72 bpm), forme « lub-dub » (attaque nette, décroissance en 120 ms, deuxième coup à 60 %), repos à `L2_HEART_FLOOR`. Un nombre entier de battements par cycle garde toutes les lucioles alignées sans horloge absolue. On reste ensemble tant qu'une voisine régulière a été entendue depuis moins de 3 s (ou 2,5 intervalles de balise, en foule). Fondu d'une seconde entre les deux états.
 - Couleur commune : moyenne circulaire des voisines entendues (constante de temps 3 s, `L2_HUE_TAU_S`), diffusée dans la balise. Pas de dérive : seule une onde la change.
 - Onde : un appui court sur le bouton fait traverser le ruban par un front blanc (`L2_WAVE_SWEEP_US`), puis le ruban garde la couleur de l'onde avec des paillettes (`L2_WAVE_TRAIL_US`, 3 s) et le cœur reprend dans cette couleur. L'onde porte la teinte opposée à la couleur commune (±40°), et l'impose à tout le groupe (inondation, ci-dessous). Période réfractaire : tant qu'une animation dure, qu'elle vienne de moi ou d'une autre, le bouton est ignoré. Une onde entendue pendant le front (0,5 s) ne change que la couleur ; pendant la traînée, elle relance l'animation (une voisine dont l'animation finit 100 ms après la mienne doit jouer l'onde que je viens de lancer).
 - Veille : un appui long (800 ms, `L2_BUTTON_LONG_MS`) bascule la luciole seule entre éteinte et allumée (fondu de 0,5 s). Ensemble, elle bat quand même, et se rendort quand le groupe s'éloigne ; une onde reste visible en veille. Pas enregistré : allumée au démarrage. Commande `veille`, état dans `status`.
@@ -87,7 +87,7 @@ Table de partitions `partitions.csv` : NVS à 0x9000 (la page de flashage y écr
 Une ligne par cycle :
 
 ```
-I (29465) luciole: cycle | decalage=3254 ms | teinte=167 ensemble (2 proches) | foule 4, balises 7.5/s, intervalle 0.5 s | ruban 143 mA | 0260:-63dBm/165* 5bdc:-47dBm/165*
+I (29465) luciole: cycle | decalage=3254 ms | teinte=167 ensemble (2 regulieres) | foule 4, balises 7.5/s, intervalle 0.5 s | ruban 143 mA | 0260:-63dBm/165* 5bdc:-47dBm/165*
 ```
 
 `teinte` est la teinte courante en degrés, `foule` le nombre d'émettrices distinctes entendues, `intervalle` l'espacement de mes balises, `ruban` le courant estimé ; après le deux-points de chaque voisine : RSSI et teinte annoncée, `*` = proche (nous met ensemble), `(loin)` = entendue mais hors table.
