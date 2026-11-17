@@ -50,9 +50,13 @@ b = Board("v0", "v0", "v0/out/v0.net", fp_libs={"luciole": "lib/luciole.pretty"}
           title="Luciole² : carte v0", rev="0.1", date="2026-11-17")
 b.outline(0, 0, W, H)
 
-# Largeurs de piste par réseau. Chemins de puissance : 0,6 mm (1 A à 1,5 A). 3,3 V : 0,4 mm.
-b.netclass("Puissance", ["VBUS", "VBAT", "VSYS", "BATP", "BATN", "VCHG", "VBIN", "SW", "VLED", "VPORT"], 0.6)
+# Largeurs de piste par réseau. Chemins de puissance : 0,5 mm, sur des longueurs de
+# quelques centimètres (2 A en pointe côté batterie). 3,3 V : 0,4 mm. La barre des LED,
+# tracée par script, fait 1 mm.
+b.netclass("Puissance", ["VBUS", "VBAT", "VSYS", "BATP", "BATN", "VCHG", "VBIN", "SW", "VLED", "VPORT"], 0.5)
 b.netclass("Alimentation", ["+3V3", "V3IN", "VBUS_AMORTI", "DW_VCC"], 0.4)
+# La masse a sa classe : les routeurs automatiques l'ignorent, les plans la relient.
+b.netclass("Masse", ["GND"], 0.4)
 
 # ----------------------------------------------------------------- face avant
 # Grove : ouverture vers la gauche, au bord, comme sur la carte d'essai.
@@ -138,57 +142,68 @@ for i in range(N_LED):
         b.track(f"LED_D{i + 1}", [dout, (xm, dout[1]), (xm, nxt[1]), nxt], SIG)
 
 # ------------------------------------------------- placement des autres blocs
-# Premier placement, par rangement automatique dans des rectangles. Face avant : deux
-# bandes libres, au-dessus de la barre VLED et sous les vias de masse des LED. Dos : la
-# zone des accès, entre l'USB-C et la batterie. Le milieu de la carte reste libre pour
-# les liaisons qui vont d'une extrémité à l'autre, et pour les pastilles de test.
+# Premier placement, par rangement automatique dans des rectangles.
+#
+# Face avant : deux bandes libres, au-dessus des condensateurs des LED et sous leurs vias
+# de masse. Dos : la zone des accès, entre l'USB-C et la batterie.
+#
+# Le connecteur de batterie est au milieu de la largeur, pour laisser deux couloirs au
+# dos, au-dessus et au-dessous de lui : c'est par là que les liaisons de la zone des
+# accès rejoignent le dessous de la batterie, puis le module. Un premier placement, qui
+# remplissait toute la largeur à cet endroit, ne laissait aucun passage : les deux
+# routeurs automatiques y ont échoué.
 HAUT1, HAUT2 = 0.5, 5.6        # bande du haut, face avant, au-dessus des condensateurs des LED
 BAS1, BAS2 = 13.9, 21.3        # bande du bas, face avant
 X_FIN = X_SANS_CUIVRE - 0.6    # rien au-delà : zone de l'antenne
 
 # Connecteur de batterie, au dos : ouverture vers la batterie, à 4,8 mm de son bord.
-b.place("J2", X_BAT_DEBUT - 4.8 - 4.45, 5.9, rot=ROT_BATTERIE, bottom=True)
+b.place("J2", X_BAT_DEBUT - 4.8 - 4.45, YC, rot=ROT_BATTERIE, bottom=True)
 assert min(x for x, _ in b.pads("J2", "MP")) > b.pad("J2", "1")[0], "J2 doit s'ouvrir vers la batterie"
-# Thermistance au bord de la zone de la batterie, pas dessous.
-b.place("TH1", X_BAT_DEBUT - 1.2, 16.0, rot=90, bottom=True)
+# Thermistance au bord de la zone de la batterie, pas dessous, au ras du bord de carte.
+b.place("TH1", X_BAT_DEBUT - 1.3, 20.7, bottom=True)
 
-# Dos, derrière l'USB-C : protection, entrée, présence de l'USB, partage de charge, arrêt
-# de la charge. Dans chaque rectangle, les pièces hautes viennent d'abord : le rangement
-# se fait par rangées, et une rangée prend la hauteur de sa plus grande pièce.
-b.flow(["U1", "Q4", "JP1", "D16", "D22", "C1", "C5", "R39", "D24", "C38", "R1", "R2",
+# Dos, derrière l'USB-C : protection, entrée, présence de l'USB, lecture des broches CC.
+# Dans chaque rectangle, les pièces hautes viennent d'abord : le rangement se fait par
+# rangées, et une rangée prend la hauteur de sa plus grande pièce.
+b.flow(["U1", "JP1", "R39", "C1", "D24", "C38", "R1", "R2",
         "C39", "R5", "R6", "R7", "R37", "R38", "C34", "R44", "C40", "R41", "R42"],
-       8.6, 0.7, 23.2, 13.4, bottom=True)
+       8.6, 0.7, 23.0, 13.4, bottom=True)
 # Dos, à côté du bouton : chargeur, et protection du bouton.
 b.flow(["U2", "Q1", "D19", "C2", "C11", "R8", "R9", "R10", "R11", "R12"],
-       5.4, 13.9, 23.2, 21.3, bottom=True)
-# Dos, sous le connecteur de batterie : inversion et protection de cellule.
-b.flow(["Q2", "Q6", "U3", "Q3", "R43", "R45", "R46", "R14", "C3", "R15", "R16", "R17"],
-       23.7, 11.4, X_BAT_DEBUT - 2.4, 21.3, bottom=True)
+       5.4, 13.9, 23.0, 21.3, bottom=True)
 
-# Face avant, côté accès, bande du haut : convertisseur des LED, dans l'ordre du courant.
-x, _ = b.flow(["JP3", "C13", "L1", "U8", "C14", "C15"], 12.6, HAUT1, 46.0, HAUT2)
+# Face avant, côté accès, bande du haut : inversion, protection de cellule, partage de
+# charge, pont de mesure de la batterie.
+b.flow(["Q2", "Q6", "U3", "Q3", "Q4", "D16", "D22",
+        "R43", "R45", "R46", "R14", "C3", "R15", "R16", "R17"],
+       12.6, HAUT1, 46.0, HAUT2)
+# Face avant, bande du haut, au milieu : convertisseur des LED, dans l'ordre du courant.
+x, _ = b.flow(["C5", "JP3", "C13", "L1", "U8", "C14", "C15"], 46.6, HAUT1, 80.0, HAUT2)
 x, _ = b.flow(["R25", "C37", "R26", "R27"], x + 0.25, HAUT1, x + 4.6, HAUT2)
 x, _ = b.flow(["Q5"], x + 0.25, HAUT1, x + 4.6, HAUT2)
 b.flow(["R28", "R24"], x + 0.25, HAUT1, x + 2.4, HAUT2)
 # Face avant, côté accès, bande du bas : port Grove, fin de la chaîne de LED.
-b.flow(["U11", "U10", "F1", "JP4", "TP14", "C32", "C41", "R31", "R32", "R33", "R34", "C33", "R36", "R30"],
+b.flow(["U11", "F1", "JP4", "TP14", "C32", "C41", "R31", "R32", "R36", "R30"],
        11.9, BAS1, 36.0, BAS2)
 
 # Face avant, côté module, bande du haut : régulateur, superviseur, redémarrage.
 b.flow(["U4", "U5", "JP2", "C6", "C7", "C8", "C35", "C9", "R18", "C10", "R19", "R20"],
        86.0, HAUT1, X_FIN, HAUT2)
-# Face avant, côté module, bande du bas : boutons internes, accéléromètre, limitation des
-# broches du port, puis le tampon des LED, au plus près de la première LED.
-b.flow(["SW1", "SW2", "D20", "D21", "Q7", "U7", "C36", "C12", "R22", "R23", "R13", "R21", "R40", "R3", "R4",
-        "C4", "R35", "R47"],
+# Face avant, bande du bas : boutons internes au milieu ; côté module, adaptateurs de
+# niveau et tampon du port, arrêt de la charge, accéléromètre, puis le tampon des LED, au
+# plus près de la première LED.
+b.flow(["SW1", "SW2"], 63.0, BAS1, 77.6, BAS2 - 2.9)
+b.flow(["Q8", "Q9", "Q7", "U10", "U7", "C36", "C12", "C33", "R22", "R23", "R13", "R21", "R40", "R3", "R4",
+        "C4", "R33", "R34", "R35", "R47"],
        78.0, BAS1, 107.5, BAS2)
 b.flow(["U9", "C16", "R29"], 108.0, BAS1, X_FIN, BAS2)
 
-# Pastilles de test, face avant, au milieu de la carte : côté accès celles des réseaux de
-# la charge, côté module celles de la puce. TP15 et TP16 : injection sur le rail des LED.
-b.flow(["TP1", "TP2", "TP18", "TP3", "TP17", "TP13", "TP12"], 37.0, BAS2 - 2.6, 60.0, BAS2)
-b.flow(["TP4", "TP10", "TP11", "TP8", "TP9", "TP6"], 60.5, BAS2 - 2.6, 77.8, BAS2)
-b.flow(["TP15", "TP16", "TP5", "TP7"], 60.0, HAUT1, 80.0, HAUT2)
+# Pastilles de test, face avant, bande du bas, au milieu de la carte : côté accès celles
+# des réseaux de la charge, côté module celles de la puce.
+# TP15 et TP16, plus grandes : injection sur le rail des LED.
+b.flow(["TP1", "TP2", "TP18", "TP3", "TP17", "TP13", "TP12", "TP5", "TP4", "TP10", "TP11", "TP8", "TP9", "TP6"],
+       37.0, BAS2 - 2.6, 77.9, BAS2)
+b.flow(["TP15", "TP16", "TP7"], 50.0, BAS2 - 6.0, 62.0, BAS2 - 2.8)
 
 for ref in ("J3", "D15", "D1", "U6", "J1", "SW3", "J2"):
     print(ref, b.extent(ref))

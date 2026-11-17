@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.3, concordent : 158 composants, 82 réseaux. Tous les composants sont posés ; seule la rangée de LED est routée, donc `tools/build.sh v0` ne va pas encore au bout. Pour regarder le brouillon : `tools/kicad python3 v0/carte.py --brouillon` |
+| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.4, concordent : 158 composants, 84 réseaux. Tous les composants sont posés ; seule la rangée de LED est routée, donc `tools/build.sh v0` ne va pas encore au bout. Pour regarder le brouillon : `tools/kicad python3 v0/carte.py --brouillon` |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -55,9 +55,23 @@ Les fichiers KiCad du projet sont supprimés au début de chaque construction, f
 
 `tools/outils.sh` installe deux routeurs à version figée, dans `tiers/` (hors du suivi git) : Freerouting 2.5.0 et KiCadRoutingTools 0.24.1. Tous deux tournent dans un conteneur sans accès au réseau.
 
-Essayés tels quels sur le placement de la v0 le 17 novembre 2026, aucun des deux ne route la carte : Freerouting laisse entre 61 et 89 liaisons non routées sur 129, sans converger en neuf passes, KiCadRoutingTools échoue sur plusieurs liaisons après seize minutes. Les liaisons qui traversent la carte d'un bout à l'autre se routeront donc par script, et les routeurs ne serviront qu'aux liaisons locales.
+    tools/routeur.sh v0 freerouting
+    tools/routeur.sh v0 krt
 
-KiCadRoutingTools réduit par défaut la taille des vias sous les règles de la carte et l'écrit dans le fichier de projet : le lancer avec `--escalation off --strict-sizes`.
+Le routeur travaille sur une copie, dans `<projet>/out/routage-<outil>/`, à partir de la carte que `carte.py` a écrite. Les pistes déjà tracées par script sont gardées telles quelles. Rien n'est écrit dans le projet.
+
+Un routeur automatique ne redonne pas forcément deux fois le même tracé. Le tracé qu'on garde se fige donc dans le dépôt :
+
+    tools/kicad python3 tools/gel.py v0/out/routage-freerouting/v0.kicad_pcb v0/v0.kicad_pcb v0/routage.json
+
+`carte.py` le rejoue ensuite avec `Board.replay()`, et la construction redonne toujours la même carte. Après un changement de placement, on relance le routeur et on fige de nouveau.
+
+Ce que les essais du 17 novembre 2026 sur la carte v0 ont appris :
+
+- Aucun des deux routeurs ne route la carte entière. Sur un premier placement, où la zone des accès était pleine sur toute la largeur des deux faces, Freerouting laissait entre 61 et 89 liaisons sur 129 et KiCadRoutingTools échouait après seize minutes. Le placement doit laisser des couloirs : ici, au dos, de part et d'autre du connecteur de batterie.
+- Freerouting prend les plans de masse pour des obstacles. `routeur.sh` les retire de sa copie et ôte leur réseau aux pastilles de masse : la masse n'est pas routée, les plans la relient quand `carte.py` les remet.
+- Freerouting route mal les pistes larges vers de petites pastilles. Les chemins de puissance sont à tracer par script, avant lui.
+- KiCadRoutingTools réduit par défaut la taille des vias sous les règles de la carte et l'écrit dans le fichier de projet. `routeur.sh` le lance avec `--escalation off` et remet ensuite le fichier de projet d'origine.
 
 ## Banc de fautes
 

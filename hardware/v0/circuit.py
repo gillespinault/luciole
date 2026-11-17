@@ -10,9 +10,9 @@ La table des broches, l'arbre d'alimentation et les raisons des choix sont dans
 le wiki, page « Conception de la carte v0 ». Deux masses : GND est la masse de
 la carte, BATN le pôle négatif de la batterie, en amont de la protection.
 
-Révision 0.3 du 17 novembre 2026, après la relecture du schéma contre les
-fiches et la contre-relecture des corrections : voir la page « Revue
-indépendante » du wiki.
+Révision 0.4 du 17 novembre 2026, après la relecture du schéma contre les
+fiches par un agent Claude, ses contre-relectures, puis les relectures de
+Gemini et de Codex : voir la page « Revue indépendante » du wiki.
 """
 from schgen import NC, Schematic, stock
 
@@ -39,7 +39,8 @@ PFET = dict(lib_id="Transistor_FET:AO3401A", value="DMP1045U", lcsc="C177033")
 PFET_12V = dict(lib_id="Transistor_FET:AO3401A", value="AO3401A", lcsc="C15127")
 SCHOTTKY = dict(lib_id="Device:D_Schottky", value="DSK24", lcsc="C22466352", footprint="Diode_SMD:D_SOD-123F")
 TVS = dict(lib_id="Device:D_Zener", value="PESD5Z5.0", lcsc="C132368", footprint="Diode_SMD:D_SOD-523")
-BAT54C = dict(lib_id="Diode:BAT54C", value="BAT54C", lcsc="C37704")
+# Petit transistor N des adaptateurs de niveau du port : 1 grille, 2 source, 3 drain.
+NFET_SIGNAL = dict(lib_id="Transistor_FET:BSS138", value="BSS138", lcsc="C7420339")
 USBLC6 = dict(lib_id="Power_Protection:USBLC6-2SC6", lcsc="C7519")
 BUTTON = dict(lib_id="Switch:SW_Push", value="TS-1088", lcsc="C720477",
               footprint="Button_Switch_SMD:SW_SPST_TS-1088-xR020")
@@ -52,10 +53,10 @@ ROW2, ROW3, ROW4 = 6, 10, 18
 
 
 def build():
-    s = Schematic("v0", "Luciole² : carte v0", rev="0.3", date="2026-11-17", paper="A1",
+    s = Schematic("v0", "Luciole² : carte v0", rev="0.4", date="2026-11-17", paper="A1",
                   libs={**stock("Device", "power", "Connector", "Connector_Generic_MountingPin", "RF_Module",
                                 "Battery_Management", "Power_Protection", "Logic_LevelTranslator",
-                                "Transistor_FET", "Diode", "Switch", "Jumper"),
+                                "Transistor_FET", "Switch", "Jumper"),
                         "luciole": "lib/luciole.kicad_sym"},
                   power={"GND", "+3V3"})
 
@@ -109,12 +110,15 @@ def build():
     C("C38", "100nF", "VSYS", "GND", 62, 62)
 
     # ------------------------------------------------------------- chargeur
-    s.note("Chargeur : 500 mA, 1 A si ISET est à 1. Arrêté si CHG_INH est à 0. Charge de 2 à 46 °C", 76 * G, 8 * G)
+    s.note("Chargeur : 0,4 A, 0,9 A si ISET est à 1. Arrêté si CHG_INH est à 0. Charge de 2 à 46 °C", 76 * G, 8 * G)
     s.part("U2", x=92 * G, y=30 * G, lib_id="Battery_Management:TP4056-42-ESOP8", lcsc="C16581",
            footprint="Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm",
            pins={"V_{CC}": "VBUS", "CE": "CE", "BAT": "VCHG", "PROG": "PROG", "TEMP": "TEMP",
                  "~{CHRG}": "CHRG", "~{STDBY}": "STDBY", "GND": "GND", "EPAD": "GND"})
-    R("R8", "2k2", "PROG", "GND", 112, 18)
+    # 2,7 kΩ : 407 mA par défaut, 470 mA au plus, pour tenir sur une prise de 500 mA sans
+    # firmware. Avec R9 en parallèle : 907 mA.
+    s.part("R8", x=112 * G, y=18 * G, lib_id="Device:R", value="2k7", lcsc="C13167",
+           footprint="Resistor_SMD:R_0603_1608Metric", pins={"1": "PROG", "2": "GND"})
     R("R9", "2k2", "PROG", "PROG_X", 120, 18)
     s.part("Q1", x=130 * G, y=20 * G, **NFET, pins={"D": "PROG_X", "G": "ISET", "S": "GND"})
     R("R10", "100k", "ISET", "GND", 142, 18)
@@ -128,14 +132,17 @@ def build():
     # Charge permise par défaut : CE est tiré à VBUS. Q7, grille au 3,3 V, est monté en
     # adaptateur de niveau : GPIO21 à 0 tire CE à 0 et arrête la charge ; en l'air, à 1 ou
     # sans 3,3 V, Q7 est bloqué et la broche ne voit jamais le 5 V de CE.
-    # R44 de 330 kΩ et non 1 MΩ : la fuite de Q7 et l'entrée de CE, que la fiche ne chiffre
-    # pas, ne doivent pas pouvoir arrêter la charge. R47 limite le courant quand la broche
-    # vide C40. Le firmware tire GPIO21 à 0 ou la relâche, il ne la pousse jamais à 1.
-    R("R44", "330k", "VBUS", "CE", 124, 56)
+    # R44 de 100 kΩ : la fuite de Q7 et l'entrée de CE, que la fiche ne chiffre pas, ne
+    # doivent pas pouvoir arrêter la charge. R47 limite le courant quand la broche vide
+    # C40 ; avec R44 il laisse CE à 0,22 V, charge arrêtée. Le firmware tire GPIO21 à 0 ou
+    # la relâche, il ne la pousse jamais à 1.
+    R("R44", "100k", "VBUS", "CE", 124, 56)
     C("C40", "100nF", "CE", "GND", 132, 56)
     s.part("Q7", x=140 * G, y=(118 + ROW2) * G, **NFET, pins={"D": "CE", "G": "+3V3", "S": "Q7_S"})
-    R("R47", "10k", "CHG_INH", "Q7_S", 152, 118 + ROW2)
-    R("R41", "100k", "+3V3", "STDBY", 146, 56)
+    R("R47", "4k7", "CHG_INH", "Q7_S", 152, 118 + ROW2)
+    # Rappel de la sortie « charge terminée » vers VBUS : la sortie n'agit que sous USB,
+    # et le 3,3 V n'existe pas de ce côté de la carte.
+    R("R41", "100k", "VBUS", "STDBY", 146, 56)
     R("R42", "10k", "PROG", "PROG_TP", 154, 56)
 
     # ------------------------------------------------ batterie et protection
@@ -152,9 +159,11 @@ def build():
     R("R43", "10k", "Q2_G", "BATN", 191, 42)
     # R45 : sans batterie, BATP suit VBAT et Q6 reste bloqué. Sans elle, USB branché le
     # premier, Q6 tiendrait Q2 bloqué et une batterie branchée ensuite resterait isolée.
-    # R46 protège la grille de Q6, qui donne sur une broche du connecteur.
+    # R46 protège la grille de Q6, qui donne sur une broche du connecteur. 1 kΩ et non
+    # 100 kΩ : Q6 doit bloquer Q2 en moins d'une microseconde quand une batterie inversée
+    # est branchée sous USB, avant que VBAT ne soit tiré sous la masse.
     R("R45", "1M", "VBAT", "BATP", 174, 40)
-    R("R46", "100k", "BATP", "Q6_G", 166, 40)
+    R("R46", "1k", "BATP", "Q6_G", 166, 40)
     s.part("U3", x=202 * G, y=24 * G, lib_id="Battery_Management:DW01A", lcsc="C351410",
            pins={"VCC": "DW_VCC", "GND": "BATN", "OD": "DW_OD", "OC": "DW_OC", "CS": "DW_CS", "TD": NC})
     R("R14", "100R", "VBAT", "DW_VCC", 216, 16)
@@ -258,8 +267,8 @@ def build():
 
     # ------------------------------------------------------------- port Grove
     y = ROW4
-    s.note("Port Grove : ruban LED ou I2C. PORT_PU à 1 : rappels alimentés, tampon U10 inactif. "
-           "PORT_PU à 0 : tampon actif vers la broche 2, par JP4", 8 * G, (148 + y) * G)
+    s.note("Port Grove : ruban LED ou I2C. PORT_PU à 1 : I2C, rappels alimentés, tampon U10 inactif. "
+           "PORT_PU à 0 : ruban, tampon actif vers la broche 2", 8 * G, (148 + y) * G)
     s.part("J3", x=14 * G, y=(158 + y) * G, lib_id="Connector_Generic_MountingPin:Conn_01x04_MountingPin",
            value="Grove", lcsc="C7429571", footprint="luciole:Grove_HY2.0-4P_Megastar_ZX-HY2.0-4PWT_Horizontal",
            pins={"1": "PORT_1", "2": "PORT_2", "3": "VPORT", "4": "GND", "MP": "GND"})
@@ -272,20 +281,25 @@ def build():
     s.part("U11", x=48 * G, y=(158 + y) * G, **USBLC6,
            pins={"I/O1": "PORT_1", "I/O2": "PORT_2", "VBUS": "PORT_ECRET", "GND": "GND"})
     C("C41", "100nF", "PORT_ECRET", "GND", 56, 168 + y)
-    R("R31", "470R", "IO1", "PORT_1", 64, 156 + y)
-    R("R32", "470R", "IO2", "PORT_2", 72, 156 + y)
-    R("R33", "4k7", "PORT_PU", "PORT_1", 80, 156 + y)
-    R("R34", "4k7", "PORT_PU", "PORT_2", 88, 156 + y)
-    # Limitation au 3,3 V : un accessoire peut tirer les lignes vers sa propre alimentation.
-    s.part("D20", x=98 * G, y=(156 + y) * G, **BAT54C, pins={"1": "IO1", "2": "IO2", "3": "+3V3"})
-    s.part("D21", x=110 * G, y=(156 + y) * G, **BAT54C, pins={"1": "PORT_PU", "2": "PORT_PU", "3": "+3V3"})
+    R("R31", "220R", "PORT_1X", "PORT_1", 64, 156 + y)
+    R("R32", "220R", "PORT_2X", "PORT_2", 72, 156 + y)
+    # Adaptateurs de niveau : un transistor N par ligne, grille au 3,3 V. La broche de la
+    # puce ne dépasse jamais 3,3 V, même si l'accessoire tire la ligne à 5 V, et aucun
+    # courant n'est renvoyé dans le 3,3 V. Les rappels I2C sont du côté de la puce.
+    s.part("Q8", x=84 * G, y=(158 + y) * G, **NFET_SIGNAL, pins={"G": "+3V3", "S": "IO1", "D": "PORT_1X"})
+    s.part("Q9", x=96 * G, y=(158 + y) * G, **NFET_SIGNAL, pins={"G": "+3V3", "S": "IO2", "D": "PORT_2X"})
+    R("R33", "4k7", "PORT_PU", "IO1", 106, 156 + y)
+    R("R34", "4k7", "PORT_PU", "IO2", 114, 156 + y)
+    # Tampon du ruban : il pousse la broche 2 au niveau du rail. Q9 est alors bloqué, son
+    # drain étant au-dessus de sa source : le tampon et la broche de la puce ne se
+    # contrarient pas.
     s.part("U10", x=126 * G, y=(158 + y) * G, lib_id="luciole:SN74LV1T125DBV",
            pins={"VCC": "VLED", "GND": "GND", "A": "IO2", "~{OE}": "PORT_PU", "Y": "PORT_BUF"})
     C("C33", "100nF", "VLED", "GND", 140, 156 + y)
     R("R36", "220R", "PORT_BUF", "PORT_BUF_R", 148, 156 + y)
+    JP("JP4", "PORT_BUF_R", "PORT_2", 158, 156 + y)
     # /OE de U10 ne doit pas flotter : 1 MΩ au 3,3 V le tient à 1, tampon inactif.
     R("R35", "1M", "+3V3", "PORT_PU", 166, 156 + y)
-    JP("JP4", "PORT_BUF_R", "PORT_2", 158, 156 + y)
 
     # ------------------------------------------------------ pastilles de test
     s.note("Pastilles de test du premier lot. TP15 et TP16 : injection sur le rail des LED", 8 * G, 186 * G)

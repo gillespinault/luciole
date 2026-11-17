@@ -264,6 +264,17 @@ class Board:
         self.board.Add(v)
         return (x, y)
 
+    def replay(self, path):
+        """Rejoue un tracé figé par tools/gel.py : les pistes et les vias qu'un routeur
+        automatique avait ajoutés. Un réseau disparu du schéma arrête la construction."""
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        for t in data["pistes"]:
+            self.track(t["net"].lstrip("/"), [tuple(t["a"]), tuple(t["b"])], t["width"], layer=t["layer"])
+        for v in data["vias"]:
+            self.via(v["net"].lstrip("/"), v["at"][0], v["at"][1], diameter=v["diameter"], drill=v["drill"])
+        return len(data["pistes"]), len(data["vias"])
+
     def zone(self, net, layer, x1, y1, x2, y2, clearance=0.25, min_width=0.2, priority=0):
         """Plan de cuivre rectangulaire relié au réseau `net`. Le dessiner en retrait du
         bord de carte : le contrôle compare aussi le contour du plan au bord."""
