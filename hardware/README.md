@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. Tous les composants sont posés ; seule la rangée de LED est routée, donc `tools/build.sh v0` ne va pas encore au bout. Pour regarder le brouillon : `tools/kicad python3 v0/carte.py --brouillon` |
+| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. Tous les composants sont posés ; la structure du routage est tracée et passe le contrôle des règles. Restent les liaisons courtes de chaque bloc |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -51,26 +51,27 @@ Deux constructions de suite donnent les mêmes fichiers, à la date près dans l
 
 Les fichiers KiCad du projet sont supprimés au début de chaque construction, fichier de projet compris. Un réglage fait à la main dans KiCad, comme la désactivation d'un contrôle, ne survit donc pas.
 
-## Routeurs automatiques
+## Routage
 
-`tools/outils.sh` installe deux routeurs à version figée, dans `tiers/` (hors du suivi git) : Freerouting 2.5.0 et KiCadRoutingTools 0.24.1. Tous deux tournent dans un conteneur sans accès au réseau.
+Le routage d'une carte se fait en deux temps, tous deux dans `carte.py`.
 
-    tools/routeur.sh v0 freerouting
-    tools/routeur.sh v0 krt
+La structure se trace par script : liaisons longues, alimentations, convertisseur, sorties des boîtiers à pas fin. C'est elle qui décide si la carte est routable. L'en-tête de `v0/carte.py` décrit le plan retenu pour la carte v0.
 
-Le routeur travaille sur une copie, dans `<projet>/out/routage-<outil>/`, à partir de la carte que `carte.py` a écrite. Les pistes déjà tracées par script sont gardées telles quelles. Rien n'est écrit dans le projet.
+Les liaisons courtes qui restent, autour de chaque bloc, sont tracées par le routeur sur grille `tools/maille.py`, puis figées dans `<projet>/routage.json` :
 
-Un routeur automatique ne redonne pas forcément deux fois le même tracé. Le tracé qu'on garde se fige donc dans le dépôt :
+    tools/kicad python3 v0/carte.py --router
+    tools/kicad python3 v0/carte.py --router --reseaux=EN,BOOT    # quelques réseaux, pour mettre au point un bloc
 
-    tools/kicad python3 tools/gel.py v0/out/routage-freerouting/v0.kicad_pcb v0/v0.kicad_pcb v0/routage.json
+La construction normale rejoue ce fichier. Sa signature dit pour quelle carte il a été calculé : après un changement de placement ou de structure, la construction s'arrête et demande de relancer le routeur.
 
-`carte.py` le rejoue ensuite avec `Board.replay()`, et la construction redonne toujours la même carte. Après un changement de placement, on relance le routeur et on fige de nouveau.
+Le routeur sur grille applique nos règles d'isolement, sur une grille de 0,05 mm, à 45 degrés, sur deux faces. Quand une liaison ne passe pas, il défait les pistes qu'il a lui-même tracées et qui la barrent, la trace, puis retrace les réseaux défaits. Il ne touche jamais aux pistes tracées par script. Il redonne toujours le même tracé. Il signale les alimentations qu'il a dû tracer plus fin que leur classe. Il ne route pas la masse : les plans la relient, et `Router.stitch()` raccorde par un via les pastilles que le plan de leur face n'atteint pas.
 
-Ce que les essais du 17 novembre 2026 sur la carte v0 ont appris :
+### Ce que les essais du 17 novembre 2026 sur la carte v0 ont appris
 
-- Aucun des deux routeurs ne route la carte entière. Sur un premier placement, où la zone des accès était pleine sur toute la largeur des deux faces, Freerouting laissait entre 61 et 89 liaisons sur 129 et KiCadRoutingTools échouait après seize minutes. Le placement doit laisser des couloirs : ici, au dos, de part et d'autre du connecteur de batterie.
-- Freerouting prend les plans de masse pour des obstacles. `routeur.sh` les retire de sa copie et ôte leur réseau aux pastilles de masse : la masse n'est pas routée, les plans la relient quand `carte.py` les remet.
-- Freerouting route mal les pistes larges vers de petites pastilles. Les chemins de puissance sont à tracer par script, avant lui.
+- Deux routeurs libres ont été essayés : Freerouting 2.5.0 et KiCadRoutingTools 0.24.1 (`tools/outils.sh` les installe, `tools/routeur.sh` les lance sur une copie, `tools/gel.py` fige leur tracé). Aucun ne route la carte. Sur deux placements rangés automatiquement, Freerouting laissait entre 61 et 89 liaisons sur 129 et KiCadRoutingTools échouait sur 30 réseaux. Avec la structure tracée par script, Freerouting laissait encore 55 liaisons, dont des liaisons de 1 mm entre pastilles voisines.
+- Un routeur ne voit pas la structure de la carte : la barre d'alimentation et la donnée des LED coupent la face avant en deux bandes, et les contacts du module imposent l'ordre des liaisons longues.
+- Le placement se pense avec le routage. Ranger les petits composants par rangées, sans regarder leurs connexions, donne des blocs où tout doit se croiser sur une seule face : ni un autre ordre de passage, ni le fait de défaire et retracer n'y changent rien. Chaque réseau, essayé seul, passe pourtant : `Router.alone()` le vérifie, et distingue ainsi une impasse de placement d'un encombrement.
+- Freerouting prend les plans de masse pour des obstacles. `routeur.sh` les retire de sa copie et ôte leur réseau aux pastilles de masse.
 - KiCadRoutingTools réduit par défaut la taille des vias sous les règles de la carte et l'écrit dans le fichier de projet. `routeur.sh` le lance avec `--escalation off` et remet ensuite le fichier de projet d'origine.
 
 ## Banc de fautes

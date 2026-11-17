@@ -5,6 +5,7 @@ millimètres, mesurées depuis le coin haut gauche de la carte, X vers la droite
 Y vers le bas. La carte part de la netlist que KiCad a exportée du schéma, pas
 de la description du circuit : le schéma reste la seule source des connexions.
 """
+import hashlib
 import json
 import os
 
@@ -263,6 +264,22 @@ class Board:
         v.SetNet(self._net(net))
         self.board.Add(v)
         return (x, y)
+
+    def signature(self):
+        """Empreinte de la carte telle qu'elle est : composants posés, pistes et vias.
+        Sert à vérifier qu'un tracé figé a bien été calculé pour cette carte-là."""
+        rows = []
+        for ref, fp in sorted(self.fps.items()):
+            p = fp.GetPosition()
+            rows.append(f"{ref} {p.x} {p.y} {fp.GetOrientationDegrees():.1f} {int(fp.IsFlipped())}")
+        for t in self.board.GetTracks():
+            if t.GetClass() == "PCB_VIA":
+                q = t.GetPosition()
+                rows.append(f"via {t.GetNetname()} {q.x} {q.y} {t.GetWidth(pcbnew.F_Cu)}")
+            else:
+                a, e = sorted(((t.GetStart().x, t.GetStart().y), (t.GetEnd().x, t.GetEnd().y)))
+                rows.append(f"piste {t.GetNetname()} {t.GetLayer()} {a} {e} {t.GetWidth()}")
+        return hashlib.sha1("\n".join(sorted(rows)).encode()).hexdigest()[:16]
 
     def replay(self, path):
         """Rejoue un tracé figé par tools/gel.py : les pistes et les vias qu'un routeur
