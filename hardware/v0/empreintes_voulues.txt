@@ -1,0 +1,239 @@
+# Carte Luciole² v0 : géométrie voulue des empreintes.
+#
+# Écrite à la main d'après les plans des fabricants, sans passer par les empreintes.
+# tools/fpcheck.py compare les deux : une pastille mal placée ou mal numérotée ressort ici.
+#
+# Une ligne par pastille : numéro, x, y du centre, largeur (selon X), hauteur (selon Y).
+# « trou x y diamètre » : perçage sans cuivre. Millimètres, empreinte non tournée, vue de
+# dessus, Y vers le bas. « normalisé » : boîtier normalisé pris tel quel dans KiCad.
+
+# ------------------------------------------------------- boîtiers normalisés
+[Resistor_SMD:R_0402_1005Metric] normalisé
+[Capacitor_SMD:C_0402_1005Metric] normalisé
+[Capacitor_SMD:C_0603_1608Metric] normalisé
+[Capacitor_SMD:C_0805_2012Metric] normalisé
+[Fuse:Fuse_1206_3216Metric] normalisé
+[Diode_SMD:D_SOD-123F] normalisé
+[Diode_SMD:D_SOD-523] normalisé
+[Package_TO_SOT_SMD:SOT-23] normalisé
+[Package_TO_SOT_SMD:SOT-23-5] normalisé
+[Package_TO_SOT_SMD:SOT-23-6] normalisé
+[Package_TO_SOT_SMD:TSOT-23-5] normalisé
+[TestPoint:TestPoint_Pad_D1.5mm] normalisé
+[TestPoint:TestPoint_Pad_D2.0mm] normalisé
+[Jumper:SolderJumper-2_P1.3mm_Bridged_RoundedPad1.0x1.5mm] normalisé
+
+# ------------------------------------------------- empreintes du projet (lib/)
+# LED SK6812MINI-B-012, fiche OPSCO B/1 page 5, « PCB recommended pad size », vue de
+# dessus. L'ensemble des pastilles occupe 4,3 × 2,6 mm ; l'origine est en son centre.
+#   en haut à gauche   3 DOUT  1,5 × 1,3      en haut à droite  2 VDD  2,2 × 1,2
+#   en bas à gauche    4 GND   2,4 × 0,8      en bas à droite   1 DIN  1,3 × 0,9
+[luciole:LED_OPSCO_SK6812MINI-B-012_3.7x3.5mm]
+3   -1.40  -0.65   1.5  1.3
+2    1.05  -0.70   2.2  1.2
+4   -0.95   0.90   2.4  0.8
+1    1.50   0.85   1.3  0.9
+
+# Connecteur Grove couché Megastar ZX-HY2.0-4PWT, plan du fabricant, « P.C.B LAYOUT ».
+# Détail du calcul dans essai/empreintes_voulues.txt.
+[luciole:Grove_HY2.0-4P_Megastar_ZX-HY2.0-4PWT_Horizontal]
+4   -3.0  -3.95   1.5  3.0
+3   -1.0  -3.95   1.5  3.0
+2    1.0  -3.95   1.5  3.0
+1    3.0  -3.95   1.5  3.0
+MP  -5.2   3.75   1.5  3.4
+MP   5.2   3.75   1.5  3.4
+
+# Inductance cjiang FXL0420, catalogue FXL page 5, « Recommend Land Pattern » :
+# a = 2,2 entre les pastilles, b = 5,2 hors tout, c = 2,5 de hauteur.
+# Chaque pastille fait (5,2 − 2,2) / 2 = 1,5 de large ; son centre est à 1,1 + 0,75 = 1,85.
+[luciole:L_cjiang_FXL0420]
+1   -1.85  0.0   1.5  2.5
+2    1.85  0.0   1.5  2.5
+
+# ---------------------------------------- empreintes de KiCad à géométrie propre
+# Les sections qui suivent viennent d'un relevé fait à l'aveugle sur les plans des
+# fabricants, par un agent qui n'a pas vu les empreintes (17 novembre 2026).
+
+# Connecteur USB-C HRO TYPE-C-31-M-12, plan du fabricant, « RECOMMEND P.C.B LAYOUT ».
+# Ouverture vers +Y. Relevé du plan : pastilles larges de 0,60 à ±3,20 et ±2,40,
+# pastilles étroites de 0,30 à ±1,75, ±1,25, ±0,75 et ±0,25 ; hauteur 1,14, bord avant sur
+# l'axe des pattes de blindage du haut ; pattes de blindage à ±4,325, trous oblongs de
+# 0,60 × 1,70 (pastille 0,90 × 2,00) et 0,60 × 1,40 (pastille 0,90 × 1,70), entraxe 4,18 ;
+# trous de centrage Ø 0,60 à ±2,89, à 0,50 sous l'axe des pattes du haut et à 5,79 du
+# bord de carte. Le bord de carte est donc à y = −2,60 + 5,79 = +3,19.
+#
+# L'empreinte de KiCad pour ce modèle s'en écarte sur quatre points, admis parce qu'elle
+# sert telle quelle sur de nombreuses cartes assemblées par JLCPCB. Les lignes ci-dessous
+# sont celles de l'empreinte :
+#   - pastilles larges à ±3,25 et ±2,45 au lieu de ±3,20 et ±2,40 (0,05 d'isolement en plus) ;
+#   - pastilles de 1,45 de haut au lieu de 1,14 : allongées de 0,50 vers l'arrière,
+#     raccourcies de 0,19 vers l'avant ;
+#   - pastilles de blindage de 1,0 × 2,1 et 1,0 × 1,6, un peu plus grandes que le plan ;
+#   - trous de centrage Ø 0,65 au lieu de 0,60, et 0,03 d'écart sur leur hauteur.
+# Numérotation relevée sur le plan, de gauche à droite : A1/B12, A4/B9, B8, A5, B7, A6,
+# A7, B6, A8, B5, B4/A9, B1/A12. L'empreinte pose deux pastilles superposées là où le plan
+# en dessine une pour deux contacts.
+[Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12]
+A1    -3.25  -4.045   0.6  1.45
+B12   -3.25  -4.045   0.6  1.45
+A4    -2.45  -4.045   0.6  1.45
+B9    -2.45  -4.045   0.6  1.45
+B8    -1.75  -4.045   0.3  1.45
+A5    -1.25  -4.045   0.3  1.45
+B7    -0.75  -4.045   0.3  1.45
+A6    -0.25  -4.045   0.3  1.45
+A7     0.25  -4.045   0.3  1.45
+B6     0.75  -4.045   0.3  1.45
+A8     1.25  -4.045   0.3  1.45
+B5     1.75  -4.045   0.3  1.45
+B4     2.45  -4.045   0.6  1.45
+A9     2.45  -4.045   0.6  1.45
+B1     3.25  -4.045   0.6  1.45
+A12    3.25  -4.045   0.6  1.45
+SH    -4.32  -3.13    1.0  2.1
+SH     4.32  -3.13    1.0  2.1
+SH    -4.32   1.05    1.0  1.6
+SH     4.32   1.05    1.0  1.6
+trou  -2.89  -2.6     0.65
+trou   2.89  -2.6     0.65
+
+# Connecteur de batterie CJT A2001WR-S-2P, plan du fabricant. Deux pastilles de 1,0 × 3,5
+# au pas de 2,0, deux pattes de fixation de 1,5 × 3,4 à ±3,35. Le plan du fabricant, tourné
+# d'un demi-tour, donne exactement l'empreinte du JST S2B-PH-SM4-TB de KiCad : ouverture
+# vers +Y, broche 1 à gauche. Le plan des pastilles n'est pas numéroté : le « circuit 1 »
+# est repéré sur la vue de face. À confirmer sur un câble réel.
+[Connector_JST:JST_PH_S2B-PH-SM4-TB_1x02-1MP_P2.00mm_Horizontal]
+1    -1.0   -2.85   1.0  3.5
+2     1.0   -2.85   1.0  3.5
+MP   -3.35   2.9    1.5  3.4
+MP    3.35   2.9    1.5  3.4
+
+# Bouton Alps SKRTLAE010, plan du fabricant. Trois bornes de 0,75, 0,6 et 0,75 × 1,8 ; les
+# deux bornes extérieures, 1 et 3 chez Alps, sont reliées dans le bouton et portent toutes
+# deux le numéro 1 dans l'empreinte. Deux appuis du capot de 1,3 × 0,9, deux ergots Ø 0,9
+# à l'entraxe de 4,25. Poussoir vers +Y. Origine sur l'axe des ergots.
+[Button_Switch_SMD:SW_Push_1P1T-MP_NO_Horizontal_Alps_SKRTLAE010]
+1    -1.225  -0.9    0.75  1.8
+2     0.0    -0.9    0.6   1.8
+1     1.225  -0.9    0.75  1.8
+MP   -1.85    1.05   1.3   0.9
+MP    1.85    1.05   1.3   0.9
+trou -2.125   0.0    0.9
+trou  2.125   0.0    0.9
+
+# Bouton XUNPU TS-1088-AR02016, plan du fabricant : 5,50 hors tout, 3,40 entre les
+# pastilles, 2,00 de haut. Soit deux pastilles de 1,05 × 2,0 à ±2,225.
+[Button_Switch_SMD:SW_SPST_TS-1088-xR020]
+1    -2.225  0.0   1.05  2.0
+2     2.225  0.0   1.05  2.0
+
+# Module ESP32-C6-MINI-1, fiche d'Espressif, figure 11-1 (pastilles conseillées) et
+# figure 3-1 (numéros). Broche 1 en haut à gauche, antenne vers −Y. Pourtour : pastilles
+# de 0,40 × 0,80 au pas de 0,80, colonnes à ±5,90, rangées à ±4,90. Coins : 0,70 × 0,70
+# en (±5,95 ; ±4,95). Plage centrale : neuf pastilles de 1,45 au pas de 1,975, toutes
+# numérotées 49.
+[RF_Module:ESP32-C6-MINI-1]
+1          -5.9        -4       0.8       0.4
+2          -5.9      -3.2       0.8       0.4
+3          -5.9      -2.4       0.8       0.4
+4          -5.9      -1.6       0.8       0.4
+5          -5.9      -0.8       0.8       0.4
+6          -5.9         0       0.8       0.4
+7          -5.9       0.8       0.8       0.4
+8          -5.9       1.6       0.8       0.4
+9          -5.9       2.4       0.8       0.4
+10         -5.9       3.2       0.8       0.4
+11         -5.9         4       0.8       0.4
+12         -4.8       4.9       0.4       0.8
+13           -4       4.9       0.4       0.8
+14         -3.2       4.9       0.4       0.8
+15         -2.4       4.9       0.4       0.8
+16         -1.6       4.9       0.4       0.8
+17         -0.8       4.9       0.4       0.8
+18            0       4.9       0.4       0.8
+19          0.8       4.9       0.4       0.8
+20          1.6       4.9       0.4       0.8
+21          2.4       4.9       0.4       0.8
+22          3.2       4.9       0.4       0.8
+23            4       4.9       0.4       0.8
+24          4.8       4.9       0.4       0.8
+25          5.9         4       0.8       0.4
+26          5.9       3.2       0.8       0.4
+27          5.9       2.4       0.8       0.4
+28          5.9       1.6       0.8       0.4
+29          5.9       0.8       0.8       0.4
+30          5.9         0       0.8       0.4
+31          5.9      -0.8       0.8       0.4
+32          5.9      -1.6       0.8       0.4
+33          5.9      -2.4       0.8       0.4
+34          5.9      -3.2       0.8       0.4
+35          5.9        -4       0.8       0.4
+36          4.8      -4.9       0.4       0.8
+37            4      -4.9       0.4       0.8
+38          3.2      -4.9       0.4       0.8
+39          2.4      -4.9       0.4       0.8
+40          1.6      -4.9       0.4       0.8
+41          0.8      -4.9       0.4       0.8
+42            0      -4.9       0.4       0.8
+43         -0.8      -4.9       0.4       0.8
+44         -1.6      -4.9       0.4       0.8
+45         -2.4      -4.9       0.4       0.8
+46         -3.2      -4.9       0.4       0.8
+47           -4      -4.9       0.4       0.8
+48         -4.8      -4.9       0.4       0.8
+49       -1.975    -1.975      1.45      1.45
+49            0    -1.975      1.45      1.45
+49        1.975    -1.975      1.45      1.45
+49       -1.975         0      1.45      1.45
+49            0         0      1.45      1.45
+49        1.975         0      1.45      1.45
+49       -1.975     1.975      1.45      1.45
+49            0     1.975      1.45      1.45
+49        1.975     1.975      1.45      1.45
+50         5.95     -4.95       0.7       0.7
+51         5.95      4.95       0.7       0.7
+52        -5.95      4.95       0.7       0.7
+53        -5.95     -4.95       0.7       0.7
+
+# Accéléromètre LIS2DH12, LGA-12 de 2 × 2 mm. La fiche de ST ne donne que le boîtier :
+# plages de 0,275 × 0,25 au pas de 0,5, centres à 0,7625 de l'axe. Vue de dessus, broche 1
+# en haut à gauche, numérotation dans le sens inverse des aiguilles d'une montre.
+[Package_LGA:LGA-12_2x2mm_P0.5mm] plages
+1       -0.7625     -0.75     0.275      0.25
+2       -0.7625     -0.25     0.275      0.25
+3       -0.7625      0.25     0.275      0.25
+4       -0.7625      0.75     0.275      0.25
+5         -0.25    0.7625      0.25     0.275
+6          0.25    0.7625      0.25     0.275
+7        0.7625      0.75     0.275      0.25
+8        0.7625      0.25     0.275      0.25
+9        0.7625     -0.25     0.275      0.25
+10       0.7625     -0.75     0.275      0.25
+11         0.25   -0.7625      0.25     0.275
+12        -0.25   -0.7625      0.25     0.275
+
+# Chargeur TP4056, boîtier ESOP-8. La fiche ne donne que le boîtier : pas de 1,27, pattes
+# de 0,41 de large dont le pied de 0,60 est centré à 2,70 de l'axe, plage thermique de
+# 2,413 × 3,302. Broche 1 en haut à gauche.
+[Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm] plages
+1    -2.7   -1.905   0.6    0.406
+2    -2.7   -0.635   0.6    0.406
+3    -2.7    0.635   0.6    0.406
+4    -2.7    1.905   0.6    0.406
+5     2.7    1.905   0.6    0.406
+6     2.7    0.635   0.6    0.406
+7     2.7   -0.635   0.6    0.406
+8     2.7   -1.905   0.6    0.406
+9     0.0    0.0     2.413  3.302
+
+# Convertisseur TPS61023, boîtier SOT-563 (DRL). Exemple de pastilles de TI, fiche
+# page 26 : six pastilles de 0,67 × 0,30 au pas de 0,5, colonnes à ±0,74, broche 1 en
+# haut à gauche. Les pastilles de KiCad les recouvrent à 0,03 près.
+[Package_TO_SOT_SMD:SOT-563] plages
+1         -0.74      -0.5      0.67       0.3
+2         -0.74         0      0.67       0.3
+3         -0.74       0.5      0.67       0.3
+4          0.74       0.5      0.67       0.3
+5          0.74         0      0.67       0.3
+6          0.74      -0.5      0.67       0.3

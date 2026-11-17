@@ -103,9 +103,22 @@ class Board:
 
     # --------------------------------------------------------- composants
 
-    def place(self, ref, x, y, rot=0.0, bottom=False, silk_ref=False):
+    def place(self, ref, x, y, rot=0.0, bottom=False, silk_ref=False, free_pads=()):
         """Pose l'empreinte du composant `ref`, centre en (x, y), tournée de `rot` degrés
         (sens trigonométrique à l'écran). bottom=True la pose au dos.
+
+        Au dos, à rot=0, l'empreinte est retournée autour de son axe horizontal : vue de
+        dessus, à travers la carte, sa gauche reste à gauche et son haut passe en bas.
+        `rot` la tourne ensuite, toujours mesuré vu de dessus. C'est la convention de
+        KiCad pour une empreinte au dos d'orientation nulle (relevé sur la carte d'essai ;
+        la revue du 17 novembre 2026 avait noté, constat C8, que le code laissait croire
+        l'inverse). Le sens d'un connecteur ou d'un boîtier polarisé posé au dos ne se
+        déduit pas de tête : le vérifier par une assertion sur la position de ses pastilles.
+
+        free_pads : numéros des pastilles de l'empreinte qui n'ont volontairement aucune
+        broche dans le schéma. Sans cette dérogation, une telle pastille est une erreur :
+        c'est le cas d'une plage thermique ou d'un blindage oubliés dans le symbole
+        (constat C2 de la revue du 17 novembre 2026).
 
         Le repère (R1, D3...) va sur la couche de documentation, pas en sérigraphie :
         la pose automatique n'en a pas besoin et la carte est trop étroite pour les
@@ -133,25 +146,49 @@ class Board:
             fp.GetField(key).SetVisible(False)
         if not silk_ref:
             fp.Reference().SetLayer(pcbnew.F_Fab)
+        # Hors nomenclature, hors pose, non monté : la carte reprend ce que dit le schéma,
+        # et non ce que dit l'empreinte de la bibliothèque. Le contrôle de cohérence
+        # compare les deux.
+        fp.SetExcludedFromBOM("exclude_from_bom" in comp["flags"])
+        fp.SetExcludedFromPosFiles("exclude_from_pos_files" in comp["flags"])
+        fp.SetDNP("dnp" in comp["flags"])
         self.board.Add(fp)
         fp.SetPosition(self._pt(x, y))
         if bottom:
-            fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_LEFT_RIGHT)
+            # Le sens du retournement importe peu ici : l'orientation est imposée juste
+            # après, et KiCad ramène alors l'empreinte à son retournement de base.
+            fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_TOP_BOTTOM)
         fp.SetOrientationDegrees(rot)
 
         wanted = {pin for (r, pin) in self.pad_net if r == ref}
-        seen = set()
+        free = {str(n) for n in free_pads}
+        seen, orphan, count = set(), set(), {}
         for pad in fp.Pads():
             num = pad.GetNumber()
             if not num:
                 continue
+            count[num] = count.get(num, 0) + 1
             if (ref, num) in self.pad_net:
                 pad.SetNet(self.net[self.pad_net[(ref, num)]])
                 seen.add(num)
             else:
-                self.warnings.append(f"{ref} : pastille {num} sans broche dans le schéma")
+                orphan.add(num)
         if wanted - seen:
             raise ValueError(f"{ref} : broches du schéma sans pastille sur {fpname} : {sorted(wanted - seen)}")
+        if orphan - free:
+            raise ValueError(f"{ref} : pastilles {sorted(orphan - free)} de {fpname} sans broche dans le schéma. "
+                             f"Ajouter la broche au symbole, ou déclarer la pastille libre avec free_pads.")
+        if free - orphan:
+            raise ValueError(f"{ref} : free_pads cite {sorted(free - orphan)}, qui ne sont pas des pastilles "
+                             f"sans broche de {fpname}")
+        # Une broche laissée libre dans le schéma donne un réseau « unconnected-... ». Si
+        # l'empreinte a plusieurs pastilles de ce numéro, KiCad leur donne ce même réseau
+        # et exige ensuite de les relier entre elles (constat C6). On le dit ici, clairement.
+        shared = sorted(n for n in seen if count[n] > 1 and self.pad_net[(ref, n)].startswith("unconnected-"))
+        if shared:
+            raise ValueError(f"{ref} : la broche {', '.join(shared)} est libre dans le schéma, mais {fpname} a "
+                             f"plusieurs pastilles de ce numéro. Les relier à un réseau (la masse pour un "
+                             f"blindage ou des pattes de fixation).")
         self.fps[ref] = fp
         return fp
 
@@ -223,6 +260,51 @@ class Board:
         self.board.Add(z)
         return z
 
+    def keepout(self, x1, y1, x2, y2, layers=("F.Cu", "B.Cu"), name="interdit"):
+        """Zone interdite au cuivre : ni piste, ni via, ni plan. Sert sous l'antenne du
+        module, où Espressif demande une carte sans cuivre sur toutes les couches."""
+        z = pcbnew.ZONE(self.board)
+        z.SetIsRuleArea(True)
+        ls = pcbnew.LSET()
+        for layer in layers:
+            ls.AddLayer(layer_id(layer))
+        z.SetLayerSet(ls)
+        outline = z.Outline()
+        outline.NewOutline()
+        for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2)):
+            p = self._pt(x, y)
+            outline.Append(p.x, p.y)
+        z.SetDoNotAllowTracks(True)
+        z.SetDoNotAllowVias(True)
+        z.SetDoNotAllowZoneFills(True)
+        z.SetDoNotAllowPads(False)
+        z.SetDoNotAllowFootprints(False)
+        z.SetZoneName(name)
+        self.board.Add(z)
+        return z
+
+    def extent(self, ref):
+        """Rectangle englobant des pastilles de `ref` : (x1, y1, x2, y2). Pour vérifier un
+        placement par assertion, sans supposer le sens de l'empreinte."""
+        xs, ys = [], []
+        for pad in self.fps[ref].Pads():
+            box = pad.GetBoundingBox()
+            xs += [pcbnew.ToMM(box.GetLeft()) - self.ox, pcbnew.ToMM(box.GetRight()) - self.ox]
+            ys += [pcbnew.ToMM(box.GetTop()) - self.oy, pcbnew.ToMM(box.GetBottom()) - self.oy]
+        return (round(min(xs), 3), round(min(ys), 3), round(max(xs), 3), round(max(ys), 3))
+
+    def boxes(self, ref, number):
+        """Rectangles (x1, y1, x2, y2) des pastilles de `ref` portant ce numéro."""
+        out = []
+        for pad in self.fps[ref].Pads():
+            if pad.GetNumber() == str(number):
+                box = pad.GetBoundingBox()
+                out.append((round(pcbnew.ToMM(box.GetLeft()) - self.ox, 3), round(pcbnew.ToMM(box.GetTop()) - self.oy, 3),
+                            round(pcbnew.ToMM(box.GetRight()) - self.ox, 3), round(pcbnew.ToMM(box.GetBottom()) - self.oy, 3)))
+        if not out:
+            raise KeyError(f"{ref} : pas de pastille {number}")
+        return out
+
     # ------------------------------------------------------ contour, textes
 
     def outline(self, x1, y1, x2, y2):
@@ -250,10 +332,14 @@ class Board:
 
     # ------------------------------------------------------------ écriture
 
-    def save(self):
+    def save(self, draft=False):
+        """draft=True : écrit une carte incomplète, pour regarder un placement en cours.
+        La construction normale n'y recourt pas : elle exige tous les composants."""
         missing = sorted(set(self.comps) - set(self.fps))
-        if missing:
+        if missing and not draft:
             raise ValueError(f"composants du schéma non posés : {missing}")
+        if missing:
+            print(f"brouillon : {len(missing)} composants non posés")
         self.board.BuildConnectivity()
         pcbnew.ZONE_FILLER(self.board).Fill(self.board.Zones())
         pcbnew.SaveBoard(self.path, self.board)

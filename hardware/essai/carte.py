@@ -94,6 +94,19 @@ for i in range(N):
     vdd, c1 = b.pad(f"D{i + 1}", "2"), b.pad(f"C{i + 1}", "1")
     b.track("VLED", [(c1[0], vdd[1]), c1, (c1[0], BUS_Y)], STUB)
 
+# Pastille de test sur l'alimentation : une empreinte sans pièce à poser.
+b.place("TP1", 26.5, 17.3)
+b.track("VLED", [(26.5, BUS_Y), b.pad("TP1", "1")], STUB)
+
+# Condensateur au dos. Son sens n'est pas supposé : on lit où tombent ses pastilles.
+# Sa borne de masse se relie au plan du dos, sa borne d'alimentation monte par un via.
+b.place("C4", 20.0, 17.3, bottom=True)
+c4v, c4g = b.pad("C4", "1"), b.pad("C4", "2")
+assert c4v[0] < c4g[0], "au dos, à 0°, la borne 1 reste à gauche vue de dessus"
+v = b.via("VLED", c4v[0] - 1.0, c4v[1])
+b.track("VLED", [(v[0], BUS_Y), v], STUB)
+b.track("VLED", [v, c4v], STUB, layer="B.Cu")
+
 # -------------------------------------------------------------------- masse
 for i in range(N):
     gnd, c2 = b.pad(f"D{i + 1}", "4"), b.pad(f"C{i + 1}", "2")

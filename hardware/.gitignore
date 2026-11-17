@@ -14,3 +14,6 @@ fp-info-cache
 *.lck
 
 __pycache__/
+
+# Outils tiers (routeurs automatiques), installés à version figée : voir README.md
+tiers/

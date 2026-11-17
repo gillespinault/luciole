@@ -61,6 +61,7 @@ class Schematic:
         self.nets = {}              # réseau -> [(ref, numéro de broche)]
         self._npwr = 0
         self._seen_stub = set()
+        self._stubs = []            # (début, fin, réseau, repère) de chaque fil posé sur une broche
 
     # ------------------------------------------------------ bibliothèques
 
@@ -75,11 +76,21 @@ class Schematic:
         tree = self._flatten(self._lib_trees[nick], name)
         tree[1] = Q(lib_id)
         self._lib_symbols[lib_id] = tree
-        pins = []
+        pins, units = [], set()
         for unit in sexp.find_all(tree, "symbol"):
             u, style = str(unit[1]).rsplit("_", 2)[1:]
+            units.add(u)
             if u in ("0", "1") and style in ("0", "1"):
                 pins += [Pin(p) for p in sexp.find_all(unit, "pin")]
+        # Un symbole à plusieurs unités (deux transistors dans un boîtier, quatre portes...)
+        # n'est pas géré : seule la première unité serait posée, les broches des autres
+        # manqueraient sans alerte (constat C5 de la revue du 17 novembre 2026). On refuse
+        # plutôt que de poser un symbole incomplet : dessiner un symbole à une seule unité
+        # dans lib/build_lib.py.
+        extra = sorted(units - {"0", "1"}, key=int)
+        if extra:
+            raise ValueError(f"{lib_id} : symbole à {1 + len(extra)} unités, non géré. "
+                             f"Dessiner un symbole à une seule unité dans lib/build_lib.py.")
         self._pins[lib_id] = pins
         return tree
 
@@ -119,8 +130,16 @@ class Schematic:
                            ["effects", _font(size), ["justify", "left", "bottom"]],
                            ["uuid", uid(self.project, "text", text, x, y)]])
 
-    def part(self, ref, lib_id, x, y, pins, value=None, footprint=None, lcsc="", fields=None):
-        """Pose un composant. pins : {nom ou numéro de broche: réseau, ou NC}."""
+    def part(self, ref, lib_id, x, y, pins, value=None, footprint=None, lcsc="", fields=None,
+             assemble=True, dnp=False):
+        """Pose un composant. pins : {nom ou numéro de broche: réseau, ou NC}.
+
+        assemble=False : l'empreinte est sur la carte mais il n'y a rien à poser dessus
+        (pastille de test, pont de soudure). Le composant sort de la nomenclature et du
+        fichier de pose, et n'a pas besoin de référence LCSC.
+        dnp=True : une vraie pièce, prévue mais non montée sur ce lot."""
+        if not assemble and lcsc:
+            raise ValueError(f"{ref} : assemble=False et une référence LCSC, il faut choisir")
         if ref in self.refs:
             raise ValueError(f"repère en double : {ref}")
         self.refs.add(ref)
@@ -148,7 +167,8 @@ class Schematic:
                   "Description": str(libprops.get("Description", [0, 0, ""])[2]),
                   "LCSC": lcsc or str(libprops.get("LCSC", [0, 0, ""])[2])}
         values.update(fields or {})
-        self._instance(ref, lib_id, x, y, 0, values, [p.number for p in libpins])
+        self._instance(ref, lib_id, x, y, 0, values, [p.number for p in libpins],
+                       assemble=assemble, dnp=dnp)
 
         for p in libpins:
             net = assigned[p.number]
@@ -182,6 +202,7 @@ class Schematic:
         if key in self._seen_stub:                       # broches empilées au même endroit
             return
         self._seen_stub.add(key)
+        self._stubs.append((tip, end, net, ref))
         self.items.append(["wire", ["pts", ["xy", tip[0], tip[1]], ["xy", end[0], end[1]]],
                            ["stroke", ["width", 0], ["type", "default"]],
                            ["uuid", uid(self.project, "wire", ref, pin.number)]])
@@ -204,7 +225,8 @@ class Schematic:
         rot = 180 if outward == ((0, -1) if points_down else (0, 1)) else 0
         self._instance(ref, lib_id, at[0], at[1], rot, {"Reference": ref, "Value": net}, ["1"], hide_ref=True)
 
-    def _instance(self, ref, lib_id, x, y, rot, values, pin_numbers, hide_ref=False):
+    def _instance(self, ref, lib_id, x, y, rot, values, pin_numbers, hide_ref=False,
+                  assemble=True, dnp=False):
         lib = self._lib_symbols[lib_id]
         libprops = {str(p[1]): p for p in sexp.find_all(lib, "property")}
         sign = -1 if rot == 180 else 1
@@ -213,9 +235,14 @@ class Schematic:
             node = sexp.find(lib, tag)
             return [tag, node[1] if node else default]
 
+        # Une empreinte sans pièce sort de la nomenclature et de la pose, quoi qu'en dise
+        # la bibliothèque. Dans l'autre sens on suit la bibliothèque : un symbole de
+        # mire ou de logo y est déjà marqué hors nomenclature.
+        in_bom = flag("in_bom", "yes") if assemble else ["in_bom", "no"]
+        in_pos = flag("in_pos_files", "yes") if assemble else ["in_pos_files", "no"]
         inst = ["symbol", ["lib_id", Q(lib_id)], ["at", _f(x), _f(y), rot], ["unit", 1], ["body_style", 1],
-                flag("exclude_from_sim", "no"), flag("in_bom", "yes"), flag("on_board", "yes"),
-                flag("in_pos_files", "yes"), ["dnp", "no"], ["uuid", uid(self.project, "sym", ref)]]
+                flag("exclude_from_sim", "no"), in_bom, flag("on_board", "yes"),
+                in_pos, ["dnp", "yes" if dnp else "no"], ["uuid", uid(self.project, "sym", ref)]]
         for name, value in values.items():
             lp = libprops.get(name)
             if lp is not None:
@@ -241,7 +268,35 @@ class Schematic:
 
     # ----------------------------------------------------------- écriture
 
+    def _collisions(self):
+        """Fils de deux réseaux différents qui se touchent sur la page. KiCad les relierait
+        sans erreur franche : deux composants posés trop près suffisent à court-circuiter
+        deux réseaux dans le schéma."""
+        def touch(a, b):
+            (ax1, ay1), (ax2, ay2) = a
+            (bx1, by1), (bx2, by2) = b
+            eps = 1e-6
+            lo = lambda u, v: min(u, v) - eps
+            hi = lambda u, v: max(u, v) + eps
+            if hi(ax1, ax2) < min(bx1, bx2) or hi(bx1, bx2) < min(ax1, ax2):
+                return False
+            if hi(ay1, ay2) < min(by1, by2) or hi(by1, by2) < min(ay1, ay2):
+                return False
+            # Les fils sont horizontaux ou verticaux : deux rectangles englobants qui se
+            # recouvrent suffisent à dire qu'ils se touchent.
+            return lo(ax1, ax2) <= hi(bx1, bx2) and lo(bx1, bx2) <= hi(ax1, ax2)
+        found = []
+        for i, (t1, e1, n1, r1) in enumerate(self._stubs):
+            for t2, e2, n2, r2 in self._stubs[i + 1:]:
+                if n1 != n2 and touch((t1, e1), (t2, e2)):
+                    found.append(f"{n1} ({r1}) et {n2} ({r2}) se touchent vers ({t1[0]:g}, {t1[1]:g}) mm")
+        return found
+
     def tree(self):
+        clash = self._collisions()
+        if clash:
+            raise ValueError("fils de réseaux différents superposés sur la page, écarter les composants :\n  "
+                             + "\n  ".join(clash))
         order = {"text": 0, "wire": 1, "label": 2, "no_connect": 3, "symbol": 4}
         items = sorted(self.items, key=lambda it: order[it[0]])
         return ["kicad_sch", ["version", SCH_VERSION], ["generator", Q("luciole_schgen")],

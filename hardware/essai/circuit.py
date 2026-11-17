@@ -21,7 +21,7 @@ GROVE = dict(lib_id="Connector_Generic_MountingPin:Conn_01x04_MountingPin", valu
 
 def build():
     s = Schematic("essai", "Luciole² : tronçon d'essai, 3 LED", rev="0.1", date="2026-11-17",
-                  libs={**stock("Device", "power", "Connector_Generic_MountingPin"),
+                  libs={**stock("Device", "power", "Connector", "Connector_Generic_MountingPin"),
                         "luciole": "lib/luciole.kicad_sym"},
                   power={"GND"})
     y = 32 * G
@@ -43,6 +43,13 @@ def build():
     s.part("R2", x=96 * G, y=y, **RES, pins={"1": "LED_D3", "2": "DOUT"})
     s.part("J2", x=108 * G, y=y, **GROVE,
            pins={"1": NC, "2": "DOUT", "3": "VLED", "4": "GND", "MP": "GND"})
+
+    # Deux cas que la carte v0 demande à la chaîne d'outils : une pastille de test, qui
+    # a une empreinte mais aucune pièce à poser, et un composant posé au dos.
+    s.note("Pastille de test et condensateur au dos", 34 * G, 46 * G)
+    s.part("TP1", x=40 * G, y=56 * G, lib_id="Connector:TestPoint", value="VLED",
+           footprint="TestPoint:TestPoint_Pad_D1.5mm", pins={"1": "VLED"}, assemble=False)
+    s.part("C4", x=50 * G, y=54 * G, **CAP, pins={"1": "VLED", "2": "GND"})
 
     s.note("L'alimentation arrive par un connecteur", 8 * G, 52 * G)
     s.flag("VLED", 12 * G, 58 * G)

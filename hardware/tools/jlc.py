@@ -14,16 +14,15 @@ import re
 import sys
 import zipfile
 
-from netlist import read_netlist
+from netlist import assembled, read_netlist
 
 # Correction de rotation, en degrés, ajoutée à l'angle KiCad pour obtenir celui de JLCPCB.
 # JLCPCB oriente une pièce d'après sa position dans la bande, KiCad d'après le dessin de
 # l'empreinte : les deux ne coïncident pas toujours. Une entrée n'entre dans cette table
 # qu'après contrôle dans l'aperçu de pose de JLCPCB, avec la date du contrôle.
 #
-# Les contrôles ci-dessous valent pour une pose sur la face du dessus. JLCPCB traite
-# autrement les angles de la face du dessous : à recontrôler le jour où une de ces
-# pièces passe au dos.
+# Les contrôles de cette table valent pour une pose sur la face du dessus, et pour elle
+# seule. Une pièce posée au dos a sa propre table, ROTATION_DOS, plus bas.
 ROTATION = [
     # (motif sur le nom d'empreinte, correction, justification)
     (r"^[CR]_0402_1005Metric$", 0, "boîtier à deux bornes, convention commune"),
@@ -36,19 +35,42 @@ ROTATION = [
 ]
 
 
-def rotation_for(footprint):
-    for pattern, delta, _why in ROTATION:
+# Face du dessous. KiCad donne l'angle d'une pièce du dos vu de dessus, à travers la
+# carte. Des outils tiers (kicad-jlcpcb-tools, JLCKicadTools) le transforment en
+# 180° − angle pour JLCPCB. Cette convention n'a jamais été contrôlée ici : la chaîne
+# l'applique, mais ne déclare vérifiée une pièce du dos que si elle figure dans cette
+# table, après contrôle dans l'aperçu de pose de JLCPCB, face du dessous, avec la date.
+# Une vérification faite sur le dessus ne vaut pas pour le dos (constat C3 de la revue
+# du 17 novembre 2026).
+ROTATION_DOS = [
+    # (motif sur le nom d'empreinte, correction, justification)
+]
+
+
+def rotation_for(footprint, bottom=False):
+    for pattern, delta, _why in (ROTATION_DOS if bottom else ROTATION):
         if re.search(pattern, footprint):
             return delta
     return None
 
 
 def write_bom(comps, path):
+    """Rend (lignes, repères sans référence, références LCSC portées par deux lignes)."""
     groups = {}
     for ref, c in comps.items():
+        if not assembled(c):
+            continue
         key = (c["fields"].get("LCSC", ""), c["value"], c["footprint"].split(":")[-1])
         groups.setdefault(key, []).append(ref)
     missing = []
+    # Une référence LCSC désigne une seule pièce. Deux lignes pour la même référence
+    # veulent dire qu'une valeur ou une empreinte est fausse quelque part : JLCPCB
+    # poserait la même pièce aux deux endroits (constat C4).
+    by_lcsc = {}
+    for (lcsc, value, fp), refs in groups.items():
+        if lcsc:
+            by_lcsc.setdefault(lcsc, []).append(f"{value} en {fp} ({', '.join(sorted(refs))})")
+    clashes = {k: v for k, v in by_lcsc.items() if len(v) > 1}
 
     def order(ref):
         m = re.match(r"([A-Za-z#]+)(\d+)", ref)
@@ -62,20 +84,25 @@ def write_bom(comps, path):
             w.writerow([value, ",".join(refs), fp, lcsc])
             if not lcsc:
                 missing += refs
-    return groups, missing
+    return groups, missing, clashes
 
 
 def write_cpl(pos_csv, path):
+    """Rend (lignes, {(empreinte, face): repères} dont l'orientation n'est pas vérifiée)."""
     rows, unverified = [], {}
     with open(pos_csv, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            delta = rotation_for(r["Package"])
+            bottom = r["Side"].lower() not in ("top", "front")
+            delta = rotation_for(r["Package"], bottom)
             if delta is None:
-                unverified.setdefault(r["Package"], []).append(r["Ref"])
+                unverified.setdefault((r["Package"], "dos" if bottom else "dessus"), []).append(r["Ref"])
                 delta = 0
-            rot = (float(r["Rot"]) + delta) % 360
+            rot = float(r["Rot"])
+            if bottom:
+                rot = 180 - rot
+            rot = (rot + delta) % 360
             rows.append([r["Ref"], f"{float(r['PosX']):.4f}mm", f"{float(r['PosY']):.4f}mm",
-                         "Top" if r["Side"].lower() in ("top", "front") else "Bottom", f"{rot:g}"])
+                         "Bottom" if bottom else "Top", f"{rot:g}"])
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
@@ -98,14 +125,17 @@ def write_zip(gerber_dir, path):
 
 def main(netlist, pos_csv, gerber_dir, out_dir, name):
     os.makedirs(out_dir, exist_ok=True)
-    _, comps = read_netlist(netlist)
-    groups, missing = write_bom(comps, os.path.join(out_dir, f"{name}-bom.csv"))
+    _, everything = read_netlist(netlist)
+    comps = {ref: c for ref, c in everything.items() if assembled(c)}
+    bare = sorted(set(everything) - set(comps))
+    groups, missing, clashes = write_bom(everything, os.path.join(out_dir, f"{name}-bom.csv"))
     rows, unverified = write_cpl(pos_csv, os.path.join(out_dir, f"{name}-cpl.csv"))
     files = write_zip(gerber_dir, os.path.join(out_dir, f"{name}-gerbers.zip"))
 
     placed = {r[0] for r in rows}
     lines = [f"Fichiers JLCPCB pour « {name} »", "",
-             f"Nomenclature : {len(groups)} lignes, {len(comps)} composants.",
+             f"Nomenclature : {len(groups)} lignes, {len(comps)} composants."
+             + (f" Sans pièce à poser : {', '.join(bare)}." if bare else ""),
              f"Pose : {len(rows)} composants ({sum(r[3] == 'Top' for r in rows)} dessus, "
              f"{sum(r[3] == 'Bottom' for r in rows)} dessous).",
              f"Gerber et perçages : {len(files)} fichiers ({', '.join(files)}).", ""]
@@ -113,6 +143,9 @@ def main(netlist, pos_csv, gerber_dir, out_dir, name):
     if missing:
         problems += 1
         lines.append(f"MANQUE : pas de référence LCSC pour {', '.join(missing)}.")
+    for lcsc, uses in sorted(clashes.items()):
+        problems += 1
+        lines.append(f"CONFLIT : la référence {lcsc} sert à deux pièces différentes : {' ; '.join(uses)}.")
     if set(comps) - placed:
         problems += 1
         lines.append(f"MANQUE : dans la nomenclature mais pas dans la pose : {', '.join(sorted(set(comps) - placed))}.")
@@ -121,8 +154,11 @@ def main(netlist, pos_csv, gerber_dir, out_dir, name):
         lines.append(f"MANQUE : dans la pose mais pas dans la nomenclature : {', '.join(sorted(placed - set(comps)))}.")
     if unverified:
         lines.append("À CONTRÔLER dans l'aperçu de pose de JLCPCB (orientation et centrage jamais vérifiés) :")
-        for fp, refs in sorted(unverified.items()):
-            lines.append(f"  - {fp} : {', '.join(refs)}")
+        for (fp, side), refs in sorted(unverified.items()):
+            lines.append(f"  - {fp}, {side} : {', '.join(refs)}")
+        if any(side == "dos" for _fp, side in unverified):
+            lines.append("Au dos, l'angle est transformé en 180° − angle KiCad. Cette convention vient d'outils "
+                         "tiers et n'a pas été contrôlée chez JLCPCB.")
     else:
         lines.append("Toutes les orientations viennent de la table des corrections vérifiées.")
     report = "\n".join(lines) + "\n"

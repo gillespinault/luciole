@@ -4,7 +4,8 @@
 #   tools/build.sh essai
 #
 # Le projet est un dossier contenant circuit.py (schéma), netlist_voulue.txt
-# (connexions voulues, écrites à la main) et carte.py (placement et routage).
+# (connexions voulues, écrites à la main), empreintes_voulues.txt (géométrie voulue
+# des empreintes, écrite à la main) et carte.py (placement et routage).
 # Tout ce qui est produit va dans <projet>/out/.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -36,11 +37,23 @@ step "Connexions : liste voulue contre liste exportée par KiCad"
 kicad-cli sch export netlist --format kicadsexpr -o "$OUT/$P.net" "$P/$P.kicad_sch" >/dev/null
 python3 tools/netcheck.py "$P/netlist_voulue.txt" "$OUT/$P.net"
 
+step "Empreintes : géométrie voulue contre fichiers d'empreintes"
+python3 tools/fpcheck.py "$P/empreintes_voulues.txt" "$OUT/$P.net" luciole=lib/luciole.pretty
+
 step "Carte"
 python3 "$P/carte.py"
 
 step "Contrôle des règles de dessin (DRC) et cohérence avec le schéma"
-kicad-cli pcb drc --schematic-parity --severity-all --exit-code-violations --format report -o "$OUT/drc.rpt" "$P/$P.kicad_pcb"
+# KiCad remplit lui-même les plans de masse avant le contrôle, et la carte est réécrite
+# avec ce remplissage : c'est lui qui part en fabrication. Le remplissage fait par
+# script (pcbkit) n'applique pas l'isolement autour des perçages sans cuivre ; l'écart a
+# été trouvé sur la carte v0 le 17 novembre 2026, avec les trous de centrage de l'USB-C.
+# Toute alerte arrête la construction, sauf dérogation écrite dans <projet>/derogations.txt,
+# avec sa raison. Le compte rendu sépare ce qui est ignoré de ce qui reste.
+kicad-cli pcb drc --schematic-parity --severity-all --refill-zones --save-board \
+  --format json -o "$OUT/drc.json" "$P/$P.kicad_pcb" >/dev/null
+kicad-cli pcb drc --schematic-parity --severity-all --format report -o "$OUT/drc.rpt" "$P/$P.kicad_pcb" >/dev/null
+python3 tools/drccheck.py "$OUT/drc.json" "$P/derogations.txt" | tee "$OUT/drc-compte-rendu.txt"
 
 step "Fichiers de fabrication"
 kicad-cli pcb export gerbers --no-x2 --no-netlist --subtract-soldermask --precision 6 \

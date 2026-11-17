@@ -6,7 +6,8 @@
 
 Pour chaque faute, le dossier hardware/ est copié dans un dossier temporaire,
 une modification précise y est appliquée, puis `tools/build.sh essai` est
-lancé. Le banc compare l'étape où la construction s'arrête à l'étape attendue.
+lancé. Le banc compare l'étape où la construction s'arrête à l'étape attendue et,
+pour certaines fautes, cherche le message d'erreur attendu.
 
 Une faute marquée « non détectée » est une lacune connue de la chaîne : elle
 est listée pour qu'on ne l'oublie pas, et le banc signale le jour où elle se
@@ -22,6 +23,9 @@ HW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OK = "aucune"                   # la construction va au bout
 
 # (nom, description, [(fichier, texte à remplacer, texte de remplacement)], étape attendue)
+# Un texte à remplacer égal à None crée le fichier avec le texte de remplacement.
+# Un cinquième élément, facultatif, est un texte que la sortie doit contenir : il assure
+# que la construction s'arrête pour la bonne raison, et pas seulement à la bonne étape.
 FAUTES = [
     ("temoin", "aucune modification : la construction doit réussir", [], OK),
 
@@ -51,18 +55,59 @@ FAUTES = [
       ("essai/netlist_voulue.txt", "LED_D2  D2.3 D3.1", "LED_D2  D2.3 D2.1")],
      "Connexions"),
 
+    # Fautes d'empreinte. Depuis que la géométrie voulue s'écrit à la main
+    # (empreintes_voulues.txt), elles sont arrêtées avant la carte, par comparaison, et
+    # non plus par chance au routage.
     ("empreinte_sans_pastille", "l'empreinte du Grove perd une pastille",
      [("lib/build_lib.py", "for k in range(4):                                   # de gauche", "for k in range(3):                                   # de gauche")],
-     "Carte"),
+     "Empreintes"),
 
     ("grove_en_miroir", "la numérotation du Grove est inversée (l'erreur du 17 novembre)",
      [("lib/build_lib.py", "fp.pad(4 - k, -3.0 + 2.0 * k", "fp.pad(k + 1, -3.0 + 2.0 * k")],
-     "Carte"),
+     "Empreintes"),
 
     ("led_din_dout_echanges", "DIN et DOUT échangés dans l'empreinte de la LED",
      [("lib/build_lib.py", "pad(3, left, left + 1.5, top, top + 1.3)", "pad(1, left, left + 1.5, top, top + 1.3)"),
       ("lib/build_lib.py", "pad(1, right - 1.3, right, bottom - 0.9, bottom)", "pad(3, right - 1.3, right, bottom - 0.9, bottom)")],
-     "Carte"),
+     "Empreintes"),
+
+    ("led_pastille_decalee", "une pastille de la LED est raccourcie de 0,2 mm",
+     [("lib/build_lib.py", "pad(2, right - 2.2, right, top, top + 1.2)", "pad(2, right - 2.0, right, top, top + 1.2)")],
+     "Empreintes"),
+
+    ("empreinte_sans_geometrie", "une empreinte de la carte n'a pas de géométrie voulue",
+     [("essai/empreintes_voulues.txt", "[TestPoint:TestPoint_Pad_D1.5mm] normalisé\n", "")],
+     "Empreintes"),
+
+    # Constats C2 à C7 de la revue du 17 novembre 2026.
+    ("pastille_sans_broche", "l'empreinte du Grove a une pastille de plus que le symbole (C2)",
+     [("lib/build_lib.py", '    fp.pad("MP", mp_x, mp_y - OY, 1.5, 3.4)\n',
+       '    fp.pad("MP", mp_x, mp_y - OY, 1.5, 3.4)\n    fp.pad("5", 0.0, mp_y - OY, 1.0, 1.0)\n'),
+      ("essai/empreintes_voulues.txt", "MP   5.2   3.75   1.5  3.4\n", "MP   5.2   3.75   1.5  3.4\n5    0.0   3.75   1.0  1.0\n")],
+     "Carte", "sans broche dans le schéma"),
+
+    ("broche_libre_a_deux_pastilles", "les pattes de fixation d'un Grove sont laissées libres dans le schéma (C6)",
+     [("essai/circuit.py", 'pins={"1": NC, "2": "DIN", "3": "VLED", "4": "GND", "MP": "GND"})',
+       'pins={"1": NC, "2": "DIN", "3": "VLED", "4": "GND", "MP": NC})'),
+      ("essai/netlist_voulue.txt", "GND     J1.4 J1.MP J2.4", "GND     J1.4 J2.4"),
+      ("essai/netlist_voulue.txt", "NC      J1.1 J2.1", "NC      J1.1 J2.1 J1.MP")],
+     "Carte", "plusieurs pastilles de ce numéro"),
+
+    ("reference_a_deux_valeurs", "deux résistances de valeurs différentes portent la même référence LCSC (C4)",
+     [("essai/circuit.py", 's.part("R2", x=96 * G, y=y, **RES,', 's.part("R2", x=96 * G, y=y, **{**RES, "value": "10k"},')],
+     "Fichiers de fabrication", "CONFLIT"),
+
+    ("symbole_a_plusieurs_unites", "un symbole à quatre unités est posé comme s'il n'en avait qu'une (C5)",
+     [("essai/circuit.py", 's.part("R2", x=96 * G, y=y, **RES,', 's.part("R2", x=96 * G, y=y, **{**RES, "lib_id": "Device:R_Pack04_Split"},')],
+     "Schéma", "unités"),
+
+    ("fils_superposes", "deux résistances posées au même endroit du schéma : leurs fils se touchent",
+     [("essai/circuit.py", 's.part("R2", x=96 * G, y=y, **RES,', 's.part("R2", x=24 * G, y=y, **RES,')],
+     "Schéma", "superposés"),
+
+    ("pastille_de_test_a_poser", "la pastille de test n'est plus déclarée sans pièce (C7)",
+     [("essai/circuit.py", 'pins={"1": "VLED"}, assemble=False)', 'pins={"1": "VLED"})')],
+     "Fichiers de fabrication", "TP1"),
 
     ("drapeau_alimentation_retire", "le réseau d'alimentation n'est plus déclaré comme alimenté",
      [("essai/circuit.py", '    s.flag("VLED", 12 * G, 58 * G)\n', "")],
@@ -75,6 +120,15 @@ FAUTES = [
      [("essai/carte.py", 'b.track("DOUT", [r2b, (r2b[0], j2d[1]), j2d], SIG)', "pass"),
       ("essai/essai.kicad_pro", '"unconnected_items": "error"', '"unconnected_items": "ignore"')],
      "Contrôle des règles de dessin"),
+
+    # Dérogations au contrôle des règles de dessin (tools/drccheck.py).
+    ("derogation_sans_objet", "une dérogation écrite ne correspond à aucune alerte",
+     [("essai/derogations.txt", None, "silk_over_copper | J1 | | sérigraphie sous le connecteur\n")],
+     "Contrôle des règles de dessin", "SANS OBJET"),
+
+    ("derogation_sans_raison", "une dérogation est écrite sans sa raison",
+     [("essai/derogations.txt", None, "silk_over_copper | J1 | |\n")],
+     "Contrôle des règles de dessin", "raison obligatoire"),
 
     ("piste_retiree", "une piste manque : la sortie de données n'atteint plus le connecteur",
      [("essai/carte.py", 'b.track("DOUT", [r2b, (r2b[0], j2d[1]), j2d], SIG)', "pass")],
@@ -96,14 +150,13 @@ FAUTES = [
      [("essai/circuit.py", 'value="470R", lcsc="C25117"', 'value="470R", lcsc=""')],
      "Fichiers de fabrication"),
 
-    # Arrêt obtenu par chance, pas par construction. La numérotation d'une empreinte n'est
-    # comparée à aucune référence extérieure. Ici la faute est vue parce que le routage de
-    # la carte d'essai est écrit en coordonnées : les pistes tombent sur les mauvaises
-    # pastilles. Sur une carte routée par réseau (routeur automatique), elle passerait.
+    # Jusqu'au 17 novembre 2026, cette faute n'était arrêtée que par chance, au contrôle
+    # des règles de dessin, parce que le routage de la carte d'essai est écrit en
+    # coordonnées. Elle l'est maintenant par la géométrie voulue, quel que soit le routage.
     ("led_vdd_gnd_echanges", "VDD et GND échangés dans l'empreinte de la LED",
      [("lib/build_lib.py", "pad(2, right - 2.2, right, top, top + 1.2)", "pad(4, right - 2.2, right, top, top + 1.2)"),
       ("lib/build_lib.py", "pad(4, left, left + 2.4, bottom - 0.8, bottom)", "pad(2, left, left + 2.4, bottom - 0.8, bottom)")],
-     "Contrôle des règles de dessin"),
+     "Empreintes"),
 ]
 
 
@@ -115,10 +168,14 @@ def run(nom, edits):
         shutil.copytree(HW, work, ignore=shutil.ignore_patterns("out", "__pycache__", "*.kicad_prl"))
         for rel, old, new in edits:
             path = os.path.join(work, rel)
+            if old is None:                              # fichier à créer
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new)
+                continue
             with open(path, encoding="utf-8") as f:
                 text = f.read()
             if text.count(old) != 1:
-                return "FAUTE INAPPLICABLE", f"« {old} » trouvé {text.count(old)} fois dans {rel}"
+                return "FAUTE INAPPLICABLE", f"« {old} » trouvé {text.count(old)} fois dans {rel}", ""
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text.replace(old, new))
         p = subprocess.run([os.path.join(work, "tools", "build.sh"), "essai"],
@@ -126,10 +183,10 @@ def run(nom, edits):
         out = p.stdout + p.stderr
         steps = [line[3:].strip() for line in out.splitlines() if line.startswith("== ")]
         if p.returncode == 0:
-            return OK, ""
+            return OK, "", out
         last = steps[-1] if steps else "avant la première étape"
         tail = "\n".join(line for line in out.splitlines()[-12:] if line.strip())
-        return last, tail
+        return last, tail, out
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -137,9 +194,12 @@ def run(nom, edits):
 def main(names):
     wanted = [f for f in FAUTES if not names or f[0] in names]
     bad = 0
-    for nom, descr, edits, attendu in wanted:
-        etape, detail = run(nom, edits)
+    for nom, descr, edits, attendu, *motif in wanted:
+        etape, detail, sortie = run(nom, edits)
         conforme = etape.startswith(attendu) if attendu != OK else etape == OK
+        if conforme and motif and motif[0] not in sortie:
+            conforme = False
+            detail = f"arrêt à la bonne étape, mais sans le message attendu « {motif[0]} »\n" + detail
         if attendu == OK and nom != "temoin":
             verdict = "LACUNE CONFIRMÉE" if conforme else "LACUNE COMBLÉE ? À RECLASSER"
         else:

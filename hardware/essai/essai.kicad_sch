@@ -11,6 +11,129 @@
 		(company "Luciole²")
 	)
 	(lib_symbols
+		(symbol "Connector:TestPoint"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0.762)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "TP"
+				(at 0 6.858 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "TestPoint"
+				(at 0 5.08 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 5.08 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 5.08 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "test point"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "test point tp"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_fp_filters" "Pin* Test*"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "TestPoint_0_1"
+				(circle
+					(center 0 3.302)
+					(radius 0.762)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "TestPoint_1_1"
+				(pin passive line
+					(at 0 0 90)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Connector_Generic_MountingPin:Conn_01x04_MountingPin"
 			(pin_names
 				(offset 1.016)
@@ -1002,6 +1125,17 @@
 		)
 		(uuid "32a87354-1271-5e6e-99dd-78afbe8dc312")
 	)
+	(text "Pastille de test et condensateur au dos"
+		(exclude_from_sim no)
+		(at 86.36 116.84 0)
+		(effects
+			(font
+				(size 2 2)
+			)
+			(justify left bottom)
+		)
+		(uuid "6f9c37a0-0b0c-5858-b517-d017a126ced3")
+	)
 	(text "L'alimentation arrive par un connecteur"
 		(exclude_from_sim no)
 		(at 20.32 132.08 0)
@@ -1345,6 +1479,39 @@
 	)
 	(wire
 		(pts
+			(xy 101.6 142.24)
+			(xy 101.6 144.78)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f99d9937-4372-5971-9daa-0f3168af733f")
+	)
+	(wire
+		(pts
+			(xy 127 133.35)
+			(xy 127 130.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2b60091c-c0e8-50a0-ba62-2dc4464c8768")
+	)
+	(wire
+		(pts
+			(xy 127 140.97)
+			(xy 127 143.51)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "98436e2a-e751-5065-a1d2-a0f2ef173e54")
+	)
+	(wire
+		(pts
 			(xy 30.48 147.32)
 			(xy 30.48 149.86)
 		)
@@ -1352,7 +1519,7 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "90ee6229-e6bf-59b5-b627-8345314eadf8")
+		(uuid "1d086430-781c-540c-bd78-c28bd4010d05")
 	)
 	(wire
 		(pts
@@ -1363,7 +1530,7 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "1d086430-781c-540c-bd78-c28bd4010d05")
+		(uuid "ad92f5f0-863e-59ab-9122-21db37e22cad")
 	)
 	(label "DIN"
 		(at 22.86 81.28 180)
@@ -1566,6 +1733,26 @@
 		(uuid "d8a5e30e-af78-57b9-a387-7f621962360b")
 	)
 	(label "VLED"
+		(at 101.6 144.78 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "7c5c23ec-78e2-545a-a3ec-f2b78e185ad1")
+	)
+	(label "VLED"
+		(at 127 130.81 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "951327da-46f8-57c9-973f-1cfb445f3f0f")
+	)
+	(label "VLED"
 		(at 30.48 149.86 270)
 		(effects
 			(font
@@ -1573,7 +1760,7 @@
 			)
 			(justify right bottom)
 		)
-		(uuid "aa677364-183c-591d-b5f8-bf0f0df4b2bb")
+		(uuid "f5bd19c0-9454-5eba-a46e-5acbbd6f273d")
 	)
 	(no_connect
 		(at 25.4 78.74)
@@ -2974,6 +3161,229 @@
 		)
 	)
 	(symbol
+		(lib_id "Connector:TestPoint")
+		(at 101.6 142.24 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(in_pos_files no)
+		(dnp no)
+		(uuid "7a9fc96a-27bf-5e67-8b0e-b37c9f4351b4")
+		(property "Reference" "TP1"
+			(at 101.6 135.382 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "VLED"
+			(at 101.6 137.16 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
+			(at 106.68 142.24 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 106.68 142.24 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "test point"
+			(at 101.6 142.24 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" ""
+			(at 101.6 142.24 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "6b2e1bdc-477c-5499-8f55-03765e2240a7")
+		)
+		(instances
+			(project "essai"
+				(path "/da81fcaf-0b2c-5b1d-a50c-1cba2b468805"
+					(reference "TP1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 127 137.16 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "8281cd1e-32d1-556c-8c06-ea4588feeb3c")
+		(property "Reference" "C4"
+			(at 127.635 134.62 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "100nF"
+			(at 127.635 139.7 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 127.9652 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 127 137.16 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 127 137.16 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C1525"
+			(at 127 137.16 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "64b6b5f1-0718-5caa-91b8-0bcefa5c692c")
+		)
+		(pin "2"
+			(uuid "529cfb6e-4209-5158-aa11-bf79dba2cee7")
+		)
+		(instances
+			(project "essai"
+				(path "/da81fcaf-0b2c-5b1d-a50c-1cba2b468805"
+					(reference "C4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 127 143.51 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "d6e8a3c7-ab93-5303-8a29-82bbb3b74457")
+		(property "Reference" "#PWR11"
+			(at 127 149.86 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 127 147.32 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "7f628f2b-cd49-569b-97cb-f6b14e532e59")
+		)
+		(instances
+			(project "essai"
+				(path "/da81fcaf-0b2c-5b1d-a50c-1cba2b468805"
+					(reference "#PWR11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:PWR_FLAG")
 		(at 30.48 147.32 0)
 		(unit 1)
@@ -2983,8 +3393,8 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "bdd6d13f-dfc3-5d12-9409-b532861a524e")
-		(property "Reference" "#FLG11"
+		(uuid "4565db7a-a897-54fc-94dc-b32c4eaae0cd")
+		(property "Reference" "#FLG12"
 			(at 30.48 145.415 0)
 			(hide yes)
 			(show_name no)
@@ -3006,12 +3416,12 @@
 			)
 		)
 		(pin "1"
-			(uuid "f1f72a1e-01db-5d17-a140-e7235b7d724c")
+			(uuid "f7ab660c-f7c1-58f6-87cf-b490245ba062")
 		)
 		(instances
 			(project "essai"
 				(path "/da81fcaf-0b2c-5b1d-a50c-1cba2b468805"
-					(reference "#FLG11")
+					(reference "#FLG12")
 					(unit 1)
 				)
 			)
@@ -3027,8 +3437,8 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "4565db7a-a897-54fc-94dc-b32c4eaae0cd")
-		(property "Reference" "#FLG12"
+		(uuid "3f8aaa05-171f-5723-a590-cc1b6998d1fa")
+		(property "Reference" "#FLG13"
 			(at 50.8 145.415 0)
 			(hide yes)
 			(show_name no)
@@ -3050,12 +3460,12 @@
 			)
 		)
 		(pin "1"
-			(uuid "f7ab660c-f7c1-58f6-87cf-b490245ba062")
+			(uuid "da7fc254-773d-5bfa-9009-611738452849")
 		)
 		(instances
 			(project "essai"
 				(path "/da81fcaf-0b2c-5b1d-a50c-1cba2b468805"
-					(reference "#FLG12")
+					(reference "#FLG13")
 					(unit 1)
 				)
 			)
@@ -3071,8 +3481,8 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(uuid "20943ae3-05d2-5017-980b-5a63f582bfd2")
-		(property "Reference" "#PWR13"
+		(uuid "6d453a4a-6b4f-559d-a4dc-6aa4dfdf762c")
+		(property "Reference" "#PWR14"
 			(at 50.8 156.21 0)
 			(hide yes)
 			(show_name no)
@@ -3094,12 +3504,12 @@
 			)
 		)
 		(pin "1"
-			(uuid "5f5e37dd-b512-5949-83a3-68b06ee5cf94")
+			(uuid "464290c1-6a59-5cdd-9a56-d198d6fe2f7d")
 		)
 		(instances
 			(project "essai"
 				(path "/da81fcaf-0b2c-5b1d-a50c-1cba2b468805"
-					(reference "#PWR13")
+					(reference "#PWR14")
 					(unit 1)
 				)
 			)

@@ -1,9 +1,11 @@
 """Lecture de la liste de connexions (netlist) que KiCad exporte d'un schéma."""
 import sexp
 
+FLAGS = ("exclude_from_bom", "exclude_from_pos_files", "dnp")
+
 
 def read_netlist(path):
-    """Rend ({réseau: [(ref, broche)]}, {ref: {value, footprint, uuid, fields}}).
+    """Rend ({réseau: [(ref, broche)]}, {ref: {value, footprint, uuid, fields, flags}}).
 
     Les noms de réseaux sont ceux de KiCad, tels quels : « /DIN » pour une étiquette
     locale, « GND » pour un symbole d'alimentation, « unconnected-(...) » pour une
@@ -24,9 +26,17 @@ def read_netlist(path):
             fields[str(sexp.find(fld, "name")[1])] = str(fld[-1]) if not isinstance(fld[-1], list) else ""
         fp = sexp.find(c, "footprint")
         tst = sexp.find(c, "tstamps")
+        # KiCad signale par une propriété sans valeur un composant hors nomenclature,
+        # hors fichier de pose, ou non monté.
+        flags = {str(sexp.find(pr, "name")[1]) for pr in sexp.find_all(c, "property")} & set(FLAGS)
         comps[ref] = dict(value=str(sexp.find(c, "value")[1]), footprint=str(fp[1]) if fp else "",
-                          uuid=str(tst[1]) if tst else "", fields=fields)
+                          uuid=str(tst[1]) if tst else "", fields=fields, flags=flags)
     return nets, comps
+
+
+def assembled(comp):
+    """Vrai si une pièce doit être posée sur cette empreinte."""
+    return not comp["flags"] & {"exclude_from_bom", "dnp"}
 
 
 def logical(nets):

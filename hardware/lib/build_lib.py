@@ -140,11 +140,115 @@ def grove_footprint():
     return fp.tree(ref_y=-0.5, val_y=1.5)
 
 
+# --------------------------------------------------------------------------
+# Symboles des circuits de la carte v0 absents de la bibliothèque de KiCad.
+# Les numéros de broches viennent des fiches de hardware/fiches/. Les empreintes
+# sont celles de KiCad pour le boîtier normalisé.
+# --------------------------------------------------------------------------
+
+# Convertisseur élévateur TI TPS61023DRLR, LCSC C919459. Fiche SLVSF14B, page 3,
+# boîtier DRL (SOT-563) : 1 FB, 2 EN, 3 VIN, 4 GND, 5 SW, 6 VOUT.
+TPS61023_SYM = box_symbol(
+    "TPS61023DRL", "U", "Package_TO_SOT_SMD:SOT-563", "https://www.ti.com/lit/ds/symlink/tps61023.pdf",
+    "Convertisseur élévateur synchrone, entrée 0,5 à 5,5 V, sortie 2,2 à 5,5 V, coupure de la sortie à l'arrêt",
+    lcsc="C919459",
+    left=[("3", "VIN", "power_in"), ("2", "EN", "input"), ("5", "SW", "passive")],
+    right=[("6", "VOUT", "power_out"), ("1", "FB", "input")],
+    bottom=[("4", "GND", "power_in")])
+
+# Régulateur 3,3 V Richtek RT9080-33GJ5, LCSC C841192. Fiche DS9080-05, page 2,
+# boîtier TSOT-23-5 : 1 VIN, 2 GND, 3 EN, 4 NC, 5 VOUT.
+RT9080_SYM = box_symbol(
+    "RT9080-33GJ5", "U", "Package_TO_SOT_SMD:TSOT-23-5",
+    "https://datasheet.lcsc.com/datasheet/pdf/2701e0c3a2b84b9965f7a61f2c14e970.pdf",
+    "Régulateur linéaire 3,3 V, 600 mA, 2 µA au repos, entrée 1,2 à 5,5 V", lcsc="C841192",
+    left=[("1", "VIN", "power_in"), ("3", "EN", "input")],
+    right=[("5", "VOUT", "power_out"), ("4", "NC", "no_connect")],
+    bottom=[("2", "GND", "power_in")])
+
+# Accéléromètre ST LIS2DH12TR, LCSC C110926. Fiche, table 2, boîtier LGA-12 2 × 2 mm :
+# 1 SCL, 2 CS, 3 SA0, 4 SDA, 5 Res (à la masse), 6 à 8 GND, 9 Vdd, 10 Vdd_IO, 11 INT2, 12 INT1.
+LIS2DH12_SYM = box_symbol(
+    "LIS2DH12", "U", "Package_LGA:LGA-12_2x2mm_P0.5mm",
+    "https://datasheet.lcsc.com/datasheet/pdf/80fd3cb5c04ce9b30e9bec7b53c4a455.pdf",
+    "Accéléromètre 3 axes, I2C ou SPI, 1,71 à 3,6 V, 2 µA à 1 Hz", lcsc="C110926",
+    left=[("1", "SCL", "input"), ("4", "SDA", "bidirectional"), ("2", "CS", "input"), ("3", "SA0", "input")],
+    right=[("12", "INT1", "output"), ("11", "INT2", "output"), ("5", "RES", "passive")],
+    top=[("9", "VDD", "power_in"), ("10", "VDD_IO", "power_in")],
+    bottom=[("6", "GND", "power_in"), ("7", "GND", "power_in"), ("8", "GND", "power_in")])
+
+# Double transistor N à drains communs FS8205A (Tech Public), LCSC C2830320, pour la
+# protection de la cellule. Fiche page 1, boîtier SOT-23-6 : 1 S1, 2 D1/D2, 3 S2,
+# 4 G2, 5 D1/D2, 6 G1. Symbole à une seule unité : la chaîne ne gère pas les autres.
+FS8205A_SYM = box_symbol(
+    "FS8205A", "Q", "Package_TO_SOT_SMD:SOT-23-6",
+    "https://datasheet.lcsc.com/datasheet/pdf/c060cb7baa8cc2b2d2a0ed3afa443ef8.pdf",
+    "Deux transistors N à drains communs, 20 V, 6 A, 25 mΩ à 2,5 V", lcsc="C2830320",
+    left=[("1", "S1", "passive"), ("6", "G1", "input")],
+    right=[("3", "S2", "passive"), ("4", "G2", "input")],
+    top=[("2", "D12", "passive"), ("5", "D12", "passive")])
+
+# Superviseur de tension TI TLV803EA30DBZR, LCSC C5218924 : tient sa sortie à la masse
+# sous 3,08 V, sortie à drain ouvert. Fiche, figure 6-1, boîtier DBZ (SOT-23), brochage
+# sans suffixe : 1 GND, 2 RESET, 3 VDD. Les références à suffixe R ou V ont un autre
+# brochage : ne pas en changer sans relire la fiche.
+TLV803E_SYM = box_symbol(
+    "TLV803EA30DBZ", "U", "Package_TO_SOT_SMD:SOT-23",
+    "https://datasheet.lcsc.com/datasheet/pdf/075232f81476471fb0145392049399fa.pdf",
+    "Superviseur de tension 3,08 V, sortie à drain ouvert active à 0, 0,25 µA", lcsc="C5218924",
+    right=[("2", "~{RESET}", "open_collector")],
+    top=[("3", "VDD", "power_in")], bottom=[("1", "GND", "power_in")])
+
+# Tampon à trois états SN74LV1T125DBVR-TP (Tech Public), LCSC C51886115. Fiche page 1,
+# SOT-23-5 : 1 /OE, 2 A, 3 GND, 4 Y, 5 VCC. Sortie en haute impédance quand /OE est à 1.
+LV1T125_SYM = box_symbol(
+    "SN74LV1T125DBV", "U", "Package_TO_SOT_SMD:SOT-23-5",
+    "https://datasheet.lcsc.com/datasheet/pdf/d61badc48b1e3ef9b419e747e22ee65f.pdf",
+    "Tampon à trois états, 1,6 à 5,5 V, seuil d'entrée bas, sortie au niveau de VCC", lcsc="C51886115",
+    left=[("2", "A", "input"), ("1", "~{OE}", "input")],
+    right=[("4", "Y", "tri_state")],
+    top=[("5", "VCC", "power_in")], bottom=[("3", "GND", "power_in")])
+
+# Bouton à poussée latérale Alps SKRTLAE010, LCSC C110293. L'empreinte de KiCad porte
+# deux pastilles 1, une pastille 2 et deux pattes de fixation MP.
+SKRTLAE010_SYM = box_symbol(
+    "SKRTLAE010", "SW", "Button_Switch_SMD:SW_Push_1P1T-MP_NO_Horizontal_Alps_SKRTLAE010",
+    "https://datasheet.lcsc.com/datasheet/pdf/776a4001117146b9aca9bcb4d41038c0.pdf",
+    "Bouton poussoir à poussée latérale, 100 000 cycles", lcsc="C110293",
+    left=[("1", "1", "passive")], right=[("2", "2", "passive")], bottom=[("MP", "MP", "passive")])
+
+SYMBOLS = [LED_SYM, TPS61023_SYM, RT9080_SYM, LIS2DH12_SYM, FS8205A_SYM, TLV803E_SYM, LV1T125_SYM,
+           SKRTLAE010_SYM]
+
+
+# --------------------------------------------------------------------------
+# Inductance moulée cjiang FXL0420 (4,4 × 4,2 × 2,0 mm), LCSC C167203 pour 1 µH.
+# Catalogue FXL page 5, « Recommend Land Pattern » : a = 2,2 entre les pastilles,
+# b = 5,2 d'un bord extérieur à l'autre, c = 2,5 de hauteur. Soit deux pastilles de
+# 1,5 × 2,5, centres à ±1,85.
+# --------------------------------------------------------------------------
+FXL0420_FP = "L_cjiang_FXL0420"
+
+
+def fxl0420_footprint():
+    fp = Footprint(FXL0420_FP,
+                   "Inductance moulée cjiang FXL0420, 4,4 x 4,2 x 2,0 mm, pastilles du catalogue FXL page 5",
+                   "inductance moulée 4020")
+    fp.pad(1, -1.85, 0.0, 1.5, 2.5)
+    fp.pad(2, 1.85, 0.0, 1.5, 2.5)
+    fp.fab([(-2.2, -2.1), (2.2, -2.1), (2.2, 2.1), (-2.2, 2.1)])
+    fp.silk(-1.0, -2.3, 1.0, -2.3)
+    fp.silk(-1.0, 2.3, 1.0, 2.3)
+    fp.courtyard(-2.85, -2.45, 2.85, 2.45)
+    return fp.tree(ref_y=-3.3, val_y=3.3)
+
+
 def main():
-    sexp.save(os.path.join(HERE, "luciole.kicad_sym"), symbol_lib([LED_SYM]))
+    sexp.save(os.path.join(HERE, "luciole.kicad_sym"), symbol_lib(SYMBOLS))
     pretty = os.path.join(HERE, "luciole.pretty")
     os.makedirs(pretty, exist_ok=True)
-    for name, tree in ((LED_FP, led_footprint()), (GROVE_FP, grove_footprint())):
+    for name, tree in ((LED_FP, led_footprint()), (GROVE_FP, grove_footprint()),
+                       (FXL0420_FP, fxl0420_footprint())):
         sexp.save(os.path.join(pretty, name + ".kicad_mod"), tree)
         print("écrit", name)
 

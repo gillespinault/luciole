@@ -11,23 +11,32 @@ from netlist import logical, read_netlist
 
 def read_wanted(path):
     nets, nc = {}, set()
+    name = None
     with open(path, encoding="utf-8") as f:
-        for n, line in enumerate(f, 1):
-            line = line.split("#", 1)[0].split()
+        for n, raw in enumerate(f, 1):
+            text = raw.split("#", 1)[0]
+            line = text.split()
             if not line:
                 continue
-            name, nodes = line[0], set()
-            for tok in line[1:]:
+            # Une ligne qui commence par un espace continue le réseau de la ligne précédente.
+            if text[0] in " \t":
+                if name is None:
+                    sys.exit(f"{path}:{n} : ligne de suite sans réseau au-dessus")
+                tokens = line
+            else:
+                name, tokens = line[0], line[1:]
+                if name != "NC" and name in nets:
+                    sys.exit(f"{path}:{n} : réseau {name} défini deux fois")
+                if name != "NC":
+                    nets[name] = set()
+            for tok in tokens:
                 ref, _, pin = tok.partition(".")
                 if not pin:
                     sys.exit(f"{path}:{n} : « {tok} » n'est pas de la forme REPÈRE.BROCHE")
-                nodes.add((ref, pin))
-            if name == "NC":
-                nc |= nodes
-            else:
-                if name in nets:
-                    sys.exit(f"{path}:{n} : réseau {name} défini deux fois")
-                nets[name] = nodes
+                target = nc if name == "NC" else nets[name]
+                if (ref, pin) in target:
+                    sys.exit(f"{path}:{n} : {tok} figure deux fois dans {name}")
+                target.add((ref, pin))
     return nets, nc
 
 

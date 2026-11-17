@@ -1,0 +1,21 @@
+# Carte Luciole² v0 : dérogations au contrôle des règles de dessin.
+#
+# Une ligne par dérogation : type | premier élément | second élément | raison.
+# Lues par tools/drccheck.py. Une dérogation qui ne sert plus arrête la construction.
+
+# L'USB-C (au dos), le bouton (au dos) et le Grove (face avant) sont dos à dos à la même
+# extrémité. Les pattes et les ergots des pièces du dos traversent la carte sous le
+# boîtier du Grove. Ils font moins de 1,6 mm et ne dépassent pas de la face avant ;
+# le placement vérifie par assertion qu'aucun ne tombe sous une pastille du Grove.
+pth_inside_courtyard  | PTH pad SH [GND] of J1 | Footprint J3 | pattes du blindage de l'USB-C sous le boîtier du Grove, plus courtes que l'épaisseur de la carte
+npth_inside_courtyard | NPTH pad of J1         | Footprint J3 | ergots de centrage de l'USB-C sous le boîtier du Grove, plus courts que l'épaisseur de la carte
+npth_inside_courtyard | NPTH pad of SW3        | Footprint J3 | ergot du bouton sous le boîtier du Grove, plus court que l'épaisseur de la carte
+silk_over_copper      | Segment of J3          | NPTH pad of J1 | trait de sérigraphie du Grove coupé par un trou de centrage de l'USB-C, sans conséquence
+
+# Plan de pastilles d'Alps pour le SKRTLAE010 : les ergots de 0,9 mm sont à moins de
+# 0,15 mm des bornes et des appuis. À signaler à JLCPCB avec la confirmation du placement.
+hole_clearance | of SW3 on B.Cu | NPTH pad of SW3 | plan de pastilles du fabricant du bouton, isolement de 0,10 à 0,15 mm autour de ses ergots
+
+# Connecteurs et module au bord de la carte : leur dessin de sérigraphie dépasse du bord.
+silk_edge_clearance | Edge.Cuts | of J1 on B.Silkscreen  | l'USB-C dépasse du bord de carte, comme le veut son plan
+silk_edge_clearance | Edge.Cuts | of U6 on B.Silkscreen  | l'antenne du module est au ras du bord de carte

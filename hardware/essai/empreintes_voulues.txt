@@ -1,0 +1,40 @@
+# Carte d'essai Luciole² : géométrie voulue des empreintes.
+#
+# Écrite à la main d'après les plans des fabricants, sans passer par le code qui
+# dessine les empreintes (lib/build_lib.py). tools/fpcheck.py compare les deux :
+# une pastille mal placée ou mal numérotée dans l'empreinte ressort ici.
+#
+# Une ligne par pastille : numéro, x, y du centre, largeur (selon X), hauteur
+# (selon Y). Millimètres, empreinte non tournée, vue de dessus, Y vers le bas.
+
+[Capacitor_SMD:C_0402_1005Metric] normalisé
+[Resistor_SMD:R_0402_1005Metric] normalisé
+[TestPoint:TestPoint_Pad_D1.5mm] normalisé
+
+# LED SK6812MINI-B-012, fiche OPSCO B/1 page 5, « PCB recommended pad size », vue de
+# dessus. L'ensemble des pastilles occupe 4,3 × 2,6 mm ; l'origine est en son centre.
+#   en haut à gauche   3 DOUT  1,5 × 1,3      en haut à droite  2 VDD  2,2 × 1,2
+#   en bas à gauche    4 GND   2,4 × 0,8      en bas à droite   1 DIN  1,3 × 0,9
+# Rangée du haut : 1,5 + 0,6 + 2,2. Rangée du bas : 2,4 + 0,6 + 1,3.
+[luciole:LED_OPSCO_SK6812MINI-B-012_3.7x3.5mm]
+3   -1.40  -0.65   1.5  1.3
+2    1.05  -0.70   2.2  1.2
+4   -0.95   0.90   2.4  0.8
+1    1.50   0.85   1.3  0.9
+
+# Connecteur Grove couché Megastar ZX-HY2.0-4PWT, plan du fabricant, « P.C.B LAYOUT ».
+# Quatre pastilles de 1,5 × 3,0 au pas de 2,0 (cote A = 6,0 entre les centres extrêmes).
+# Deux pattes de fixation de 1,5 × 3,4 : leur bord extérieur est à 2,2 du bord de la
+# dernière pastille, soit un centre à 3,0 + 0,75 + 2,2 − 0,75 = 5,2 de l'axe ; leur bord
+# haut est à 4,5 sous le bas des pastilles. Ouverture vers +Y.
+# Origine au centre de l'emprise des pastilles, qui va de −1,5 à +9,4 autour de l'axe
+# de la rangée : la rangée est donc à y = −3,95 et les pattes à y = 7,7 − 3,95 = 3,75.
+# Numéros : ouverture vers soi, de gauche à droite 4 masse, 3 alimentation, 2 SDA, 1 SCL
+# (quatre recoupements, voir lib/build_lib.py et fiches/README.md).
+[luciole:Grove_HY2.0-4P_Megastar_ZX-HY2.0-4PWT_Horizontal]
+4   -3.0  -3.95   1.5  3.0
+3   -1.0  -3.95   1.5  3.0
+2    1.0  -3.95   1.5  3.0
+1    3.0  -3.95   1.5  3.0
+MP  -5.2   3.75   1.5  3.4
+MP   5.2   3.75   1.5  3.4
