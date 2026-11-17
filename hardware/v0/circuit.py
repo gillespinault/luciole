@@ -10,7 +10,7 @@ La table des broches, l'arbre d'alimentation et les raisons des choix sont dans
 le wiki, page « Conception de la carte v0 ». Deux masses : GND est la masse de
 la carte, BATN le pôle négatif de la batterie, en amont de la protection.
 
-Révision 0.4 du 17 novembre 2026, après la relecture du schéma contre les
+Révision 0.5 du 17 novembre 2026, après la relecture du schéma contre les
 fiches par un agent Claude, ses contre-relectures, puis les relectures de
 Gemini et de Codex : voir la page « Revue indépendante » du wiki.
 """
@@ -53,7 +53,7 @@ ROW2, ROW3, ROW4 = 6, 10, 18
 
 
 def build():
-    s = Schematic("v0", "Luciole² : carte v0", rev="0.4", date="2026-11-17", paper="A1",
+    s = Schematic("v0", "Luciole² : carte v0", rev="0.5", date="2026-11-17", paper="A1",
                   libs={**stock("Device", "power", "Connector", "Connector_Generic_MountingPin", "RF_Module",
                                 "Battery_Management", "Power_Protection", "Logic_LevelTranslator",
                                 "Transistor_FET", "Switch", "Jumper"),
@@ -136,7 +136,11 @@ def build():
     # doivent pas pouvoir arrêter la charge. R47 limite le courant quand la broche vide
     # C40 ; avec R44 il laisse CE à 0,22 V, charge arrêtée. Le firmware tire GPIO21 à 0 ou
     # la relâche, il ne la pousse jamais à 1.
-    R("R44", "100k", "VBUS", "CE", 124, 56)
+    # D25 : sans USB, VBUS est à la masse. Sans elle, le rappel interne de GPIO21 fuirait
+    # vers VBUS par la diode de corps de Q7 et R44, soit 18 µA s'il reste actif en sommeil.
+    s.part("D25", x=124 * G, y=70 * G, lib_id="Device:D", value="1N4148WS", lcsc="C2128",
+           footprint="Diode_SMD:D_SOD-323", pins={"A": "VBUS", "K": "CE_PU"})
+    R("R44", "100k", "CE_PU", "CE", 124, 56)
     C("C40", "100nF", "CE", "GND", 132, 56)
     s.part("Q7", x=140 * G, y=(118 + ROW2) * G, **NFET, pins={"D": "CE", "G": "+3V3", "S": "Q7_S"})
     R("R47", "4k7", "CHG_INH", "Q7_S", 152, 118 + ROW2)

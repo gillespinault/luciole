@@ -66,3 +66,5 @@ Dans `grove-preuves/`. Elles établissent que, connecteur couché vu de dessus e
 | `M5Stack_NanoC6_photo1.png`, `photo4`, `photo5`, `photo8` | NanoC6 : légende côté bouton, vue de dessus, étiquette du dessous, vue dans l'ouverture | https://docs.m5stack.com/en/core/M5NanoC6 |
 | `M5Stack_cable_Grove.jpg` | Câble M5Stack : fils noir, rouge, jaune, blanc dans cet ordre | https://docs.m5stack.com/en/accessory/cable/grove_cable |
 | `Seeed_OPL_GROVE-HW4-SMD-2.0-90D.kicad_mod` | Empreinte officielle de Seeed, même numérotation que la nôtre une fois tournée | https://github.com/Seeed-Studio/OPL_Kicad_Library |
+| `BSS138_C7420339.pdf` | Transistor N des adaptateurs de niveau du port, R+O, LCSC C7420339. 1 grille, 2 source, 3 drain ; seuil de 0,8 à 1,6 V | https://datasheet.lcsc.com/datasheet/pdf/514e3e5ec4f4cdec2b1076b59af25652.pdf?productCode=C7420339 | 17 novembre 2026 |
+| `JSCJ_1N4148WS_C2128.pdf` | Diode en série avec le rappel de CE, LCSC C2128, SOD-323. Fuite inverse de 25 nA sous 20 V | https://datasheet.lcsc.com/datasheet/pdf/460cf88f750c4519b4ed435068ee729e.pdf?productCode=C2128 | 17 novembre 2026 |

@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.4, concordent : 158 composants, 84 réseaux. Tous les composants sont posés ; seule la rangée de LED est routée, donc `tools/build.sh v0` ne va pas encore au bout. Pour regarder le brouillon : `tools/kicad python3 v0/carte.py --brouillon` |
+| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. Tous les composants sont posés ; seule la rangée de LED est routée, donc `tools/build.sh v0` ne va pas encore au bout. Pour regarder le brouillon : `tools/kicad python3 v0/carte.py --brouillon` |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte

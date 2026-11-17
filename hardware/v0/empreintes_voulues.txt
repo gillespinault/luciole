@@ -15,6 +15,7 @@
 [Capacitor_SMD:C_0805_2012Metric] normalisé
 [Fuse:Fuse_1206_3216Metric] normalisé
 [Diode_SMD:D_SOD-123F] normalisé
+[Diode_SMD:D_SOD-323] normalisé
 [Diode_SMD:D_SOD-523] normalisé
 [Package_TO_SOT_SMD:SOT-23] normalisé
 [Package_TO_SOT_SMD:SOT-23-5] normalisé

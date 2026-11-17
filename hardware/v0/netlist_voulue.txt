@@ -32,7 +32,7 @@
 #   U9   SN74LV1T34, SOT-23-5 : 1 libre, 2 A, 3 GND, 4 Y, 5 VCC.
 #   U10  SN74LV1T125, SOT-23-5 : 1 /OE, 2 A, 3 GND, 4 Y, 5 VCC.
 #   D1 à D15  SK6812MINI-B-012 : 1 DIN, 2 VDD, 3 DOUT, 4 GND.
-#   D16, D22  DSK24, D19, D24 PESD5Z5.0 : 1 cathode, 2 anode.
+#   D16, D22  DSK24, D19, D24 PESD5Z5.0, D25 1N4148WS : 1 cathode, 2 anode.
 #   J3   Grove : 4 masse, 3 alimentation, 2 SDA ou donnée du ruban, 1 SCL. MP : fixation.
 #   J2   Batterie, 2 broches : 1 pôle positif, 2 pôle négatif. À confirmer sur un câble
 #        réel ; un câble inversé est sans danger (Q2). MP : fixation.
@@ -58,7 +58,7 @@ GND     J1.A1 J1.A12 J1.B1 J1.B12 J1.SH  R1.2 R2.2 R6.2 C1.2 C39.2 C34.2 D24.2  
         TP6.1 TP7.1 TP16.1
 
 # -------------------------------------------------------------------- USB
-VBUS        J1.A4 J1.A9 J1.B4 J1.B9  C39.1 R39.1 D24.1  R5.1  U2.4 R11.1 R44.1 R41.1  D16.2  Q4.1  TP1.1
+VBUS        J1.A4 J1.A9 J1.B4 J1.B9  C39.1 R39.1 D24.1  R5.1  U2.4 R11.1 D25.2 R41.1  D16.2  Q4.1  TP1.1
 VBUS_AMORTI R39.2 C1.1
 CC1         J1.A5 R1.1 R37.1
 CC2         J1.B5 R2.1 R38.1
@@ -80,6 +80,7 @@ VCHG        U2.5 C2.1 JP1.1
 CHRG        U2.7 R13.2 U6.25
 STDBY       U2.6 TP13.1 R41.2
 CE          U2.8 R44.2 C40.1 Q7.3
+CE_PU       D25.1 R44.1
 Q7_S        Q7.2 R47.2
 CHG_INH     R47.1 U6.27
 

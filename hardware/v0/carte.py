@@ -166,7 +166,7 @@ b.place("TH1", X_BAT_DEBUT - 1.3, 20.7, bottom=True)
 # Dans chaque rectangle, les pièces hautes viennent d'abord : le rangement se fait par
 # rangées, et une rangée prend la hauteur de sa plus grande pièce.
 b.flow(["U1", "JP1", "R39", "C1", "D24", "C38", "R1", "R2",
-        "C39", "R5", "R6", "R7", "R37", "R38", "C34", "R44", "C40", "R41", "R42"],
+        "D25", "C39", "R5", "R6", "R7", "R37", "R38", "C34", "R44", "C40", "R41", "R42"],
        8.6, 0.7, 23.0, 13.4, bottom=True)
 # Dos, à côté du bouton : chargeur, et protection du bouton.
 b.flow(["U2", "Q1", "D19", "C2", "C11", "R8", "R9", "R10", "R11", "R12"],
