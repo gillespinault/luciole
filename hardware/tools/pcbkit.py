@@ -5,6 +5,7 @@ millimètres, mesurées depuis le coin haut gauche de la carte, X vers la droite
 Y vers le bas. La carte part de la netlist que KiCad a exportée du schéma, pas
 de la description du circuit : le schéma reste la seule source des connexions.
 """
+import json
 import os
 
 import pcbnew
@@ -64,6 +65,7 @@ class Board:
                 self.pad_net[node] = netname
         self.fps = {}
         self.warnings = []
+        self._netclasses = []
         self._rules(rules)
         tb = self.board.GetTitleBlock()
         tb.SetTitle(title)
@@ -91,6 +93,30 @@ class Board:
         nc.SetViaDiameter(MM(r["via_diameter"]))
         nc.SetViaDrill(MM(r["via_drill"]))
         self.rules = r
+
+    def netclass(self, name, nets, track, clearance=None):
+        """Classe de réseaux : largeur de piste (et isolement) pour les réseaux cités.
+        Un routeur automatique lit ces largeurs ; le contrôle des règles aussi. Les classes
+        sont écrites dans le fichier de projet à l'enregistrement : l'interface de script de
+        KiCad 10 accepte d'en créer une, mais ne l'enregistre pas."""
+        self._netclasses.append(dict(name=name, nets=[self._net(n).GetNetname() for n in nets], track=track,
+                                     clearance=clearance if clearance is not None else self.rules["default_clearance"]))
+
+    def _write_netclasses(self):
+        pro = os.path.splitext(self.path)[0] + ".kicad_pro"
+        with open(pro, encoding="utf-8") as f:
+            data = json.load(f)
+        ns = data.setdefault("net_settings", {})
+        base = next(c for c in ns["classes"] if c["name"] == "Default")
+        ns["classes"] = [base]
+        ns["netclass_patterns"] = []
+        for k, nc in enumerate(self._netclasses):
+            ns["classes"].append({**base, "name": nc["name"], "track_width": nc["track"],
+                                  "clearance": nc["clearance"], "priority": k})
+            ns["netclass_patterns"] += [{"netclass": nc["name"], "pattern": net} for net in nc["nets"]]
+        with open(pro, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
 
     def _pt(self, x, y):
         return pcbnew.VECTOR2I(MM(self.ox + x), MM(self.oy + y))
@@ -251,7 +277,10 @@ class Board:
             outline.Append(p.x, p.y)
         z.SetLocalClearance(MM(clearance))
         z.SetMinThickness(MM(min_width))
-        z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
+        # Pastilles de surface reliées en plein au plan, freins thermiques pour les seules
+        # pattes traversantes : la carte est soudée au four, et un frein thermique dont un
+        # voisin coupe les branches laisse une pastille mal reliée.
+        z.SetPadConnection(pcbnew.ZONE_CONNECTION_THT_THERMAL)
         z.SetThermalReliefGap(MM(0.25))
         z.SetThermalReliefSpokeWidth(MM(0.3))
         z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
@@ -292,6 +321,43 @@ class Board:
             xs += [pcbnew.ToMM(box.GetLeft()) - self.ox, pcbnew.ToMM(box.GetRight()) - self.ox]
             ys += [pcbnew.ToMM(box.GetTop()) - self.oy, pcbnew.ToMM(box.GetBottom()) - self.oy]
         return (round(min(xs), 3), round(min(ys), 3), round(max(xs), 3), round(max(ys), 3))
+
+    def courtyard(self, ref):
+        """Rectangle d'encombrement (x1, y1, x2, y2) de `ref` : sa zone de garde, pastilles
+        comprises. Sert à ranger des composants côte à côte sans qu'ils se chevauchent."""
+        fp = self.fps[ref]
+        fp.BuildCourtyardCaches()
+        box = fp.GetCourtyard(pcbnew.B_CrtYd if fp.IsFlipped() else pcbnew.F_CrtYd).BBox()
+        x1, y1 = pcbnew.ToMM(box.GetLeft()) - self.ox, pcbnew.ToMM(box.GetTop()) - self.oy
+        x2, y2 = pcbnew.ToMM(box.GetRight()) - self.ox, pcbnew.ToMM(box.GetBottom()) - self.oy
+        for bx1, by1, bx2, by2 in (self.extent(ref),):
+            x1, y1, x2, y2 = min(x1, bx1), min(y1, by1), max(x2, bx2), max(y2, by2)
+        return (round(x1, 3), round(y1, 3), round(x2, 3), round(y2, 3))
+
+    def move(self, ref, x, y):
+        """Déplace un composant déjà posé : son origine va en (x, y)."""
+        self.fps[ref].SetPosition(self._pt(x, y))
+
+    def flow(self, refs, x1, y1, x2, y2, bottom=False, gap=0.25, rot=None):
+        """Range des composants dans le rectangle donné, de gauche à droite puis de haut en
+        bas, zone de garde contre zone de garde. `rot` : {repère: angle}. Sert au premier
+        placement des petits composants d'un bloc ; les pièces dont la position compte se
+        posent une à une avec place(). Erreur si le rectangle est trop petit. Rend le coin
+        bas droit de ce qui a été rangé."""
+        rot = rot or {}
+        cx, cy, row_h, right = x1, y1, 0.0, x1
+        for ref in refs:
+            self.place(ref, 0.0, 0.0, rot=rot.get(ref, 0.0), bottom=bottom)
+            bx1, by1, bx2, by2 = self.courtyard(ref)
+            w, h = bx2 - bx1, by2 - by1
+            if cx + w > x2 + 1e-6 and cx > x1:
+                cx, cy, row_h = x1, cy + row_h + gap, 0.0
+            if cx + w > x2 + 1e-6 or cy + h > y2 + 1e-6:
+                raise ValueError(f"{ref} ne tient pas dans le rectangle ({x1}, {y1}) - ({x2}, {y2})")
+            self.move(ref, cx - bx1, cy - by1)
+            cx, row_h = cx + w + gap, max(row_h, h)
+            right = max(right, cx - gap)
+        return (round(right, 3), round(cy + row_h, 3))
 
     def boxes(self, ref, number):
         """Rectangles (x1, y1, x2, y2) des pastilles de `ref` portant ce numéro."""
@@ -343,6 +409,8 @@ class Board:
         self.board.BuildConnectivity()
         pcbnew.ZONE_FILLER(self.board).Fill(self.board.Zones())
         pcbnew.SaveBoard(self.path, self.board)
+        if self._netclasses:
+            self._write_netclasses()
         for w in self.warnings:
             print("alerte :", w)
         print(f"écrit {self.path} : {len(self.fps)} composants, "

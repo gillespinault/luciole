@@ -43,10 +43,12 @@ def covers(w, v):
     if w["type"] != v.get("type"):
         return False
     texts = [it.get("description", "") for it in v.get("items", [])]
-    for needle in (w["a"], w["b"]):
-        if needle and not any(needle in t for t in texts):
-            return False
-    return True
+    if len(texts) < 2:
+        texts += [""] * (2 - len(texts))
+    # Chaque texte doit désigner un élément différent : « U7 » deux fois veut dire deux
+    # pastilles de U7, pas une pastille de U7 et une piste quelconque.
+    return any((not w["a"] or w["a"] in texts[i]) and (not w["b"] or w["b"] in texts[j])
+               for i in range(len(texts)) for j in range(len(texts)) if i != j)
 
 
 def describe(v):

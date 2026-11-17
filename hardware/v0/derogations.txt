@@ -19,3 +19,8 @@ hole_clearance | of SW3 on B.Cu | NPTH pad of SW3 | plan de pastilles du fabrica
 # Connecteurs et module au bord de la carte : leur dessin de sérigraphie dépasse du bord.
 silk_edge_clearance | Edge.Cuts | of J1 on B.Silkscreen  | l'USB-C dépasse du bord de carte, comme le veut son plan
 silk_edge_clearance | Edge.Cuts | of U6 on B.Silkscreen  | l'antenne du module est au ras du bord de carte
+
+# Boîtiers au pas de 0,5 mm : leurs pastilles voisines sont à 0,15 mm l'une de l'autre,
+# sous les 0,2 mm demandés entre deux réseaux, au-dessus du minimum de JLCPCB (0,127 mm).
+clearance | of U7 on F.Cu | of U7 on F.Cu | pastilles voisines de l'accéléromètre, boîtier LGA au pas de 0,5 mm
+clearance | of U8 on F.Cu | of U8 on F.Cu | pastilles voisines du convertisseur, boîtier SOT-563 au pas de 0,5 mm

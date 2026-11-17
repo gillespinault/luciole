@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma sont écrits (134 composants) et concordent. Le placement n'a que ses éléments mécaniques : `tools/build.sh v0` ne va pas encore au bout. Pour regarder le brouillon : `tools/kicad python3 v0/carte.py --brouillon` |
+| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.3, concordent : 158 composants, 82 réseaux. Tous les composants sont posés ; seule la rangée de LED est routée, donc `tools/build.sh v0` ne va pas encore au bout. Pour regarder le brouillon : `tools/kicad python3 v0/carte.py --brouillon` |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -28,7 +28,7 @@ Une carte est un dossier qui contient quatre fichiers écrits à la main.
 
 `circuit.py` décrit le schéma, par noms de broches. Chaque broche doit être reliée à un réseau ou marquée `NC`, sinon la génération s'arrête. Elle s'arrête aussi quand deux composants sont posés si près que les fils de deux réseaux se touchent sur la page. Une empreinte sans pièce à poser (pastille de test, pont de soudure) se déclare avec `assemble=False`, une pièce prévue mais non montée avec `dnp=True`.
 
-`carte.py` pose les composants et trace les pistes, en millimètres depuis le coin haut gauche de la carte. Un composant se pose au dos avec `bottom=True`. Son sens se vérifie par une assertion sur la position de ses pastilles, comme le fait la carte d'essai.
+`carte.py` pose les composants et trace les pistes, en millimètres depuis le coin haut gauche de la carte. `flow()` range les petits composants d'un bloc dans un rectangle, `netclass()` donne leur largeur aux pistes d'alimentation. Un composant se pose au dos avec `bottom=True`. Son sens se vérifie par une assertion sur la position de ses pastilles, comme le fait la carte d'essai.
 
 Les fichiers `.kicad_sch` et `.kicad_pcb` sont produits par ces scripts. Ils s'ouvrent dans KiCad pour la relecture. Une modification faite à la main dans KiCad est perdue à la construction suivante : elle se reporte dans le script.
 
@@ -50,6 +50,14 @@ La pose d'une empreinte s'arrête aussi dans trois cas. Une pastille numérotée
 Deux constructions de suite donnent les mêmes fichiers, à la date près dans les en-têtes.
 
 Les fichiers KiCad du projet sont supprimés au début de chaque construction, fichier de projet compris. Un réglage fait à la main dans KiCad, comme la désactivation d'un contrôle, ne survit donc pas.
+
+## Routeurs automatiques
+
+`tools/outils.sh` installe deux routeurs à version figée, dans `tiers/` (hors du suivi git) : Freerouting 2.5.0 et KiCadRoutingTools 0.24.1. Tous deux tournent dans un conteneur sans accès au réseau.
+
+Essayés tels quels sur le placement de la v0 le 17 novembre 2026, aucun des deux ne route la carte : Freerouting laisse entre 61 et 89 liaisons non routées sur 129, sans converger en neuf passes, KiCadRoutingTools échoue sur plusieurs liaisons après seize minutes. Les liaisons qui traversent la carte d'un bout à l'autre se routeront donc par script, et les routeurs ne serviront qu'aux liaisons locales.
+
+KiCadRoutingTools réduit par défaut la taille des vias sous les règles de la carte et l'écrit dans le fichier de projet : le lancer avec `--escalation off --strict-sizes`.
 
 ## Banc de fautes
 

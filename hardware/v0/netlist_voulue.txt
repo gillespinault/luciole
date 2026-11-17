@@ -15,12 +15,14 @@
 #        29 IO23, 30 RXD0, 31 TXD0. Masse : 1, 2, 11, 14, 36 à 53. Libres : 4, 7, 21, 32 à 35.
 #   J1   USB-C HRO TYPE-C-31-M-12, table du plan : A1 A12 B1 B12 masse, A4 A9 B4 B9 VBUS,
 #        A5 CC1, B5 CC2, A6 B6 D+, A7 B7 D−, A8 B8 SBU. SH : blindage.
-#   U1   USBLC6-2SC6 : 1 et 6 ligne 1, 3 et 4 ligne 2, 2 masse, 5 VBUS.
+#   U1, U11  USBLC6-2SC6 : 1 et 6 ligne 1, 3 et 4 ligne 2, 2 masse, 5 rail d'écrêtage.
+#        U1 protège les données de l'USB, U11 les deux signaux du port Grove.
 #   U2   TP4056, fiche rév. 2.4 : 1 TEMP, 2 PROG, 3 GND, 4 VCC, 5 BAT, 6 STDBY, 7 CHRG,
 #        8 CE. 9 : plage thermique, à la masse.
 #   U3   DW01A : 1 OD, 2 CS, 3 OC, 4 TD, 5 VCC, 6 GND.
 #   Q3   FS8205A : 1 S1, 2 et 5 drains communs, 3 S2, 4 G2, 6 G1.
-#   Q2, Q4  DMP1045U (canal P), Q1, Q5 AO3400A (canal N), SOT-23 : 1 grille, 2 source, 3 drain.
+#   Q2, Q4  DMP1045U (canal P), Q6 AO3401A (canal P), Q1, Q5, Q7 AO3400A (canal N), SOT-23 :
+#        1 grille, 2 source, 3 drain.
 #   U4   RT9080-33GJ5, TSOT-23-5 : 1 VIN, 2 GND, 3 EN, 4 libre, 5 VOUT.
 #   U5   TLV803EA30DBZR, brochage sans suffixe : 1 GND, 2 RESET, 3 VDD.
 #   U7   LIS2DH12, table 2 : 1 SCL, 2 CS, 3 SA0, 4 SDA, 5 Res (à la masse), 6 à 8 GND,
@@ -29,7 +31,7 @@
 #   U9   SN74LV1T34, SOT-23-5 : 1 libre, 2 A, 3 GND, 4 Y, 5 VCC.
 #   U10  SN74LV1T125, SOT-23-5 : 1 /OE, 2 A, 3 GND, 4 Y, 5 VCC.
 #   D1 à D15  SK6812MINI-B-012 : 1 DIN, 2 VDD, 3 DOUT, 4 GND.
-#   D16  DSK24, D17 à D19 PESD5Z5.0 : 1 cathode, 2 anode.
+#   D16, D22  DSK24, D19, D24 PESD5Z5.0 : 1 cathode, 2 anode.
 #   D20, D21  BAT54C : 1 et 2 anodes, 3 cathode commune.
 #   J3   Grove : 4 masse, 3 alimentation, 2 SDA ou donnée du ruban, 1 SCL. MP : fixation.
 #   J2   Batterie, 2 broches : 1 pôle positif, 2 pôle négatif. À confirmer sur un câble
@@ -40,25 +42,27 @@
 # séparé de GND par les transistors de la protection (Q3).
 
 # ------------------------------------------------------------------ masse
-GND     J1.A1 J1.A12 J1.B1 J1.B12 J1.SH  R1.2 R2.2 R6.2 C1.2  U1.2
-        U2.3 U2.9 R8.2 Q1.2 R10.2 R12.2 TH1.2 C2.2
+GND     J1.A1 J1.A12 J1.B1 J1.B12 J1.SH  R1.2 R2.2 R6.2 C1.2 C39.2 C34.2 D24.2  U1.2 C38.2
+        U2.3 U2.9 R8.2 Q1.2 R10.2 R12.2 TH1.2 C2.2 C40.2
         J2.MP R15.2 Q3.3 R17.2 C4.2  C5.2
-        C6.2 U4.2 C7.2 U5.1
+        C6.2 U4.2 C7.2 U5.1 C35.2
         U6.1 U6.2 U6.11 U6.14 U6.36 U6.37 U6.38 U6.39 U6.40 U6.41 U6.42 U6.43 U6.44
         U6.45 U6.46 U6.47 U6.48 U6.49 U6.50 U6.51 U6.52 U6.53
         C8.2 C9.2 C10.2 SW1.2 SW2.2  SW3.2 SW3.MP D19.2 C11.2
-        U7.5 U7.6 U7.7 U7.8 C12.2
+        U7.5 U7.6 U7.7 U7.8 C12.2 C36.2
         C13.2 U8.4 R24.2 R26.2 Q5.2 R28.2 C14.2 C15.2
         U9.3 C16.2
         D1.4 D2.4 D3.4 D4.4 D5.4 D6.4 D7.4 D8.4 D9.4 D10.4 D11.4 D12.4 D13.4 D14.4 D15.4
         C17.2 C18.2 C19.2 C20.2 C21.2 C22.2 C23.2 C24.2 C25.2 C26.2 C27.2 C28.2 C29.2 C30.2 C31.2
-        J3.4 J3.MP C32.2 D17.2 D18.2  U10.3 C33.2
+        J3.4 J3.MP C32.2 U11.2 C41.2  U10.3 C33.2
         TP6.1 TP7.1 TP16.1
 
 # -------------------------------------------------------------------- USB
-VBUS        J1.A4 J1.A9 J1.B4 J1.B9  U1.5 C1.1  R5.1  U2.4 U2.8 R11.1  D16.2  Q4.1  TP1.1
-CC1         J1.A5 R1.1
-CC2         J1.B5 R2.1
+VBUS        J1.A4 J1.A9 J1.B4 J1.B9  C39.1 R39.1 D24.1  R5.1  U2.4 R11.1 R44.1  D16.2  Q4.1  TP1.1
+VBUS_AMORTI R39.2 C1.1
+CC1         J1.A5 R1.1 R37.1
+CC2         J1.B5 R2.1 R38.1
+CC_SENSE    R37.2 R38.2 C34.1 U6.9 TP12.1
 USB_DP      J1.A6 J1.B6 U1.1 U1.6 R3.1
 USB_DN      J1.A7 J1.B7 U1.3 U1.4 R4.1
 USB_DP_R    R3.2 U6.18
@@ -67,18 +71,24 @@ VBUS_SENSE  R5.2 R6.1 R7.1
 VBUS_DET    R7.2 U6.16
 
 # --------------------------------------------------------------- chargeur
-PROG        U2.2 R8.1 R9.1
+PROG        U2.2 R8.1 R9.1 R42.1
+PROG_TP     R42.2 TP17.1
 PROG_X      R9.2 Q1.3
 ISET        Q1.1 R10.1 U6.19
 TEMP        U2.1 R11.2 R12.1 TH1.1
 VCHG        U2.5 C2.1 JP1.1
 CHRG        U2.7 R13.2 U6.25
-STDBY       U2.6 TP13.1
+STDBY       U2.6 TP13.1 R41.2
+CE          U2.8 R44.2 C40.1 Q7.3
+Q7_S        Q7.2 R47.2
+CHG_INH     R47.1 U6.27
 
 # ---------------------------------------------------- batterie, protection
-BATP        J2.1 Q2.3
-BATN        J2.2 Q2.1 U3.6 C3.2 Q3.1
-VBAT        Q2.2 JP1.2 R14.1 R16.1 Q4.3 TP2.1
+BATP        J2.1 Q2.3 R45.2 R46.1
+Q6_G        R46.2 Q6.1
+BATN        J2.2 U3.6 C3.2 Q3.1 R43.2 TP18.1
+Q2_G        Q2.1 Q6.3 R43.1
+VBAT        Q2.2 Q6.2 R45.1 JP1.2 R14.1 R16.1 Q4.3 D22.2 TP2.1
 DW_VCC      R14.2 U3.5 C3.1
 DW_CS       U3.2 R15.1
 DW_OD       U3.1 Q3.6
@@ -87,31 +97,31 @@ PROT_D      Q3.2 Q3.5
 VBAT_SENSE  R16.2 R17.1 C4.1 U6.12
 
 # ------------------------------------------------ nœud système et 3,3 V
-VSYS        D16.1 Q4.2 C5.1 JP2.1 JP3.1 TP3.1
+VSYS        D16.1 D22.1 Q4.2 C5.1 JP2.1 JP3.1 TP3.1  U1.5 C38.1
 V3IN        JP2.2 C6.1 U4.1 U4.3
-+3V3        U4.5 C7.1 U5.3  U6.3 C8.1 C9.1  R18.1 R19.1 R20.1 R13.1 R21.1
-            U7.9 U7.10 U7.2 U7.3 R22.1 R23.1 C12.1  D20.3 D21.3 R35.1  TP4.1
++3V3        U4.5 C7.1 U5.3 C35.1  U6.3 C8.1 C9.1  R18.1 R19.1 R20.1 R13.1 R21.1 R41.1
+            U7.9 U7.10 U7.2 U7.3 R22.1 R23.1 C12.1 C36.1  D20.3 D21.3  Q7.1 R35.1  TP4.1
 
 # ----------------------------------------------------------------- module
 EN          U5.2 U6.8 R18.2 C10.1 SW1.1 TP10.1
 BOOT        U6.23 R19.2 SW2.1 TP11.1
 STRAP8      U6.22 R20.2
-BTN         U6.6 R21.2 SW3.1 D19.1 C11.1
+BTN         R21.2 SW3.1 D19.1 C11.1 R40.1
+BTN_IO      R40.2 U6.6
 ACC_INT     U7.12 U6.15
 ACC_SDA     U7.4 U6.28 R22.2
 ACC_SCL     U7.1 U6.29 R23.2
 TXD0        U6.31 TP8.1
 RXD0        U6.30 TP9.1
-IO20        U6.26 TP12.1
 
 # -------------------------------------------- convertisseur et rail des LED
 VBIN        JP3.2 C13.1 L1.1 U8.3
 SW          L1.2 U8.5
 BOOST_EN    U8.2 R24.1 U6.10
-FB          U8.1 R25.2 R26.1 R27.1
+FB          U8.1 R25.2 C37.2 R26.1 R27.1
 FB_X        R27.2 Q5.3
-VSEL        Q5.1 R28.1 U6.20
-VLED        U8.6 R25.1 C14.1 C15.1  U9.5 C16.1  F1.1  U10.5 C33.1  TP5.1 TP15.1
+VSEL        Q5.1 R28.1 U6.26
+VLED        U8.6 R25.1 C37.1 C14.1 C15.1  U9.5 C16.1  F1.1  U10.5 C33.1  TP5.1 TP15.1
             D1.2 D2.2 D3.2 D4.2 D5.2 D6.2 D7.2 D8.2 D9.2 D10.2 D11.2 D12.2 D13.2 D14.2 D15.2
             C17.1 C18.1 C19.1 C20.1 C21.1 C22.1 C23.1 C24.1 C25.1 C26.1 C27.1 C28.1 C29.1 C30.1 C31.1
 
@@ -138,12 +148,12 @@ LED_OUT     R30.2 TP14.1
 
 # ------------------------------------------------------------- port Grove
 VPORT       F1.2 J3.3 C32.1
-PORT_1      J3.1 R31.2 R33.2 D17.1
-PORT_2      J3.2 R32.2 R34.2 D18.1 JP4.2
+PORT_ECRET  U11.5 C41.1
+PORT_1      J3.1 R31.2 R33.2 U11.1 U11.6
+PORT_2      J3.2 R32.2 R34.2 U11.3 U11.4 JP4.2
 IO1         U6.13 R31.1 D20.1
 IO2         U6.5 R32.1 D20.2 U10.2
-PORT_PU     U6.9 R33.1 R34.1 D21.1 D21.2
-PORT_OE     U6.27 U10.1 R35.2
+PORT_PU     U6.20 R33.1 R34.1 D21.1 D21.2 U10.1 R35.2
 PORT_BUF    U10.4 R36.1
 PORT_BUF_R  R36.2 JP4.1
 

@@ -9,6 +9,7 @@
 
 # ------------------------------------------------------- boîtiers normalisés
 [Resistor_SMD:R_0402_1005Metric] normalisé
+[Resistor_SMD:R_0603_1608Metric] normalisé
 [Capacitor_SMD:C_0402_1005Metric] normalisé
 [Capacitor_SMD:C_0603_1608Metric] normalisé
 [Capacitor_SMD:C_0805_2012Metric] normalisé

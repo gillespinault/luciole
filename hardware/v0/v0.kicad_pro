@@ -290,6 +290,44 @@
         "via_diameter": 0.6,
         "via_drill": 0.3,
         "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.2,
+        "diff_pair_gap": 0.25,
+        "diff_pair_via_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "Puissance",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.6,
+        "tuning_profile": "",
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.2,
+        "diff_pair_gap": 0.25,
+        "diff_pair_via_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "Alimentation",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 1,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.4,
+        "tuning_profile": "",
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "wire_width": 6
       }
     ],
     "meta": {
@@ -297,7 +335,64 @@
     },
     "net_colors": {},
     "netclass_assignments": {},
-    "netclass_patterns": []
+    "netclass_patterns": [
+      {
+        "netclass": "Puissance",
+        "pattern": "/VBUS"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/VBAT"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/VSYS"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/BATP"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/BATN"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/VCHG"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/VBIN"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/SW"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/VLED"
+      },
+      {
+        "netclass": "Puissance",
+        "pattern": "/VPORT"
+      },
+      {
+        "netclass": "Alimentation",
+        "pattern": "+3V3"
+      },
+      {
+        "netclass": "Alimentation",
+        "pattern": "/V3IN"
+      },
+      {
+        "netclass": "Alimentation",
+        "pattern": "/VBUS_AMORTI"
+      },
+      {
+        "netclass": "Alimentation",
+        "pattern": "/DW_VCC"
+      }
+    ]
   },
   "pcbnew": {
     "last_paths": {
