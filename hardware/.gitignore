@@ -1,0 +1,16 @@
+# Tout ce que tools/build.sh régénère
+*/out/
+
+# Fiches techniques et photos des fabricants : gardées en local, pas publiées.
+# Leur liste et leurs sources sont dans fiches/README.md, qui est suivi.
+fiches/*
+!fiches/README.md
+
+# Fichiers locaux de KiCad
+*.kicad_prl
+*-backups/
+fp-info-cache
+~*.lck
+*.lck
+
+__pycache__/

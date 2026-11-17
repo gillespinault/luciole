@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Lance une commande dans l'image KiCad figée par son empreinte.
+# Le dossier hardware/ est monté sur /hw, qui devient le dossier courant.
+#   tools/kicad kicad-cli version
+#   tools/kicad python3 essai/carte.py
+#
+# L'image est jetée après chaque commande : KiCad n'y garde aucun réglage.
+# Les tables de bibliothèques globales sont recopiées depuis les modèles
+# fournis avec KiCad, pour que les contrôles retrouvent les bibliothèques.
+set -euo pipefail
+IMAGE="kicad/kicad:10.0.8-full@sha256:4ae56a2c3202334383ab70ad698c649d7a9e2b7ba207088b2a38eca40a2b4e84"
+HW="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec docker run --rm -i -u "$(id -u):$(id -g)" \
+  -e HOME=/tmp/home -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/hw/tools \
+  -v "$HW":/hw -w /hw "$IMAGE" \
+  bash -c 'mkdir -p "$HOME/.config/kicad/10.0" \
+    && cp /usr/share/kicad/template/sym-lib-table /usr/share/kicad/template/fp-lib-table "$HOME/.config/kicad/10.0/" \
+    && exec "$@"' -- "$@"

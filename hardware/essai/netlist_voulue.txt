@@ -1,0 +1,26 @@
+# Carte d'essai Luciole² : liste de connexions voulue.
+#
+# Écrite à la main, AVANT le schéma, par numéros de broches lus dans les
+# fiches techniques. Le schéma, lui, est décrit par noms de broches. Les deux
+# sont comparés par tools/netcheck.py : une erreur de symbole ressort ici.
+#
+# Une ligne par réseau : nom, puis les broches REPÈRE.NUMÉRO.
+# NC : broches qui doivent rester libres.
+#
+# Brochages de référence
+#   D1 à D3  SK6812MINI-B-012 (fiche B/1, page 5) : 1 DIN, 2 VDD, 3 DOUT, 4 GND
+#   J1, J2   Grove, numérotation du schéma du NanoC6 de M5Stack :
+#            4 masse, 3 alimentation, 2 donnée du ruban (G2, fil jaune chez
+#            M5Stack), 1 libre (G1, fil blanc). MP = pattes de fixation.
+#   C1 à C3  100 nF entre VDD et GND de chaque LED
+#   R1, R2   470 Ω en série sur l'entrée et la sortie de données (fiche page 9)
+
+GND     J1.4 J1.MP J2.4 J2.MP  D1.4 D2.4 D3.4  C1.2 C2.2 C3.2
+VLED    J1.3 J2.3  D1.2 D2.2 D3.2  C1.1 C2.1 C3.1
+DIN     J1.2 R1.1
+LED_D0  R1.2 D1.1
+LED_D1  D1.3 D2.1
+LED_D2  D2.3 D3.1
+LED_D3  D3.3 R2.1
+DOUT    R2.2 J2.2
+NC      J1.1 J2.1
