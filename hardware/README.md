@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. Tous les composants sont posés ; la structure du routage est tracée et passe le contrôle des règles. Restent les liaisons courtes de chaque bloc |
+| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. Tous les composants sont posés ; la structure du routage est tracée et passe le contrôle des règles. Le routeur sur grille laisse encore entre 23 et 34 liaisons courtes : aucun tracé n'est figé |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -56,6 +56,8 @@ Les fichiers KiCad du projet sont supprimés au début de chaque construction, f
 Le routage d'une carte se fait en deux temps, tous deux dans `carte.py`.
 
 La structure se trace par script : liaisons longues, alimentations, convertisseur, sorties des boîtiers à pas fin. C'est elle qui décide si la carte est routable. L'en-tête de `v0/carte.py` décrit le plan retenu pour la carte v0.
+
+Les petits composants sont posés par `tools/pose.py` : chacun va à la place libre la plus proche du cuivre que ses pastilles relient, dans l'orientation qui convient. Les ranger par rangées, sans regarder leurs connexions, donnait des blocs où tout devait se croiser.
 
 Les liaisons courtes qui restent, autour de chaque bloc, sont tracées par le routeur sur grille `tools/maille.py`, puis figées dans `<projet>/routage.json` :
 

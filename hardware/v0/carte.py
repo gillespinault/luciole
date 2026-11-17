@@ -7,9 +7,12 @@ Cotes en millimètres depuis le coin haut gauche, face avant vue de dessus.
 
 EN COURS. Tous les composants sont posés. La structure est tracée par script et passe le
 contrôle des règles : rangée de LED, convertisseur, chemin de la batterie, alimentations,
-liaisons longues, sorties des boîtiers à pas fin. Restent les liaisons courtes autour de
-chaque bloc : le placement fin des petits composants est à reprendre bloc par bloc avant
-que le routeur sur grille puisse les finir (voir la fin de ce fichier).
+liaisons longues, traversées, sorties des boîtiers à pas fin. Les petits composants sont
+posés par le poseur (tools/pose.py), au plus près de ce qu'ils relient.
+
+Restent les liaisons courtes. Le routeur sur grille en laisse entre 23 et 34 selon les
+essais, surtout dans la bande du bas côté module et autour du chargeur : ces deux blocs
+sont trop denses pour une seule face libre. Aucun tracé n'est donc figé pour l'instant.
 
 Plan du routage :
 
@@ -41,6 +44,7 @@ import sys
 
 from maille import Router
 from pcbkit import Board
+from pose import Placer
 
 W, H = 122.0, 22.0             # largeur nominale de 22 mm, décision du 17 novembre 2026
 YC = H / 2                     # axe de la carte et de la rangée de LED
@@ -142,7 +146,7 @@ Y_BUS = YC - 2.55              # axe de la barre VLED : 0,75 mm au-dessus des pa
 Y_CAP = Y_BUS - 1.6            # axe des condensateurs, debout au-dessus de la barre
 X_BUS_DEBUT, X_BUS_FIN = 14.5, X_LED_FIN + 1.55
 SIG, STUB, PWR = 0.25, 0.4, 1.0    # largeurs : données, dérivations, barre d'alimentation
-X_EVENTAIL = 99.0              # à droite : le dos porte l'éventail des contacts du module
+X_EVENTAIL = 96.0              # à droite : traversées, puis éventail des contacts du module
 
 b.track("VLED", [(X_BUS_DEBUT, Y_BUS), (X_BUS_FIN, Y_BUS)], PWR)
 for i in range(N_LED):
@@ -168,6 +172,11 @@ V, VR = -90, 90                # composant à deux bornes debout : borne 1 en ha
 
 def P(ref, n):
     return b.pad(ref, n)
+
+
+# Petits composants posés par le poseur (tools/pose.py), une fois la structure tracée :
+# chacun va au plus près de ce que ses pastilles relient. (repères, rectangles, au dos)
+POSE = []
 
 
 def sorties(ref, beyond=0.45, w=0.15):
@@ -274,43 +283,67 @@ def back(net, pts, w=LANE):
 
 # Colonne de gauche du module : chaque contact sort vers la gauche, descend, puis rejoint
 # sa voie. Les verticales s'emboîtent : le contact le plus haut passe le plus à gauche.
+# Côté accès, sous le connecteur de batterie, les voies s'écartent (x < X_J2) : celle de la
+# mesure de batterie peut alors monter en face avant par un via.
+X_J2, X_J2B = 34.2, 35.0
+Y_DP2, Y_DN2, Y_VBUS_D2, Y_VBAT_S2 = 18.0, 18.5, 19.1, 19.9
+X_COL = {"USB_DP_R": 10.4, "USB_DN_R": 9.9, "VBUS_DET": 9.4, "CC_SENSE": 8.9}     # remontée vers l'USB
+Y_COL = 11.2
 col = {}
 for k, (pad, net, x, y_end) in enumerate((
         ("16", "VBUS_DET", 104.2, Y_VBUS_D), ("17", "USB_DN_R", 103.7, Y_DN), ("18", "USB_DP_R", 103.2, Y_DP),
-        ("19", "ISET", 102.7, Y_ISET), ("20", "PORT_PU", 102.0, 14.9), ("22", "STRAP8", 101.2, 14.0),
-        ("23", "BOOT", 100.4, 14.9), ("24", "LED_DATA", 99.6, 14.0))):
+        ("19", "ISET", 102.7, Y_ISET), ("20", "PORT_PU", 102.0, 15.8), ("22", "STRAP8", 101.2, 15.0),
+        ("23", "BOOT", 100.4, 15.8), ("24", "LED_DATA", 99.6, 15.0))):
     p = P("U6", pad)
     col[net] = (x, y_end)
     back(net, [p, (x, p[1]), (x, y_end)])
 for net in ("PORT_PU", "STRAP8", "BOOT", "LED_DATA"):
     b.via(net, *col[net])                      # vers la bande du bas, face avant
-for pad, net in (("15", "ACC_INT"), ("13", "IO1")):
-    p = P("U6", pad)
-    back(net, [p, b.via(net, 104.9, p[1])])
+Y_ACC, Y_BOOST = 14.25, 13.6                   # deux liaisons en face avant, vers leurs traversées
+p = P("U6", "15")
+back("ACC_INT", [p, (105.3, p[1]), b.via("ACC_INT", 104.9, Y_ACC)])
+p = P("U6", "13")
+back("IO1", [p, (105.3, p[1]), b.via("IO1", 104.9, 15.2)])
 p = P("U6", "12")
-back("VBAT_SENSE", [p, (105.2, p[1]), (105.2, Y_VBAT_S), (X_G, Y_VBAT_S)])
-back("VBUS_DET", [col["VBUS_DET"], (X_G, Y_VBUS_D)])
-back("USB_DN_R", [col["USB_DN_R"], (X_G, Y_DN)])
-back("USB_DP_R", [col["USB_DP_R"], (X_G, Y_DP)])
+back("VBAT_SENSE", [p, (105.2, p[1]), (105.2, Y_VBAT_S), (32.8, Y_VBAT_S), (32.8 - (Y_VBAT_S - Y_VBAT_S2), Y_VBAT_S2),
+                    (30.4, Y_VBAT_S2), b.via("VBAT_SENSE", 30.0, Y_VBAT_S2)])
+# Chaque voie change de hauteur 0,8 mm plus à gauche que celle du dessus.
+for k, (net, y, y2) in enumerate((("USB_DP_R", Y_DP, Y_DP2), ("USB_DN_R", Y_DN, Y_DN2), ("VBUS_DET", Y_VBUS_D, Y_VBUS_D2))):
+    x, xj = X_COL[net], X_J2B - 0.8 * k
+    back(net, [col[net], (xj, y), (xj - (y - y2), y2), (x + 0.4, y2), (x, y2 - 0.4), (x, Y_COL)])
 X_ISET = 36.3                  # ISET s'arrête à droite du connecteur de batterie, où est Q1
 back("ISET", [col["ISET"], (X_ISET, Y_ISET)])
-# Rangée du bas : les liaisons locales montent en face avant par un via, sous le module.
-for pad, net, y in (("10", "BOOST_EN", 18.3), ("8", "EN", 19.1), ("6", "BTN_IO", 18.3), ("5", "IO2", 19.1)):
+# Rangée du bas : les liaisons locales montent en face avant par un via, sous le module,
+# puis partent vers la gauche, chacune à sa hauteur.
+X_BANDE = 105.8                # où ces liaisons entrent dans la bande du bas
+bas = {}
+for pad, net, y in (("10", "BOOST_EN", 18.1), ("8", "EN", 18.9), ("6", "BTN_IO", 18.1), ("5", "IO2", 18.9)):
     p = P("U6", pad)
-    back(net, [p, b.via(net, p[0], y)])
+    bas[net] = b.via(net, p[0], y)
+    back(net, [p, bas[net]])
+b.track("EN", [bas["EN"], (X_BANDE, 18.9)], 0.2)
+b.track("BTN_IO", [bas["BTN_IO"], (bas["BTN_IO"][0] - 0.4, 18.5), (bas["BTN_IO"][0] - 0.4, 19.3),
+                   (bas["BTN_IO"][0] - 0.8, 19.7), (X_BANDE, 19.7)], 0.2)
+b.track("IO2", [bas["IO2"], (bas["IO2"][0], 19.9), (bas["IO2"][0] - 0.4, 20.3), (X_BANDE, 20.3)], 0.2)
+b.track("BOOST_EN", [bas["BOOST_EN"], (bas["BOOST_EN"][0], Y_BOOST + 0.4), (bas["BOOST_EN"][0] - 0.4, Y_BOOST),
+                     (95.7, Y_BOOST)], 0.2)
+b.track("ACC_INT", [(104.9, Y_ACC), (96.6, Y_ACC)], 0.2)
 p = P("U6", "9")
-back("CC_SENSE", [p, (p[0], Y_CC), (X_G, Y_CC)])
+x = X_COL["CC_SENSE"]
+back("CC_SENSE", [p, (p[0], Y_CC), (x + 0.4, Y_CC), (x, Y_CC - 0.4), (x, Y_COL)])
 p = P("U6", "3")
 for dx in (-0.45, 0.45):
     back("+3V3", [p, (p[0], 18.0), b.via("+3V3", p[0] + dx, 18.6)], 0.4)
-# Le bouton rejoint le faisceau par le bas, depuis sa résistance en face avant.
-back("BTN", [b.via("BTN", 104.0, 21.3), (X_G, Y_BTN)])
+# Le bouton rejoint le faisceau par le bas, depuis sa résistance en face avant, et va
+# jusqu'au bouton, au dos, le long du bord.
+sw3 = min(b.pads("SW3", "1"), key=lambda q: -q[1])
+back("BTN", [b.via("BTN", 104.0, 21.3), (4.9, Y_BTN), (4.5, Y_BTN - 0.4), (4.5, sw3[1] + 0.8), (sw3[0] + 0.6, sw3[1])])
 # Port : trois voies ajoutées par le haut, de la bande du bas côté module à celle côté accès.
 for net, y, x1, x2 in (("PORT_1X", Y_P1X, 97.6, 39.6), ("PORT_2X", Y_P2X, 96.5, 40.8), ("PORT_BUF_R", Y_PBUF, 95.4, 42.0)):
     back(net, [b.via(net, x1, y - 0.4), (x1 - 0.4, y), (x2 + 0.4, y), b.via(net, x2, y - 0.4)])
 # Rangée du haut du module. Quatre contacts montent en face avant par un via, en
 # quinconce : le choix de tension, le bus de l'accéléromètre, la liaison série.
-for pad, net, y in (("26", "VSEL", 4.25), ("28", "ACC_SDA", 4.0), ("29", "ACC_SCL", 3.3),
+for pad, net, y in (("26", "VSEL", 4.25), ("28", "ACC_SDA", 3.05), ("29", "ACC_SCL", 4.0),
                     ("30", "RXD0", 4.0), ("31", "TXD0", 3.3)):
     p = P("U6", pad)
     back(net, [p, b.via(net, p[0], y)])
@@ -328,15 +361,18 @@ b.track("VSYS", [(X_VSYS1 - 0.8, Y_VSYS_VIA), (X_VSYS1, Y_VSYS_VIA), P("C5", "1"
 # Traversées de la rangée de LED par le dos, entre D5 et D3, là où le dos est libre.
 # Elles montent jusqu'à 4,4 mm : leurs vias arrivent au-dessus des deux liaisons qui
 # longent le bas de la bande du haut.
-#   91,3  rail des LED, de la barre vers le tampon du port ;
 #   92,6  3,3 V, du régulateur vers les composants de la bande du bas ;
 #   93,5  ordre d'arrêt de la charge, du module vers son transistor ;
 #   94,4  état de charge, du module vers le faisceau puis le chargeur ;
-#   95,3  interruption de l'accéléromètre ; 96,2 commande du convertisseur.
+#   95,3  commande du convertisseur ; 96,2 interruption de l'accéléromètre ;
+#   98,5  rail des LED, de la barre vers le tampon du port.
 Y_TRAV = 4.4
-back("VLED", [b.via("VLED", 91.3, Y_BUS), b.via("VLED", 91.3, 13.7)], 0.3)
-for net, x, w in (("+3V3", 92.6, 0.3), ("ACC_INT", 95.3, LANE), ("BOOST_EN", 96.2, LANE)):
-    back(net, [b.via(net, x, 13.9), b.via(net, x, Y_TRAV)], w)
+back("VLED", [b.via("VLED", 98.5, Y_BUS), b.via("VLED", 98.5, 15.2)], 0.3)
+back("+3V3", [b.via("+3V3", 92.6, 13.9), b.via("+3V3", 92.6, Y_TRAV)], 0.3)
+back("BOOST_EN", [b.via("BOOST_EN", 95.3, Y_BOOST), b.via("BOOST_EN", 95.3, Y_TRAV)])
+back("ACC_INT", [b.via("ACC_INT", 96.2, Y_ACC), b.via("ACC_INT", 96.2, Y_TRAV)])
+b.track("BOOST_EN", [(95.7, Y_BOOST), (95.3, Y_BOOST)], 0.2)
+b.track("ACC_INT", [(96.6, Y_ACC), (96.2, Y_ACC)], 0.2)
 p = P("U6", "27")
 back("CHG_INH", [p, (p[0], 3.0), (93.5, 3.0), b.via("CHG_INH", 93.5, 13.9)])
 X_CE2, X_CHRG2 = 53.2, 52.0    # arrivée côté accès, face avant, bande du bas
@@ -348,7 +384,7 @@ back("CE", [b.via("CE", 91.0, Y_CE - 0.4), (90.6, Y_CE), (X_CE2 + 0.4, Y_CE), b.
 # La commande du convertisseur et le choix de tension longent le bas de la bande du haut,
 # en face avant, jusqu'au convertisseur. Le choix de tension finit par 4 mm au dos, pour
 # passer sous la commande.
-b.track("BOOST_EN", [(96.2, Y_TRAV), (96.2, 5.2), (P("R24", "1")[0] + 0.9, 5.2),
+b.track("BOOST_EN", [(95.3, Y_TRAV), (95.3, 5.2), (P("R24", "1")[0] + 0.9, 5.2),
                      (P("R24", "1")[0] + 0.9, P("R24", "1")[1]), P("R24", "1")], 0.2)
 p = P("U6", "26")
 b.track("VSEL", [(p[0], 4.25), (p[0], 5.7), (74.4, 5.7), b.via("VSEL", 74.0, 6.0)], 0.2)
@@ -416,50 +452,63 @@ gnd_via(P("C35", "2")[0] + 0.9, P("C35", "2")[1] + 0.5, P("C35", "2"))
 # Le 3,3 V longe le bord haut, descend par le couloir de droite jusqu'au contact
 # d'alimentation du module, et rejoint la bande du bas par une traversée.
 Y_33 = 0.7
-# Accéléromètre et pastilles de la liaison série, au-dessus du module, près de leurs vias.
-b.place("U7", 106.9, 2.75)
+# Accéléromètre, au-dessus du module. Tourné pour que son bus regarde les deux vias qui
+# montent du module, à droite, et son interruption la traversée, à gauche.
+b.place("U7", 106.9, 2.75, rot=180)
 b.place("C36", 104.3, 2.9, rot=V)
 b.place("C12", 103.0, 2.9, rot=V)
-sorties("U7")
 b.place("R22", 109.2, 1.9, rot=V)
 b.place("R23", 110.25, 1.9, rot=V)
 b.place("TP8", 113.6, 1.95)
 b.place("TP9", 113.6, 4.5)
-for ref in ("R22", "R23", "C36", "C12"):
+b.place("TP4", 89.0, 2.9)
+sda, scl, irq = P("U7", "4"), P("U7", "1"), P("U7", "12")
+assert sda[0] > 106.9 and scl[0] > 106.9 and sda[1] < scl[1], "U7 : SDA en haut à droite, SCL en bas à droite"
+assert irq[1] > 2.75 and abs(P("U7", "9")[1] - P("U7", "2")[1]) < 0.01, "U7 : interruption en bas, 3,3 V face à face"
+sorties("U7")
+b.track("+3V3", [P("U7", "9"), P("U7", "2")], 0.15)        # sous le boîtier
+for a, c in (("2", "3"), ("9", "10")):
+    b.track("+3V3", [P("U7", a), P("U7", c)], 0.15)
+for a, c in (("7", "8"), ("5", "6")):
+    b.track("GND", [P("U7", a), P("U7", c)], 0.15)
+v_sda, v_scl = (P("U6", "28")[0], 3.05), (P("U6", "29")[0], 4.0)
+b.track("ACC_SDA", [sda, (P("R22", "2")[0] - 0.5, sda[1]), P("R22", "2"), v_sda], 0.15)
+b.track("ACC_SCL", [scl, (scl[0] + 0.65, scl[1]), (scl[0] + 0.8, 3.65), (v_scl[0] - 0.4, 3.65), v_scl], 0.15)
+b.track("ACC_SCL", [P("R23", "2"), (v_scl[0] + 0.05, P("R23", "2")[1] + 0.5), v_scl], 0.15)
+b.track("ACC_INT", [irq, (irq[0], 4.55), (96.6, 4.55), (96.2, Y_TRAV)], 0.15)
+for ref in ("R22", "R23", "C36", "C12", "TP4"):
     b.track("+3V3", [P(ref, "1"), (P(ref, "1")[0], Y_33)], 0.3)
 b.track("+3V3", [(92.6, Y_TRAV), (92.6, Y_33)], 0.3)
-b.track("ACC_SDA", [P("R22", "2"), (P("U6", "28")[0], 4.0)], 0.2)
-b.track("ACC_SCL", [P("R23", "2"), (P("U6", "29")[0], 3.3)], 0.2)
 b.track("TXD0", [(P("U6", "31")[0], 3.3), (112.6, 2.45), P("TP8", "1")], 0.2)
 b.track("RXD0", [(P("U6", "30")[0], 4.0), (112.3, 4.5), P("TP9", "1")], 0.2)
 
 # ------------------------------------------------ face avant, bande du bas
 # Côté accès : protection du port, puis le chargeur. Il est en face avant pour laisser le
 # dos, derrière l'USB-C, aux composants de l'USB ; ses pastilles de test sont à côté.
-b.flow(["U11", "C41"], 12.0, 14.9, 17.2, BAS2, rot={"C41": V})
-b.place("U2", 21.2, 17.3)
+b.via("CC_SENSE", 12.5, Y_CC)                 # vers sa pastille de test, face avant
+POSE.append((["U11", "C41", "TP12"], [(11.9, 13.3, 19.6, BAS2)], False))
+b.place("U2", 23.5, 17.3)
 assert P("U2", "4")[0] < P("U2", "5")[0] and P("U2", "1")[1] < P("U2", "4")[1]
-b.flow(["JP1", "C2", "Q1", "R8", "R9", "R10", "R11", "R12", "R42", "C40", "R41", "R44", "D25"],
-       25.2, 14.7, 38.8, BAS2,
-       rot={k: V for k in ("C2", "R8", "R9", "R10", "R11", "R12", "R42", "C40", "R41", "R44")})
+POSE.append((["R8", "R9", "R11", "R12", "R42", "JP1", "Q1", "C2", "C40", "D25", "R44", "R10", "R41"],
+             [(12.0, 14.6, 39.0, BAS2)], False))
 # Arrivée des trois liaisons du port : résistances série et pont du tampon.
-b.flow(["R31", "R32", "JP4"], 43.9, 14.7, 50.6, 18.3, rot={"R31": V, "R32": V})
-b.flow(["TP14", "TP1", "TP17", "TP13"], 39.6, 18.6, 50.8, BAS2)
+POSE.append((["JP4", "R31", "R32", "TP1", "TP17", "TP13", "TP14"], [(39.2, 14.6, 53.6, BAS2)], False))
+# Pont de mesure de la batterie : là où il reste de la place, près de son via.
+POSE.append((["R16", "R17", "C4"], [(12.0, 14.6, 39.0, BAS2), (39.2, 14.6, 53.6, BAS2)], False))
 # Au milieu : boutons internes, pastilles de masse.
-b.flow(["SW1", "SW2", "TP10", "TP11", "TP16", "TP6", "TP7"], 54.0, BAS1 + 0.3, 77.9, BAS2)
+POSE.append((["TP16", "TP6", "TP7"], [(54.0, 14.2, 61.8, BAS2)], False))
 # Côté module : adaptateurs de niveau et tampon du port, rappels de démarrage.
-b.flow(["Q8", "Q9", "R33", "R34", "R35", "U10", "C33", "R19", "R20"], 78.1, BAS1, 90.1, BAS2,
-       rot={k: V for k in ("R33", "R34", "R35", "C33", "R19", "R20")})
+BAS_MODULE = [(78.1, 14.7, 105.6, BAS2)]
+POSE.append((["U10", "Q8", "Q9", "Q7", "U5"], BAS_MODULE, False))
+POSE.append((["R33", "R34", "R35", "C33", "R36", "R47", "R13", "R19", "R20", "R18", "C10", "R40", "R21"], BAS_MODULE, False))
+POSE.append((["SW1", "SW2", "TP10", "TP11"], [(62.0, 14.7, 105.6, BAS2)], False))
 # Sous les traversées : transistor de l'arrêt de la charge, rappel de l'état de charge,
 # résistance série du tampon.
-b.flow(["Q7", "R47", "R13", "R36"], 90.3, 17.8, 98.3, BAS2, rot={"R47": V, "R13": V, "R36": V})
 # Superviseur, redémarrage, bouton.
-b.flow(["U5", "R40", "R21", "R18", "C10"], 98.5, 15.6, 105.4, BAS2,
-       rot={"R40": V, "R21": V, "R18": V, "C10": V})
 # Tampon des LED, sous la première LED : sa sortie monte droit dans l'entrée de D1.
-b.place("R29", 113.5, 14.2, rot=VR)
+b.place("R29", 113.5, 14.05, rot=VR)
 X_U9 = 110.85
-b.place("U9", X_U9, 16.5)
+b.place("U9", X_U9, 16.2)
 b.place("C16", 114.0, 16.75, rot=V)
 u9a, u9gnd, u9y, u9vcc = (P("U9", n) for n in "2345")
 assert u9a[0] < u9vcc[0] and u9vcc[1] < u9y[1], "U9 : entrée à gauche, alimentation en haut à droite"
@@ -476,10 +525,7 @@ b.track("+3V3", [P("C35", "1"), (P("C35", "1")[0], Y_33), (X_COULOIR2, Y_33), (X
                  (P("C9", "1")[0], 18.0), P("C9", "1")], 0.4)
 u63 = P("U6", "3")
 b.track("+3V3", [P("C9", "1"), (u63[0] + 0.45, 18.6), (u63[0] - 0.45, 18.6), (u63[0] - 0.45, 19.6), P("C8", "1")], 0.4)
-b.place("TP4", 110.4, 19.95)
-b.place("TP12", 107.2, 20.0)
-b.track("+3V3", [P("C8", "1"), (P("TP4", "1")[0] + 0.5, P("C8", "1")[1]), P("TP4", "1")], 0.3)
-b.track("CC_SENSE", [b.via("CC_SENSE", P("U6", "9")[0], 19.95), P("TP12", "1")], 0.2)
+b.track("+3V3", [P("C8", "1"), (P("C8", "1")[0] - 0.7, 20.9), (X_BANDE, 20.9)], 0.3)
 gnd_via(115.75, 20.3, P("C8", "2"), 0.4)
 b.track("GND", [P("C9", "2"), (115.75, 19.4), (115.75, 20.3)], 0.3)
 
@@ -498,7 +544,8 @@ j21, j22 = P("J2", "1"), P("J2", "2")
 back("BATP", [(j21[0] - 1.2, j21[1]), (X_BATP, j21[1]), (X_BATP, q2d[1]), q2d], 0.8)
 back("VBAT", [q2s, (q2s[0] + 0.5, Y_VBAT), (X_VBAT + 1.8, Y_VBAT)], 0.8)
 back("VBAT", [q6s, (q6s[0], Y_VBAT)], 0.5)
-b.flow(["R45", "R46", "R43"], 33.7, 2.75, 37.6, 4.75, bottom=True, rot={"R45": V, "R46": V, "R43": V})
+back("BATP", [(X_BATP, q2d[1]), (X_BATP + 0.5, 2.95), (33.4, 2.95)], 0.2)        # vers R45, R46
+POSE.append((["R45", "R46", "R43"], [(24.0, 2.75, 37.6, 6.3)], True))
 # VBAT redescend entre les pastilles du connecteur, vers le pont du chargeur en face avant.
 X_VBAT2 = 28.6
 back("VBAT", [(X_VBAT2, Y_VBAT), (X_VBAT2, 16.4)], 0.8)
@@ -521,7 +568,8 @@ back("PROT_D", [P("Q3", "2"), P("Q3", "5")], 0.4)
 # transistor et la piste du pôle positif.
 back("BATN", [(22.2, j22[1] - 0.2), (22.2, 5.0)], 0.25)
 b.track("BATN", [b.via("BATN", 22.2, 5.0), P("TP18", "1")], 0.25)
-b.flow(["R14", "C3", "R15"], 9.0, 10.9, 13.3, 13.2, bottom=True, rot={"R14": V, "C3": V, "R15": V})
+back("VBAT", [(X_VBAT2, 16.4), (X_VBAT2 - 0.5, 16.9), (12.0, 16.9)], 0.25)             # vers R14
+POSE.append((["C3", "R14", "R15"], [(11.6, 10.6, 21.2, 16.4)], True))
 # Thermistance au bord de la zone de la batterie, pas dessous.
 b.place("TH1", 36.0, 12.0, rot=V, bottom=True)
 # USB-C, pastilles au pas de 0,5 mm. Chaque signal a deux pastilles, une par sens de
@@ -544,15 +592,11 @@ back("CC2", [j1("B5"), (X_SORTIE - 0.15, j1("B5")[1])])
 for n in ("A4", "A9"):
     back("VBUS", [j1(n), (X_SORTIE, j1(n)[1])], 0.5)
 # Derrière l'USB-C : protection, entrée, lecture des broches CC, présence de l'USB.
-b.flow(["U1", "D24", "R39", "C1", "C39", "C38", "R1", "R2", "R37", "R38", "C34", "R5", "R6", "R7", "R3", "R4"],
-       9.6, 2.7, 20.6, 10.6, bottom=True)
+POSE.append((["U1", "R39", "C1", "D24", "C39", "R1", "R2", "R3", "R4", "R37", "R38", "C34", "R5", "R6", "R7", "C38"],
+             [(9.4, 2.7, 20.8, 10.8)], True))
 # Sous l'USB-C, à côté du bouton : sa protection, et le pont de mesure de la batterie.
-b.flow(["D19", "C11", "R16", "R17", "C4"], 4.15, 13.6, 13.4, 17.6, bottom=True)
+POSE.append((["D19", "C11"], [(4.15, 13.6, 8.4, 20.3)], True))
 
-for ref in ("J3", "D15", "D1", "U6", "J1", "SW3", "J2"):
-    print(ref, b.extent(ref))
-print("non posés :", sorted(set(b.comps) - set(b.fps)))
-print("batterie : x de", round(X_BAT_DEBUT, 2), "à", round(X_BAT_FIN, 2), "; sans cuivre au-delà de x =", X_SANS_CUIVRE)
 # ------------------------------------------------------- liaisons courtes
 # Tout ce qui précède est la structure de la carte. Les liaisons courtes qui restent sont
 # tracées par le routeur sur grille (tools/maille.py), puis figées dans routage.json :
@@ -561,17 +605,25 @@ print("batterie : x de", round(X_BAT_DEBUT, 2), "à", round(X_BAT_FIN, 2), "; sa
 #
 # La construction normale rejoue ce fichier. Sa signature dit pour quelle carte il a été
 # calculé : après un changement de placement ou de structure, il faut relancer le routeur.
+INTERDIT = [("F.Cu", X_SANS_CUIVRE, -1, W + 1, H + 1), ("B.Cu", X_SANS_CUIVRE, -1, W + 1, H + 1),
+            # pas de piste nouvelle sous le module
+            ("B.Cu", X_MODULE - MODULE_ARRIERE, YC - 6.6, W + 1, YC + 6.6)]
+poseur = Placer(b, Router(b, forbid=INTERDIT))
+for refs, regions, bottom in POSE:
+    poseur.auto(refs, regions, bottom)
+print("non posés :", sorted(set(b.comps) - set(b.fps)))
+print("batterie : x de", round(X_BAT_DEBUT, 2), "à", round(X_BAT_FIN, 2), "; sans cuivre au-delà de x =", X_SANS_CUIVRE)
+
 ROUTAGE = "v0/routage.json"
 signature = b.signature()
 if "--router" in sys.argv:
-    r = Router(b,
-               forbid=[("F.Cu", X_SANS_CUIVRE, -1, W + 1, H + 1), ("B.Cu", X_SANS_CUIVRE, -1, W + 1, H + 1),
-                       # pas de piste nouvelle sous le module
-                       ("B.Cu", X_MODULE - MODULE_ARRIERE, YC - 6.6, W + 1, YC + 6.6)],
+    r = Router(b, forbid=INTERDIT,
                # le dos, sous la batterie, reste un plan de masse : y passer coûte trois fois plus
                costly=[("B.Cu", X_BAT_DEBUT, 0, X_EVENTAIL, H, 3)])
     seuls = [a.split("=")[1].split(",") for a in sys.argv if a.startswith("--reseaux=")]
-    r.route(skip=("GND",), only=seuls[0] if seuls else None)
+    # Les alimentations d'abord, tant que la place est libre : ce sont les pistes larges.
+    r.route(skip=("GND",), only=seuls[0] if seuls else None,
+            order=["VBUS", "VBAT", "VSYS", "BATP", "BATN", "VCHG", "V3IN", "+3V3", "VLED", "VPORT"])
     r.save(ROUTAGE, signature)
     for name, groupes in r.failed:
         print("non relié :", name)
