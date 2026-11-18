@@ -143,6 +143,19 @@ Chaque dossier porte ses fichiers ngspice, ses modèles (fabricant quand il exis
 
 La carte ne porte aucune inscription près de ses pastilles. Ce plan les situe, avec le nom de leur réseau.
 
+### Aperçu 3D
+
+    tools/apercu.sh v0
+
+À lancer après `tools/build.sh`. La commande écrit :
+
+- `v0/3d/luciole-v0.step`, que Fusion 360 et les autres logiciels de CAO ouvrent tels quels : la carte et ses pièces en volumes, pour dessiner un boîtier autour ;
+- `v0/out/apercu/carte.glb`, le même modèle allégé pour un navigateur, et `vue-top.png`, `vue-bottom.png`, une vue à plat de chaque face.
+
+L'image KiCad n'a qu'une partie des modèles 3D, et les empreintes dessinées ici n'en ont pas. Sans rien faire, la carte sort sans ses LED, son module radio ni ses connecteurs. `tools/volumes.py` donne donc à chaque pièce sans modèle un pavé à l'emprise de son contour de fabrication, de la hauteur inscrite dans sa table `VOLUMES`. Une hauteur marquée « ~ » est approximative : les deux connecteurs clairs et le bouton de bord de la v0 sont dans ce cas, à vérifier dans leurs fiches avant de dessiner un boîtier au plus près. Une pièce sans modèle et absente de la table est signalée.
+
+Le modèle exporté par KiCad compte un morceau par face, près de 17 000 pour la v0. `tools/compacte.py` en fait un maillage par matière.
+
 ### Ce que le contrôle de la pose du 18 novembre 2026 a appris
 
 - Sans correction, 19 pièces sur 136 étaient mal tournées dans l'aperçu de JLCPCB : un demi-tour pour les transistors et le convertisseur des LED, un quart de tour pour le chargeur, le régulateur, les protections et l'accéléromètre. La carte n'aurait pas fonctionné.
