@@ -32,6 +32,7 @@ Tout est dans ce dossier (`hardware/v0/revue/`) du dépôt `github.com/gillespin
 - Orientation de chaque pièce dans l'aperçu de pose de JLCPCB, sur les deux faces. 19 pièces étaient mal tournées : corrigées et recontrôlées.
 - Schéma comparé bloc par bloc aux montages de référence des fabricants.
 - Simulations : protection contre l'inversion, partage USB/batterie, commande du chargeur, port Grove, reset, boutons.
+- Retours d'expérience d'autres concepteurs, cherchés sur le web et confrontés à nos fichiers : cuivre reculé des bords où JLCPCB attache ses rails, options de commande (étuvage des LED, ordre des faces, confirmation de la pose).
 
 ## Là où votre avis compte le plus
 
@@ -39,7 +40,7 @@ Tout est dans ce dossier (`hardware/v0/revue/`) du dépôt `github.com/gillespin
 2. Partage de charge (D16, D22, Q4, grille de Q4 sur VBUS avec 1,47 kΩ vers la masse). Au retrait de l'USB, VSYS passe par D22 pendant 3 à 6 ms et perd 0,3 V. D22 fuit aussi vers la cellule quand l'USB est branché et la carte chaude. Garder D22 ?
 3. Convertisseur TPS61023. La piste SW fait 4 mm en 0,24 mm et passe entre les bornes du condensateur d'entrée, comme sur la figure 10-1 de la fiche tournée d'un quart de tour. Acceptable à 1,9 A d'entrée ?
 4. Masse sur deux couches. Les deux plans sont découpés par les pistes et recousus par des vias. Le courant de retour des LED des deux bouts de la rangée passe par les vias de couture voisins. Un point faible vous saute-t-il aux yeux sur les images du cuivre ?
-5. Chargeur à 0,9 A : six vias de 0,3 mm dans la plage centrale du TP4056, vers un plan du dos estimé à 60 à 80 mm². Suffisant, ou faut-il limiter à 0,5 A ?
+5. Chargeur à 0,9 A : cinq vias de 0,3 mm dans la plage centrale du TP4056, placés entre les dépôts de pâte, vers un plan du dos estimé à 60 à 80 mm². Suffisant, ou faut-il limiter à 0,5 A ?
 6. Module radio : l'antenne est au bord de la carte, sans cuivre dessous, mais le stratifié reste. La cellule finit à 12 mm de l'antenne. Faut-il découper la carte sous l'antenne dès ce lot ?
 7. Ce que vous ne feriez jamais ainsi, même si cela marche.
 
@@ -50,6 +51,8 @@ Tout est dans ce dossier (`hardware/v0/revue/`) du dépôt `github.com/gillespin
 - Sous USB, le rail des LED suit VSYS : le réglage de 4,45 V n'est tenu que sur batterie.
 - La thermistance est sur la carte, à 1,8 mm du bord de la cellule, sans contact.
 - Brancher la cellule alors que l'USB est déjà là est déconseillé : c'est le cas que la protection traite le moins bien.
+- Une piste de 3,3 V passe sous l'accéléromètre, ce que ST déconseille pour la stabilité du zéro.
+- Le superviseur coupe à 3,08 V : la marge sous le 3,3 V est de 60 à 90 mV au pire, d'après les fiches.
 
 ## Pour répondre
 

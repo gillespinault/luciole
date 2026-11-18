@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.6, concordent : 160 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Deux modèles l'ont relu le 18 novembre : huit corrections sont faites et contre-relues (dossier dans `v0/revue/`). Le brochage des 27 pièces autres que résistances et condensateurs a été relevé à l'aveugle dans les fiches des pièces commandées, et l'orientation de chaque pièce contrôlée dans l'aperçu de pose de JLCPCB. Rien n'est commandé |
+| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.6, concordent : 160 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Deux modèles l'ont relu le 18 novembre : huit corrections sont faites et contre-relues (dossier dans `v0/revue/`). Le brochage des 27 pièces autres que résistances et condensateurs a été relevé à l'aveugle dans les fiches des pièces commandées, et l'orientation de chaque pièce contrôlée dans l'aperçu de pose de JLCPCB. Le schéma a été comparé aux montages de référence et simulé, puis la carte confrontée aux retours d'expérience d'autres concepteurs. Rien n'est commandé |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -153,6 +153,24 @@ La carte ne porte aucune inscription près de ses pastilles. Ce plan les situe, 
 - Dans l'aperçu, le repère de broche 1 de leur modèle est un point rose. Il doit tomber sur la pastille 1, que notre sérigraphie marque d'un triangle. Pour un boîtier à pattes dissymétriques, les pattes doivent tomber sur les pastilles.
 - La vue de l'aperçu se déplace au bouton droit et se grossit à la molette. Glisser au bouton gauche la fait pivoter.
 
+### Ce que les retours d'expérience ont appris (18 novembre 2026)
+
+Quatre agents ont cherché sur le web ce qui fait échouer une première carte de ce genre : la puce et la radio, la batterie, les LED et le port, l'assemblage chez JLCPCB. Chacun devait ouvrir ses sources et confronter chaque leçon à nos fichiers. Aucune leçon n'a imposé de changer le schéma. Trois ont changé la carte ou la commande.
+
+- JLCPCB ajoute des rails à une carte de moins de 70 mm de large : ici sur les deux grands côtés, détachés par une rainure. Il demande 0,4 mm sans cuivre le long de la rainure, qu'il place à 0,4 mm près. Une piste d'alimentation longeait le bord haut à 0,40 mm, sans marge : elle est à 0,6 mm, et les plans de masse s'arrêtent à 0,5 mm des grands côtés.
+- 22 pièces sont à moins de 2,5 mm des grands côtés. Casser les rails à la main les contraint : l'option de retrait par JLCPCB est à prendre.
+- La LED est classée 5a pour l'humidité, parmi les plus sensibles. JLCPCB propose l'étuvage en option (48 heures à 60 °C) et n'accepte aucune réclamation sur des LED non étuvées.
+- La fiche du module radio demande un seul passage au four. JLCPCB soude d'abord la face qui porte les pièces les moins nombreuses ou les plus petites : l'ordre n'est donc pas acquis, il se demande en remarque.
+- L'aperçu de pose n'engage pas JLCPCB, et un écart avec la vue de ses ingénieurs a été rapporté pour le dos. L'option « Confirm Parts Placement » leur fait confirmer la pose avant fabrication.
+- JLCPCB dessine son pochoir lui-même, sans suivre nos ouvertures de pâte, et n'ouvre rien pour les pattes traversantes. Les quatre pattes du blindage de l'USB-C ne seront donc soudées que sur demande : à écrire en remarque, à contrôler à la loupe à l'arrivée, à souder au fer sinon.
+- Un via ouvert au milieu d'un dépôt de pâte en boit une partie. Les vias de la plage du chargeur sont passés de six à cinq et placés entre les dépôts de l'empreinte. C'est une précaution : le pochoir de JLCPCB peut différer.
+- Le superviseur coupe à 3,08 V, avant le détecteur de sous-tension de la puce. Un creux du 3,3 V à l'émission radio se lit donc comme une mise sous tension ordinaire. D'après les fiches, la marge est de 60 à 90 mV au pire : à mesurer à l'arrivée, et le firmware lit la batterie avant d'allumer la radio.
+- Laissé en l'état : la piste du 3,3 V sous l'accéléromètre. ST déconseille toute piste sous ce boîtier, parce qu'elle décale le zéro. Pour détecter un mouvement, ce décalage ne compte pas ; il se mesurera.
+
+Une leçon rapportée par un agent se vérifie à la source avant d'agir. Deux agents avaient lu la même page de JLCPCB sur le pochoir et en tiraient deux actions contraires ; la page a tranché.
+
+Le reste tient en consignes : onze pour la première mise sous tension (page du wiki), et les règles du firmware final, en fin de `firmware/banc-v0/README.md`.
+
 ### Dossier de revue
 
     tools/kicad python3 tools/dossier.py v0/v0.kicad_pcb v0/revue
@@ -202,6 +220,26 @@ Dans l'aperçu de pose de JLCPCB, vérifier l'orientation et le centrage de chaq
 Une pièce posée au dos se vérifie à part : elle n'est déclarée vérifiée que si elle figure dans la table `ROTATION_DOS`. En attendant, la chaîne transforme son angle en 180° moins l'angle de KiCad, convention rapportée par des outils tiers et jamais contrôlée ici, et la liste parmi les pièces à contrôler. Le condensateur C4 de la carte d'essai est dans ce cas.
 
 JLCPCB classe la LED SK6812MINI-B-012 parmi les composants difficiles à traiter. La commande est revue après paiement et des frais d'assemblage avancé peuvent s'ajouter.
+
+### Options de la commande de la carte v0
+
+Relevées le 18 novembre 2026 dans le devis de JLCPCB, sans rien commander.
+
+| Réglage | Valeur | Raison |
+|---|---|---|
+| PCB Assembly | Standard, « Both Sides », 5 cartes | |
+| Nomenclature | recocher la ligne de la LED C5183448 | JLCPCB la décoche à chaque traitement |
+| Confirm Parts Placement | Yes, et cocher « Do not confirm automatically » | sans cette case, la pose est validée d'office après 72 heures |
+| Bake Components | Yes, remarque : « Please bake the LEDs C5183448 (SK6812MINI-B-012, MSL 5a) before soldering. » | LED sensibles à l'humidité |
+| Depanel boards & edge rail before delivery | Yes | 22 pièces à moins de 2,5 mm des rails |
+| Assembly remark | Yes, texte ci-dessous | ordre des faces, pattes de l'USB-C, bouton |
+| Livraison | une offre taxes comprises (DDP) si elle existe | sinon le transporteur avance les taxes et facture des frais |
+
+Texte de la remarque d'assemblage :
+
+    1. Please assemble the TOP side (LEDs) first and the BOTTOM side (ESP32-C6-MINI-1 module U6) last: the module must go through reflow only once. 2. Please solder the four shield legs of the USB-C connector J1 (through-hole slots). 3. SW3 (SKRTLAE010): the pads follow the Alps land pattern, 0.10-0.15 mm from its NPTH pegs; please keep them.
+
+Devis du 18 novembre 2026 au soir pour cinq cartes : 214,06 €, dont 15 € de contrôle aux rayons X et 0,41 € de confirmation de la pose. S'y ajoutent, facturés après examen : l'étuvage (7,22 €), le retrait des rails (3,01 €) et ce que la remarque coûtera. Hors port (21,37 € par DHL) et taxes. Ces options allongent la fabrication de trois jours.
 
 ## Brochage du connecteur Grove
 

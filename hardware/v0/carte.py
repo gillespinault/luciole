@@ -489,7 +489,7 @@ X_COULOIR, X_COULOIR2 = 114.65, 115.45
 # ----------------------------------------------- face avant, bande du haut
 # Côté accès : fusible du port, au départ de la barre des LED. Le rail du port descend
 # entre le connecteur Grove et la dernière LED.
-b.place("F1", 14.6, 1.75, rot=180)
+b.place("F1", 14.6, 1.9, rot=180)        # 0,15 mm plus bas : la piste VSYS du bord haut passe à 0,6 mm du bord
 assert P("F1", "2")[0] < P("F1", "1")[0]
 b.track("VLED", [P("F1", "1"), (P("F1", "1")[0], Y_BUS)], 0.5)
 b.place("C32", 12.9, 3.98, rot=V)
@@ -524,7 +524,7 @@ b.track("VBAT", [(X_VBAT + 2 * PAS_VBAT, Y_VBAT), (P("D22", "2")[0] - 0.2, P("D2
 for k in range(2):
     b.via("VBUS", 34.75 + 0.85 * k, 1.6)
 b.track("VBUS", [P("Q4", "1"), (34.75, 2.45), (34.75, 1.6), (35.6, 1.6), P("D16", "2")], 0.5)
-b.track("VSYS", [P("Q4", "2"), (P("Q4", "2")[0] + 0.5, 0.72), (40.6, 0.72), (40.6, P("D16", "1")[1]), P("D16", "1")], 0.5)
+b.track("VSYS", [P("Q4", "2"), (P("Q4", "2")[0] + 0.5, 0.76), (40.6, 0.76), (40.6, P("D16", "1")[1]), P("D16", "1")], 0.45)
 b.track("VSYS", [P("D16", "1"), P("D22", "1")], 1.0)
 b.track("VSYS", [P("D22", "1"), (41.2, 2.8), (X_VSYS1 - 0.8, 2.8)], 1.0)
 b.track("VSYS", [P("TP3", "1"), (P("TP3", "1")[0], 2.8)], 0.5)
@@ -617,11 +617,17 @@ POSE.append((["TP12"], [(11.9, 13.3, 19.6, BAS2)], False))
 b.place("U2", 23.5, 17.3)
 assert P("U2", "4")[0] < P("U2", "5")[0] and P("U2", "1")[1] < P("U2", "4")[1]
 # Le chargeur est linéaire : à 0,9 A il dissipe plus d'un watt, et sa plage centrale est sa
-# seule sortie de chaleur. Six vias dans la plage la relient au plan du dos, libre à cet
+# seule sortie de chaleur. Cinq vias dans la plage la relient au plan du dos, libre à cet
 # endroit sous le rail de la protection (y = 15,7).
-for x in (23.0, 24.0):
-    for y in (16.5, 17.4, 18.3):
-        b.via("GND", x, y)
+# Ils sont dans les intervalles de la pâte à braser de l'empreinte, pas sous elle : un via
+# ouvert au milieu d'un dépôt de pâte en boit une partie (retour d'expérience relevé le
+# 18 novembre 2026). Trois sur l'intervalle horizontal (y = 17,3, large de 0,32 mm), deux
+# sur l'intervalle vertical (x = 23,5, large de 0,23 mm : le perçage y déborde de 0,035 mm
+# de chaque côté). C'est une précaution, pas une garantie : JLCPCB
+# dessine son pochoir lui-même, et ses ouvertures peuvent différer des nôtres. Les vias
+# font 0,3 mm et sont vernis au dos, ce que TI juge suffisant (SLMA002).
+for x, y in ((22.68, 17.3), (23.5, 17.3), (24.32, 17.3), (23.5, 16.45), (23.5, 18.15)):
+    b.via("GND", x, y)
 # Le condensateur de 1 µF de l'alimentation USB est ici, contre la broche d'entrée du
 # chargeur, et non près du connecteur : sans lui, cette broche n'avait aucun découplage à
 # moins de 59 mm de piste. Près du connecteur restent l'écrêteur et l'amortisseur (R39, C1).
@@ -856,7 +862,7 @@ back("BATN", [(22.2, j22[1] - 0.2), (22.2, 5.0)], 0.25)
 b.track("BATN", [b.via("BATN", 22.2, 5.0), P("TP18", "1")], 0.25)
 # De la pastille de test au rappel de la grille de Q2 : par le bord haut, puis entre les
 # pastilles de test de VLED et de VBAT.
-b.track("BATN", [P("TP18", "1"), (22.75, 2.6), (24.35, 1.0), (26.85, 1.0), (26.85, batn_r43[1] - 0.8),
+b.track("BATN", [P("TP18", "1"), (22.75, 2.6), (24.15, 1.2), (26.85, 1.2), (26.85, batn_r43[1] - 0.8),
                  batn_r43], 0.2)
 # Protection de la cellule : son condensateur contre ses deux broches, ses deux résistances
 # juste dessous. Son alimentation vient de VBAT par un rail fin, au ras de la protection.
@@ -956,7 +962,9 @@ back("VSYS", [u1["5"], P("C38", "1"), (X_U1 - 0.4, P("C38", "1")[1]), (vsys_usb[
 back("GND", [P("C38", "2"), b.via("GND", X_U1 + 0.3, 6.2)], 0.3)
 # En face avant, cette alimentation rejoint le partage de charge par le bord haut.
 q42 = P("Q4", "2")
-b.track("VSYS", [vsys_usb, (vsys_usb[0], 0.9), (vsys_usb[0] + 0.4, 0.5), (q42[0] - 0.94, 0.5), q42], 0.2)
+# À 0,6 mm du bord haut, et non 0,4 : JLCPCB détache ses rails sur ce bord, par une rainure
+# placée à 0,4 mm près.
+b.track("VSYS", [vsys_usb, (vsys_usb[0], 1.1), (vsys_usb[0] + 0.4, 0.7), (q42[0] - 0.94, 0.7), q42], 0.2)
 # Masse de U1 : entre les deux résistances puis entre les deux voies, jusqu'à un via.
 back("GND", [u1["2"], b.via("GND", X_U1, 16.5)], 0.6)
 # Broches CC, sous la coque du connecteur : CC1 à l'intérieur, CC2 à l'extérieur.
@@ -1049,8 +1057,11 @@ elif os.path.exists(ROUTAGE) and "--sans-trace" not in sys.argv:
 
 # Plans de masse sur les deux faces. Celui du dos est continu sous la batterie.
 EDGE = 0.4
-b.zone("GND", "F.Cu", EDGE, EDGE, W - EDGE, H - EDGE)
-b.zone("GND", "B.Cu", EDGE, EDGE, W - EDGE, H - EDGE)
+# Sur les deux grands côtés, les plans s'arrêtent à 0,5 mm du bord : JLCPCB y attache ses
+# rails, et demande 0,4 mm de cuivre libre le long d'une rainure.
+BORD_RAIL = 0.5
+b.zone("GND", "F.Cu", EDGE, BORD_RAIL, W - EDGE, H - BORD_RAIL)
+b.zone("GND", "B.Cu", EDGE, BORD_RAIL, W - EDGE, H - BORD_RAIL)
 # Les pistes découpent les deux plans en morceaux. Une fois la carte tracée, on coud par un
 # via chaque morceau isolé au plan principal de l'autre face, là où ils se recouvrent.
 # Un morceau sans recouvrement est enfermé entre des pistes : le routeur relie alors une de

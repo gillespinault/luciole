@@ -1,5 +1,5 @@
 {
- "signature": "5c645b73854b716e",
+ "signature": "86b0424a84418a15",
  "pistes": [
   {"net": "VBUS", "layer": "B.Cu", "a": [13.3, 2.75], "b": [13.3, 1.95], "width": 0.5},
   {"net": "VBUS", "layer": "B.Cu", "a": [17.2, 2.9], "b": [17.2, 1.95], "width": 0.5},
