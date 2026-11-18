@@ -23,15 +23,35 @@ from netlist import assembled, read_netlist
 #
 # Les contrôles de cette table valent pour une pose sur la face du dessus, et pour elle
 # seule. Une pièce posée au dos a sa propre table, ROTATION_DOS, plus bas.
+#
+# La correction dépend de la pièce commandée, pas seulement du boîtier : JLCPCB dessine une
+# empreinte par référence, et deux pièces de même boîtier n'y sont pas tournées pareil.
+# Le 18 novembre 2026, sur la carte v0, deux SOT-23-5 demandaient l'un un demi-tour, l'autre
+# un quart de tour. Une entrée porte donc un motif sur l'empreinte et un motif sur la valeur.
+V0 = "aperçu JLCPCB du 18 novembre 2026, carte v0 : "
 ROTATION = [
-    # (motif sur le nom d'empreinte, correction, justification)
-    (r"^[CR]_0402_1005Metric$", 0, "boîtier à deux bornes, convention commune"),
-    (r"^[CR]_0603_1608Metric$", 0, "boîtier à deux bornes, convention commune"),
-    (r"^LED_OPSCO_SK6812MINI-B-012_3\.7x3\.5mm$", 0,
+    # (motif sur le nom d'empreinte, motif sur la valeur, correction, justification)
+    (r"^[CR]_0402_1005Metric$", r"", 0, "boîtier à deux bornes, convention commune"),
+    (r"^[CR]_0603_1608Metric$", r"", 0, "boîtier à deux bornes, convention commune"),
+    (r"^C_0805_2012Metric$", r"", 0, "boîtier à deux bornes, convention commune"),
+    (r"^Fuse_1206_3216Metric$", r"", 0, "boîtier à deux bornes sans polarité"),
+    (r"^LED_OPSCO_SK6812MINI-B-012_3\.7x3\.5mm$", r"", 0,
      "aperçu JLCPCB du 17 novembre 2026, carte d'essai : repère de broche 1 sur DIN, marque VDD sur la pastille VDD"),
-    (r"^Grove_HY2\.0-4P_Megastar_ZX-HY2\.0-4PWT_Horizontal$", 0,
+    (r"^Grove_HY2\.0-4P_Megastar_ZX-HY2\.0-4PWT_Horizontal$", r"", 0,
      "aperçu JLCPCB du 17 novembre 2026, carte d'essai : ouverture du bon côté, queues sur les pastilles ; "
      "leur modèle 3D place les pattes de fixation à l'arrière, leur empreinte les place à l'avant comme la nôtre"),
+    (r"^D_SOD-123F$", r"^DSK24$", 0, V0 + "barre de la cathode sur la pastille 1 ; la pièce est un SOD-123FL, ses pattes tombent sur les pastilles"),
+    (r"^D_SOD-323$", r"^1N4148WS$", 0, V0 + "barre de la cathode sur la pastille 1"),
+    (r"^L_cjiang_FXL0420$", r"", 0, V0 + "bornes sur les pastilles, pièce sans polarité"),
+    (r"^SW_SPST_TS-1088-xR020$", r"", 0, V0 + "bornes sur les pastilles, pièce symétrique"),
+    (r"^SOT-23$", r"^(AO3400A|DMP1045U|BSS138)$", 180, V0 + "sans correction, les deux pattes étaient du côté de la pastille seule"),
+    (r"^SOT-563$", r"^TPS61023DRL$", 180, V0 + "sans correction, le repère de broche 1 était à l'opposé de la pastille 1"),
+    (r"^SOT-23-5$", r"^SN74LV1T34DBV$", 180, V0 + "sans correction, les trois pattes étaient du côté des deux pastilles"),
+    (r"^SOT-23-5$", r"^SN74LV1T125DBV$", 270, V0 + "sans correction, la pièce était en travers des pastilles (pièce TECH PUBLIC)"),
+    (r"^TSOT-23-5$", r"^RT9080-33GJ5$", 270, V0 + "sans correction, la pièce était en travers des pastilles"),
+    (r"^SOT-23-6$", r"^USBLC6-2SC6$", 270, V0 + "sans correction, la pièce était en travers des pastilles"),
+    (r"^SOIC-8-1EP_3\.9x4\.9mm_P1\.27mm_EP2\.41x3\.3mm$", r"^TP4056", 270, V0 + "sans correction, la pièce était en travers des pastilles"),
+    (r"^LGA-12_2x2mm_P0\.5mm$", r"^LIS2DH12$", 270, V0 + "sans correction, le repère de broche 1 était un quart de tour avant la pastille 1"),
 ]
 
 
@@ -43,13 +63,24 @@ ROTATION = [
 # Une vérification faite sur le dessus ne vaut pas pour le dos (constat C3 de la revue
 # du 17 novembre 2026).
 ROTATION_DOS = [
-    # (motif sur le nom d'empreinte, correction, justification)
+    # (motif sur le nom d'empreinte, motif sur la valeur, correction, justification)
+    (r"^[CR]_0402_1005Metric$", r"", 0, V0 + "pièces à deux bornes sur leurs pastilles, au dos"),
+    (r"^[CR]_0603_1608Metric$", r"", 0, V0 + "pièces à deux bornes sur leurs pastilles, au dos"),
+    (r"^ESP32-C6-MINI-1$", r"", 0, V0 + "antenne vers le bout de la carte, repère de broche 1 sur la pastille 1"),
+    (r"^USB_C_Receptacle_HRO_TYPE-C-31-M-12$", r"", 0, V0 + "ouverture vers le bord de la carte, contacts sur les pastilles"),
+    (r"^JST_PH_S2B-PH-SM4-TB_1x02-1MP_P2\.00mm_Horizontal$", r"^A2001WR-S-2P$", 0,
+     V0 + "ouverture vers la batterie, queues sur les pastilles ; leur modèle 3D place les pattes de fixation à l'arrière"),
+    (r"^SW_Push_1P1T-MP_NO_Horizontal_Alps_SKRTLAE010$", r"", 0, V0 + "poussoir vers le bord de la carte"),
+    (r"^D_SOD-523$", r"^PESD5Z5\.0$", 0, V0 + "cathode sur la pastille 1"),
+    (r"^SOT-23$", r"^(DMP1045U|AO3401A|TLV803EA30DBZ)$", 180, V0 + "sans correction, les deux pattes étaient du côté de la pastille seule"),
+    (r"^SOT-23-6$", r"^FS8205A$", 180, V0 + "sans correction, le repère de broche 1 était à l'opposé de la pastille 1"),
+    (r"^SOT-23-6$", r"^(USBLC6-2SC6|DW01A)$", 270, V0 + "sans correction, la pièce était en travers des pastilles"),
 ]
 
 
-def rotation_for(footprint, bottom=False):
-    for pattern, delta, _why in (ROTATION_DOS if bottom else ROTATION):
-        if re.search(pattern, footprint):
+def rotation_for(footprint, bottom=False, value=""):
+    for pattern, valpat, delta, _why in (ROTATION_DOS if bottom else ROTATION):
+        if re.search(pattern, footprint) and re.search(valpat, value):
             return delta
     return None
 
@@ -93,7 +124,7 @@ def write_cpl(pos_csv, path):
     with open(pos_csv, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             bottom = r["Side"].lower() not in ("top", "front")
-            delta = rotation_for(r["Package"], bottom)
+            delta = rotation_for(r["Package"], bottom, r.get("Val", ""))
             if delta is None:
                 unverified.setdefault((r["Package"], "dos" if bottom else "dessus"), []).append(r["Ref"])
                 delta = 0

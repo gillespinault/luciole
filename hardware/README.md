@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Deux modèles l'ont relu le 18 novembre : huit corrections sont faites (dossier dans `v0/revue/`). Restent leur contre-relecture et le contrôle de la pose chez JLCPCB |
+| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Deux modèles l'ont relu le 18 novembre : huit corrections sont faites et contre-relues (dossier dans `v0/revue/`). Le brochage des 27 pièces autres que résistances et condensateurs a été relevé à l'aveugle dans les fiches des pièces commandées, et l'orientation de chaque pièce contrôlée dans l'aperçu de pose de JLCPCB. Rien n'est commandé |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -120,6 +120,16 @@ Le tri complet est dans le wiki, page « Revue du routage du 18 novembre 2026 »
 - Une piste courte entre deux grandes pastilles ne chauffe presque pas : la chaleur part par ses deux bouts. Les abaques de largeur supposent une piste longue. Chiffrer avant de redessiner un bloc.
 - Toute piste ajoutée en face avant peut fermer une poche du plan de masse. Le compte des groupes restés isolés, à la fin de chaque essai, l'a signalé aux douze graines pour une correction mal placée.
 - Un relecteur se trompe aussi. Sur trente constats, trois reposaient sur une lecture fausse des pièces ou de la nomenclature. Chaque constat se vérifie sur la carte avant d'être corrigé.
+
+### Ce que le contrôle de la pose du 18 novembre 2026 a appris
+
+- Sans correction, 19 pièces sur 136 étaient mal tournées dans l'aperçu de JLCPCB : un demi-tour pour les transistors et le convertisseur des LED, un quart de tour pour le chargeur, le régulateur, les protections et l'accéléromètre. La carte n'aurait pas fonctionné.
+- La correction dépend de la pièce commandée, pas du boîtier. JLCPCB dessine une empreinte par référence : deux SOT-23-5 de fabricants différents demandaient l'un un demi-tour, l'autre un quart de tour. La table de `tools/jlc.py` porte donc un motif sur l'empreinte et un motif sur la valeur.
+- Changer la référence d'une pièce, même pour un équivalent, demande de refaire le contrôle de son orientation.
+- Au dos, la formule « 180° moins l'angle de KiCad » est la bonne, et une correction s'y ajoute dans le même sens que sur le dessus.
+- JLCPCB décoche d'office une pièce qu'il juge difficile à poser, ici la LED : elle disparaît de l'aperçu et du devis tant qu'on ne la recoche pas dans la nomenclature.
+- Dans l'aperçu, le repère de broche 1 de leur modèle est un point rose. Il doit tomber sur la pastille 1, que notre sérigraphie marque d'un triangle. Pour un boîtier à pattes dissymétriques, les pattes doivent tomber sur les pastilles.
+- La vue de l'aperçu se déplace au bouton droit et se grossit à la molette. Glisser au bouton gauche la fait pivoter.
 
 ### Dossier de revue
 
