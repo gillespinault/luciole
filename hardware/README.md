@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Restent la revue du routage et le contrôle de la pose chez JLCPCB |
+| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Deux modèles l'ont relu le 18 novembre : huit corrections sont faites (dossier dans `v0/revue/`). Restent leur contre-relecture et le contrôle de la pose chez JLCPCB |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -108,6 +108,30 @@ Pour comparer des variantes sans toucher au projet, `v0/carte.py` accepte des op
 - Une piste d'alimentation tracée en face avant coupe la bande qu'elle traverse. Les signaux qui doivent la franchir passent par le dos ; il faut donc y garder un passage libre, et y ranger les voies au ras du faisceau.
 - La zone de garde du module radio a la forme d'un T, boîtier puis zone d'antenne. Prise pour un rectangle, elle interdisait tout le coin de la carte au poseur : `Board.courtyard_boxes()` la découpe suivant ses arêtes.
 - La largeur de 28 mm a libéré deux zones que les régions du poseur, écrites pour 22 mm, n'utilisaient pas : sous le coin du module, sur les deux faces, et le milieu de la bande du bas.
+
+### Ce que la revue du routage du 18 novembre 2026 a appris
+
+Le tri complet est dans le wiki, page « Revue du routage du 18 novembre 2026 ».
+
+- Le contrôle des règles ne voit pas les chemins. Un circuit de puissance sans via sous sa plage thermique, une ligne qui se sépare avant sa protection, un condensateur d'alimentation à 59 mm de la broche qu'il découple : tout cela passait le contrôle.
+- Une protection contre les décharges se traverse. La ligne entre par une broche et repart de l'autre. Si elle se sépare avant, la décharge prend aussi le chemin qui évite la protection.
+- Un circuit de puissance qui chauffe reçoit ses vias sous sa plage centrale au moment où on le pose, pas après.
+- Poser par script les petits composants d'une commande de grille. Laissés au poseur, ceux de la protection contre l'inversion avaient donné 36 mm de piste et six vias pour deux pastilles distantes de 10 mm.
+- Une piste courte entre deux grandes pastilles ne chauffe presque pas : la chaleur part par ses deux bouts. Les abaques de largeur supposent une piste longue. Chiffrer avant de redessiner un bloc.
+- Toute piste ajoutée en face avant peut fermer une poche du plan de masse. Le compte des groupes restés isolés, à la fin de chaque essai, l'a signalé aux douze graines pour une correction mal placée.
+- Un relecteur se trompe aussi. Sur trente constats, trois reposaient sur une lecture fausse des pièces ou de la nomenclature. Chaque constat se vérifie sur la carte avant d'être corrigé.
+
+### Dossier de revue
+
+    tools/kicad python3 tools/dossier.py v0/v0.kicad_pcb v0/revue
+    for f in F B; do n=avant; [ $f = B ] && n=dos; i=1
+      for r in "0 0 41.5 28" "40.5 0 82 28" "81 0 122.2 28"; do
+        tools/kicad python3 tools/vue.py v0/v0.kicad_pcb $r --face=$f --zoom=40 --plans --sortie=v0/revue/$n-$i.png; i=$((i+1))
+      done
+    done
+    cp v0/out/v0-rendu-dessus.png v0/revue/rendu-avant.png; cp v0/out/v0-rendu-dessous.png v0/revue/rendu-dos.png
+
+`v0/revue/consigne.md` est la consigne donnée aux relecteurs, sans nos hypothèses. `v0/revue/corrections.md` est celle de la contre-relecture. Codex ne peut lancer aucune commande sur serverlab : ses pièces sont recopiées dans sa demande et les images jointes par `-i`.
 
 ### Ce que les essais du 17 novembre 2026 sur la carte v0 ont appris
 

@@ -283,6 +283,10 @@ b.track("VBIN", [(P("C13", "1")[0], YU - 0.95), (P("L1", "1")[0], YU - 0.95), (P
 b.track("GND", [gnd8, (P("C13", "2")[0], gnd8[1])], 0.24)
 b.track("GND", [gnd8, (gnd8[0], YU + 1.3), (P("C14", "2")[0] + 0.1, YU + 1.95)], 0.24)
 b.track("VLED", [vout, (vout[0], YU + 1.3), (P("C14", "1")[0] - 0.1, YU + 1.95)], 0.24)
+# Les deux liaisons de la boucle s'élargissent dès qu'elles ont quitté les broches : le
+# cuivre des broches est aussi ce qui refroidit la puce.
+b.track("GND", [(gnd8[0] - 0.25, YU + 1.65), P("C14", "2")], 0.6)
+b.track("VLED", [(vout[0] + 0.25, YU + 1.65), P("C14", "1")], 0.6)
 b.track("VLED", [P("C14", "1"), (P("C14", "1")[0], Y_BUS)], PWR)
 b.track("GND", [P("C14", "2"), P("C15", "2")], PWR)
 for y in (YU + 2.3, YU + 3.2):
@@ -597,12 +601,33 @@ j31, j32 = P("J3", "1"), P("J3", "2")
 b.track("PORT_2", [j32, (11.0, 12.4), (11.55, 12.95), (12.35, 13.75), u11["3"]], 0.2)
 b.track("PORT_2", [u11["4"], PORT2_O], 0.2)
 Y_SOUS = PORT1_O[1]                                # passage de PORT_1 sous le protecteur
-b.track("PORT_1", [j31, (11.3, j31[1]), (11.5, j31[1] + 0.2), (11.5, Y_SOUS - 0.3), (11.8, Y_SOUS), (15.1, Y_SOUS),
-                   (15.4, Y_SOUS - 0.3), (15.4, u11["6"][1] + 0.3), (15.1, u11["6"][1]), u11["6"]], 0.2)
-b.track("PORT_1", [(15.1, Y_SOUS), PORT1_O], 0.2)
+b.track("PORT_1", [j31, (11.3, j31[1]), (11.5, j31[1] + 0.2), (11.5, Y_SOUS - 0.3), (11.8, Y_SOUS), (15.0, Y_SOUS),
+                   (15.3, Y_SOUS - 0.3), (15.3, u11["6"][1] + 0.3), (15.0, u11["6"][1]), u11["6"]], 0.2)
+# PORT_1 traverse son protecteur, comme PORT_2 : il entre par la broche 6 et repart de la
+# broche 1, par la droite, puis redescend jusqu'à son via. Avant, la ligne se séparait 3 mm
+# avant le protecteur : une décharge venue du connecteur partait vers l'intérieur de la
+# carte sans passer par lui (revue du 18 novembre 2026). Le départ ne passe pas au-dessus
+# du protecteur : il y enfermait la masse de la dernière LED et celle du protecteur.
+b.track("PORT_1", [u11["6"], u11["1"]], 0.2)
+X_P1S = 15.85                  # descente : entre la montée (15,3) et le via de masse de R8 (16,5)
+b.track("PORT_1", [u11["1"], (X_P1S - 0.3, u11["1"][1]), (X_P1S, u11["1"][1] + 0.3),
+                   (X_P1S, PORT1_O[1] - 0.45), PORT1_O], 0.2)
 POSE.append((["TP12"], [(11.9, 13.3, 19.6, BAS2)], False))
 b.place("U2", 23.5, 17.3)
 assert P("U2", "4")[0] < P("U2", "5")[0] and P("U2", "1")[1] < P("U2", "4")[1]
+# Le chargeur est linéaire : à 0,9 A il dissipe plus d'un watt, et sa plage centrale est sa
+# seule sortie de chaleur. Six vias dans la plage la relient au plan du dos, libre à cet
+# endroit sous le rail de la protection (y = 15,7).
+for x in (23.0, 24.0):
+    for y in (16.5, 17.4, 18.3):
+        b.via("GND", x, y)
+# Le condensateur de 1 µF de l'alimentation USB est ici, contre la broche d'entrée du
+# chargeur, et non près du connecteur : sans lui, cette broche n'avait aucun découplage à
+# moins de 59 mm de piste. Près du connecteur restent l'écrêteur et l'amortisseur (R39, C1).
+b.place("C39", 20.5, 20.6, rot=180)
+assert P("C39", "2")[0] < P("C39", "1")[0], "C39 : masse à gauche, alimentation à droite"
+b.track("VBUS", [P("U2", "4"), (P("C39", "1")[0], P("U2", "4")[1] + 0.2), P("C39", "1")], 0.4)
+gnd_via(19.2, 20.6, P("C39", "2"))
 # Le pont de température du chargeur (R11, R12) n'est pas ici : il est au dos, à côté de la
 # thermistance. R11 relie l'alimentation USB à la broche de température, deux broches qui
 # encadrent celle du courant de charge ; posé à gauche du chargeur, il l'enfermait.
@@ -768,8 +793,28 @@ j21, j22 = P("J2", "1"), P("J2", "2")
 back("BATP", [(j21[0] - 1.2, j21[1]), (X_BATP, j21[1]), (X_BATP, q2d[1]), q2d], 0.8)
 back("VBAT", [q2s, (q2s[0] + 0.5, Y_VBAT), (X_VBAT + 1.8, Y_VBAT)], 0.8)
 back("VBAT", [q6s, (q6s[0], Y_VBAT)], 0.5)
-back("BATP", [(X_BATP, q2d[1]), (X_BATP + 0.5, 2.95), (33.4, 2.95)], 0.2)        # vers R45, R46
-POSE.append((["R45", "R46", "R43"], [(24.0, 2.75, 37.05, 6.3)], True))
+# Les deux autres résistances de la protection, à droite de Q6 : R46 couchée, dans l'axe de
+# la grille de Q6 ; R45 debout, entre elle et les trois vias de VBAT. Le pôle positif leur
+# arrive par une piste fine le long du haut. Aucun via.
+b.place("R46", 34.25, 3.62, rot=180, bottom=True)
+b.place("R45", 35.9, 4.45, rot=VR, bottom=True)
+r461, r462, r451, r452 = P("R46", "1"), P("R46", "2"), P("R45", "1"), P("R45", "2")
+assert r462[0] < r461[0], "R46 : grille de Q6 à gauche, pôle positif à droite"
+assert r452[1] < r451[1], "R45 : pôle positif en haut, VBAT en bas"
+back("BATP", [(X_BATP, q2d[1]), (X_BATP + 0.5, 2.95), (r461[0], 2.95), r461, (r452[0] - 0.32, r461[1]), r452], 0.2)
+back("Q6_G", [P("Q6", "1"), r462])
+back("VBAT", [r451, (r451[0], 5.25), (r451[0] - 0.35, Y_VBAT), (X_VBAT + 1.8, Y_VBAT)], 0.25)
+# Rappel de la grille de Q2 vers le pôle négatif : debout entre les deux transistors, sur la
+# liaison qui va de la grille de Q2 au drain de Q6. La grille reste ainsi au dos, sans via.
+# Posée plus à droite, elle obligeait cette liaison à faire le tour du connecteur de
+# batterie par six vias, en coupant la masse sous les LED. Le pôle négatif lui arrive de
+# sa pastille de test, par la face avant et un via.
+b.place("R43", 28.45, 4.1, rot=V, bottom=True)
+r431, r432 = P("R43", "1"), P("R43", "2")
+assert r431[1] < r432[1], "R43 : grille en haut, pôle négatif en bas"
+back("Q2_G", [P("Q2", "1"), r431, (29.45, r431[1]), (29.45 + P("Q6", "3")[1] - r431[1], P("Q6", "3")[1]), P("Q6", "3")])
+batn_r43 = b.via("BATN", 27.65, 4.5)           # au bout des pattes de Q2, entre grille et source
+back("BATN", [batn_r43, (r432[0] - 0.3, r432[1]), r432])
 # VBAT redescend entre les pastilles du connecteur, vers le pont du chargeur en face avant.
 X_VBAT2 = 28.6
 back("VBAT", [(X_VBAT2, Y_VBAT), (X_VBAT2, 16.4)], 0.8)
@@ -783,9 +828,11 @@ b.track("VBAT", [(X_VBAT2, 15.6), (X_VBAT2, 16.4)], 0.5)      # les deux vias pa
 # et sa gauche reste libre pour la résistance du courant de charge.
 X_VBUS_E = 37.3                # à droite des résistances du transistor contre l'inversion
 vbus_bas = b.via("VBUS", X_VBUS_E, 20.0)
+vbus_bas2 = b.via("VBUS", X_VBUS_E, 19.0)      # second via : le courant de charge (0,9 A) se partage
 # En haut, la descente s'écarte de 0,2 mm pour laisser leur place aux trois résistances.
 back("VBUS", [(35.6, 1.6), (X_VBUS_E - 0.4, 1.6), (X_VBUS_E + 0.2, 2.2), (X_VBUS_E + 0.2, 7.0), (X_VBUS_E, 7.2), vbus_bas], 0.6)
 b.track("VBUS", [vbus_bas, (X_VBUS_E - 0.3, 20.3), (22.5, 20.3), (21.6, 19.4), P("U2", "4")], 0.5)
+b.track("VBUS", [vbus_bas2, vbus_bas], 0.5)
 # À gauche du connecteur : protection de la cellule. Le pôle négatif entre dans le double
 # transistor, qui rend la masse au plan du dos sans via.
 b.place("Q3", 20.0, 12.6, rot=180, bottom=True)
@@ -801,6 +848,10 @@ back("PROT_D", [P("Q3", "2"), P("Q3", "5")], 0.4)
 # transistor et la piste du pôle positif.
 back("BATN", [(22.2, j22[1] - 0.2), (22.2, 5.0)], 0.25)
 b.track("BATN", [b.via("BATN", 22.2, 5.0), P("TP18", "1")], 0.25)
+# De la pastille de test au rappel de la grille de Q2 : par le bord haut, puis entre les
+# pastilles de test de VLED et de VBAT.
+b.track("BATN", [P("TP18", "1"), (22.75, 2.6), (24.35, 1.0), (26.85, 1.0), (26.85, batn_r43[1] - 0.8),
+                 batn_r43], 0.2)
 # Protection de la cellule : son condensateur contre ses deux broches, ses deux résistances
 # juste dessous. Son alimentation vient de VBAT par un rail fin, au ras de la protection.
 # Plus bas, ce rail barrait le dos sous le chargeur : le routeur n'y trouvait plus de
@@ -901,7 +952,7 @@ back("GND", [P("C38", "2"), b.via("GND", X_U1 + 0.3, 6.2)], 0.3)
 q42 = P("Q4", "2")
 b.track("VSYS", [vsys_usb, (vsys_usb[0], 0.9), (vsys_usb[0] + 0.4, 0.5), (q42[0] - 0.94, 0.5), q42], 0.2)
 # Masse de U1 : entre les deux résistances puis entre les deux voies, jusqu'à un via.
-back("GND", [u1["2"], b.via("GND", X_U1, 16.5)], 0.3)
+back("GND", [u1["2"], b.via("GND", X_U1, 16.5)], 0.6)
 # Broches CC, sous la coque du connecteur : CC1 à l'intérieur, CC2 à l'extérieur.
 back("CC1", [j1("A5"), (5.2, j1("A5")[1]), (4.9, j1("A5")[1] + 0.3), (4.9, 14.0)])
 back("CC2", [j1("B5"), (4.7, j1("B5")[1]), (4.4, j1("B5")[1] + 0.3), (4.4, 14.0)])
@@ -912,7 +963,7 @@ back("VBUS", [(8.45, 2.6), (9.45, 1.6), (35.6, 1.6)], 0.8)
 back("VBUS", [j1("A4"), (8.35, j1("A4")[1]), (8.35, 13.8), (7.84, 14.31), vbus_s], 0.3)
 b.track("VBUS", [vbus_n, (7.84, 4.81), vbus_s], 0.3)
 # Au nord, près de l'entrée de VBUS : sa protection, son condensateur, son amortisseur.
-POSE.append((["D24", "C39", "R39", "C1"], [(12.6, 2.3, 20.8, 10.6)], True))
+POSE.append((["D24", "R39", "C1"], [(12.6, 2.3, 20.8, 10.6)], True))
 # Sous l'USB-C, à gauche de la voie qui lit les broches CC : leurs résistances. CC1 arrive
 # à droite de CC2 ; chacune a sa résistance vers la masse et sa résistance vers la lecture,
 # et la lecture part vers sa voie en passant sous le via de VBUS.
