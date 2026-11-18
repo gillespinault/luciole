@@ -1,0 +1,27 @@
+# Luciole² — banc d'essai de la carte v0 (ESP32-C6-MINI-1-N4).
+
+# Cible : « idf.py build » suffit, sans « set-target ».
+CONFIG_IDF_TARGET="esp32c6"
+
+# Console sur l'USB série/JTAG de la puce (GPIO12 et GPIO13), comme le firmware
+# Luciole². Le banc y ajoute lui-même l'UART0 des pastilles TP8 et TP9.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Module -N4 : 4 Mo de flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# Aucune écriture en mémoire non volatile :
+#  - le Wi-Fi ne garde rien en NVS ;
+#  - l'étalonnage de la radio est refait à chaque démarrage au lieu d'être enregistré ;
+#  - la table de partitions n'a pas de partition NVS : une écriture serait impossible.
+CONFIG_ESP_WIFI_NVS_ENABLED=n
+CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=n
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Aucun mode veille : la gestion d'énergie d'ESP-IDF reste désactivée (son réglage par défaut).
+# CONFIG_PM_ENABLE is not set
+
+# Tick FreeRTOS à 1 kHz : la console est lue toutes les 10 ms.
+CONFIG_FREERTOS_HZ=1000

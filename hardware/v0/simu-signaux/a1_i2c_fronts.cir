@@ -1,0 +1,205 @@
+Luciole2 v0 - A1 port Grove en I2C : fronts montants, 100 et 400 kHz
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/a1_i2c_fronts.cir
+*
+* Même montage que a1_i2c_niveaux.cir, en régime transitoire : la ligne est tirée à
+* 0 pendant une demi-période puis relâchée, trois fois ; on mesure le troisième
+* front montant, des deux côtés de Q9 (ligne 2, la plus chargée : elle porte U10).
+*
+* Ce qu'on lit, par ligne RESULTAT :
+*   montée 30 % -> 70 % côté puce (de 3,3 V) et côté accessoire (de son
+*     alimentation). La norme I2C demande 1000 ns au plus à 100 kHz, 300 ns à 400 kHz.
+*   délai entre le relâchement et le niveau haut reconnu : 2,475 V côté puce,
+*     0,7 × l'alimentation côté accessoire. À comparer à la demi-période (5 µs à
+*     100 kHz, 1,25 µs à 400 kHz). -1 = niveau jamais atteint.
+*   plus haute tension vue par la broche IO2 de la puce (limite 3,6 V).
+* Le rail d'écrêtage de U11 (C41) part chargé, comme sur un bus au repos à l'état
+* haut. Le dernier bloc montre la première montée, C41 vide.
+
+.include modeles/modeles.lib
+.include port_grove.inc
+
+* acc  : 0 accessoire à rappels vers 3,3 V ; 1 vers 5,0 V ; 2 sans rappel
+* tire : 1 la puce tire puis relâche ; 2 l'accessoire tire puis relâche ;
+*        3 l'accessoire pousse la ligne à 5 V franchement (sortie logique 5 V, 50 Ω)
+.param acc=0 tire=1
+.param racc0=4.7k
+.param vacc={acc == 1 ? 5.0 : 3.3}
+.param racc={acc == 2 ? 1e12 : racc0}
+.param vledv={acc == 1 ? 5.0 : 4.5}
+.param cb=100p
+.param freq=100k
+.param per={1/freq}
+* tension de départ de C41 : niveau haut de la ligne moins la chute de la diode à 10 nA
+.param vc41={acc == 1 ? 4.57 : (acc == 2 ? 2.45 : 2.87)}
+.param c41vide=0
+
+V33   v33 0 3.3
+VLED  vled 0 {vledv}
+Vpuo  pu_out 0 1
+Vpue  pu_oe 0 1
+XPU   port_pu v33 0 pu_out pu_oe ESPPIN
+Vioo  io_out 0 0
+Vioe  io_oe 0 pulse({tire == 1 ? 1 : 0} 0 {per/2} 2n 2n {per/2} {per})
+XIO1  io1p v33 0 io_out io_oe ESPPIN
+Vii1  io1p io1 0
+XIO2  io2p v33 0 io_out io_oe ESPPIN
+Vii2  io2p io2 0
+Vacc  vacc 0 {vacc}
+Ra1   port_1 vacc {racc}
+Ra2   port_2 vacc {racc}
+Cb1   port_1 0 {cb}
+Cb2   port_2 0 {cb}
+Vat   acct 0 pulse({tire == 2 ? 1 : 0} 0 {per/2} 2n 2n {per/2} {per})
+Sa1   port_1 0 acct 0 SWACC
+Sa2   port_2 0 acct 0 SWACC
+.model SWACC sw(vt=0.5 vh=0.1 ron=133 roff=1e12)
+* sortie logique 5 V de l'accessoire (tire = 3) : front de 5 ns, 50 Ω
+Vpp   ppv 0 pulse(0 5 {per/2} 5n 5n {per/2} {per})
+Vppe  ppe 0 {tire == 3 ? 1 : 0}
+Spp1  ppv pp1 ppe 0 SWPP
+Rpp1  pp1 port_1 50
+Spp2  ppv pp2 ppe 0 SWPP
+Rpp2  pp2 port_2 50
+.model SWPP sw(vt=0.5 vh=0.1 ron=1m roff=1e12)
+
+.ic v(port_ecret)={c41vide == 1 ? 0 : vc41}
+
+.control
+set noaskquit
+echo "RESULTAT A1 fronts ; acc (0 rappels 3,3 V, 1 rappels 5 V, 2 sans rappel) ; tire (1 puce, 2 accessoire) ; Q (0 typique, 1 seuil haut) ; cable (F) ; frequence (Hz) ; montee 30-70 % puce (s) ; montee 30-70 % accessoire (s) ; delai haut reconnu puce (s) ; delai haut reconnu accessoire (s) ; demi-periode (s) ; IO2 max (V) ; PORT_2 en fin de niveau haut (V)"
+foreach q 0 1
+  foreach a 0 1 2
+    foreach t 1 2
+      foreach c 100p 400p
+        foreach f 100e3 400e3
+          alterparam fort = $q
+          alterparam acc = $a
+          alterparam tire = $t
+          alterparam cb = $c
+          alterparam freq = $f
+          reset
+          let per = 1/$f
+          let tstop = 3*per
+          let trel = 2.5*per
+          let va = 3.3
+          if $a = 1
+            let va = 5.0
+          end
+          let p30 = 0.3*va
+          let p70 = 0.7*va
+          tran 2n $&tstop
+          let ti30 = -1
+          let ti70 = -1
+          let tih = -1
+          let tp30 = -1
+          let tp70 = -1
+          meas tran ti30 when v(io2)=0.99 td=$&trel rise=1
+          meas tran ti70 when v(io2)=2.31 td=$&trel rise=1
+          meas tran tih when v(io2)=2.475 td=$&trel rise=1
+          meas tran tp30 when v(port_2)=$&p30 td=$&trel rise=1
+          meas tran tp70 when v(port_2)=$&p70 td=$&trel rise=1
+          meas tran iomax max v(io2)
+          meas tran pfin find v(port_2) at=$&tstop
+          let tri = -1
+          let trp = -1
+          let dih = -1
+          let dph = -1
+          if ti70 > 0
+            let tri = ti70 - ti30
+          end
+          if tih > 0
+            let dih = tih - trel
+          end
+          if tp70 > 0
+            let trp = tp70 - tp30
+            let dph = tp70 - trel
+          end
+          let demi = per/2
+          echo "RESULTAT A1 fronts ; $a ; $t ; $q ; $c ; $f ; $&tri ; $&trp ; $&dih ; $&dph ; $&demi ; $&iomax ; $&pfin"
+          destroy all
+        end
+      end
+    end
+  end
+end
+
+echo "RESULTAT A1 sortie 5 V franche (tire = 3, front de 5 ns, 50 ohms, cable 100 pF) ; Q ; IO1 max ; IO2 max (V)"
+foreach q 0 1
+  alterparam fort = $q
+  alterparam acc = 1
+  alterparam tire = 3
+  alterparam cb = 100p
+  alterparam freq = 100e3
+  reset
+  tran 0.5n 30u
+  meas tran io1max max v(io1)
+  meas tran io2max max v(io2)
+  echo "RESULTAT A1 sortie 5 V franche ; $q ; $&io1max ; $&io2max"
+  destroy all
+end
+
+echo "RESULTAT A1 variation ; rappels R33 = R34 changes (Q typique) ; R33 (ohms) ; acc ; cable (F) ; montee 30-70 % puce (s) ; montee 30-70 % accessoire (s) ; delai haut reconnu puce (s) ; accessoire (s)"
+foreach r 10k 4.7k 2.2k
+  foreach a 0 2
+    foreach c 100p 400p
+      alterparam fort = 0
+      alterparam r33 = $r
+      alterparam r34 = $r
+      alterparam acc = $a
+      alterparam tire = 1
+      alterparam cb = $c
+      alterparam freq = 50e3
+      reset
+      tran 2n 60u
+      let ti30 = -1
+      let ti70 = -1
+      let tih = -1
+      let tp30 = -1
+      let tp70 = -1
+      meas tran ti30 when v(io2)=0.99 td=50u rise=1
+      meas tran ti70 when v(io2)=2.31 td=50u rise=1
+      meas tran tih when v(io2)=2.475 td=50u rise=1
+      meas tran tp30 when v(port_2)=0.99 td=50u rise=1
+      meas tran tp70 when v(port_2)=2.31 td=50u rise=1
+      let tri = -1
+      let trp = -1
+      let dih = -1
+      let dph = -1
+      if ti70 > 0
+        let tri = ti70 - ti30
+      end
+      if tih > 0
+        let dih = tih - 50u
+      end
+      if tp70 > 0
+        let trp = tp70 - tp30
+        let dph = tp70 - 50u
+      end
+      echo "RESULTAT A1 variation rappels ; $r ; $a ; $c ; $&tri ; $&trp ; $&dih ; $&dph"
+      destroy all
+    end
+  end
+end
+alterparam r33 = 4.7k
+alterparam r34 = 4.7k
+
+echo "RESULTAT A1 premiere montee, C41 vide (rappels 3,3 V, PORT_PU vient de passer a 1) ; C41 (F) ; delai pour que PORT_2 atteigne 2,31 V (s)"
+foreach c 100n 1n
+  alterparam fort = 0
+  alterparam acc = 0
+  alterparam tire = 1
+  alterparam cb = 100p
+  alterparam freq = 100
+  alterparam c41vide = 1
+  alterparam c41 = $c
+  reset
+  tran 1u 9m
+  let d = -1
+  meas tran tm when v(port_2)=2.31 rise=1
+  let d = tm - 5m
+  echo "RESULTAT A1 premiere montee ; $c ; $&d"
+  destroy all
+end
+quit
+.endc
+.end

@@ -1,0 +1,88 @@
+Luciole2 v0 - D bouton utilisateur : SW3, R21, C11, D19, R40, GPIO3
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/d_bouton.cir
+*
+* Schéma (circuit.py) : SW3 entre BTN et la masse ; R21 de 100 kΩ au 3,3 V ; D19
+* (PESD5Z5.0) et C11 de 100 nF entre BTN et la masse ; R40 de 1 kΩ vers GPIO3.
+* circuit.py ne commente pas ce bloc : l'intention retenue est un niveau haut au
+* repos, bas à l'appui, des rebonds filtrés, une décharge électrostatique arrêtée
+* par D19 et R40.
+*
+* Montage : appui à 20 ms (contact de 0,5 Ω, le maximum de la fiche de SW3), trois
+* rebonds (ouvertures de 0,5 ms), relâchement à 60 ms.
+*   place = 0 : C11 du côté du bouton, comme au schéma ;
+*   place = 1 : C11 du côté de la broche, derrière R40 (variante essayée).
+*
+* Ce qu'on lit : niveaux au repos et à l'appui sur GPIO3 (limites de la puce :
+* haut > 2,475 V, bas < 0,825 V) ; plus haut niveau pendant les rebonds ; délai
+* d'appui ; au relâchement, temps pour quitter le niveau bas (0,825 V) et pour
+* atteindre le niveau haut (2,475 V), à comparer à R21 × C11 = 10 ms ; pointe de
+* courant dans le contact (SW3 est donné pour 50 mA au plus).
+
+.include modeles/modeles.lib
+
+.param c11=100n r21=100k r40=1k
+.param place=0
+.param rcontact=0.5
+* fuites : D19 50 nA et broche 50 nA au plus -> déjà dans les modèles (broche) ; D19 ci-dessous
+.param ifd19=50n
+
+V33   v33 0 3.3
+R21   v33 btn {r21}
+D19   0 btn PESD5Z5
+Ifd   btn 0 {ifd19}
+R40   btn btn_io {r40}
+C11a  btn 0 {place == 0 ? c11 : 1f}
+C11b  btn_io 0 {place == 1 ? c11 : 1f}
+Vz    zero 0 0
+XIO3  btn_io v33 0 zero zero ESPPIN
+Cp    btn_io 0 3p
+* SW3 et ses rebonds
+Vsw   swc 0 pwl(0 0 20m 0 20.0001m 1 21m 1 21.0001m 0 21.5m 0 21.5001m 1 22.5m 1 22.5001m 0 23m 0 23.0001m 1 24m 1 24.0001m 0 24.5m 0 24.5001m 1 60m 1 60.0001m 0)
+Vis   btn sw3 0
+S3    sw3 0 swc 0 SWB
+.model SWB sw(vt=0.5 vh=0.1 ron={rcontact} roff=1e12)
+
+.control
+set noaskquit
+echo "RESULTAT D ; place de C11 (0 cote bouton comme au schema, 1 cote broche) ; C11 (F) ; GPIO3 au repos (V) ; a l'appui (V) ; plus haut pendant les rebonds (V) ; delai appui -> 0,825 V (s) ; relachement -> 0,825 V (s) ; relachement -> 2,475 V (s) ; pointe dans le contact (A) ; duree de la pointe au-dessus de 50 mA (s)"
+foreach p 0 1
+  foreach c 100n 10n 1f 1u
+    alterparam place = $p
+    alterparam c11 = $c
+    reset
+    tran 1u 400m
+    meas tran vrepos find v(btn_io) at=19m
+    meas tran vappui find v(btn_io) at=59m
+    meas tran vreb max v(btn_io) from=21m to=59m
+    let ta = -1
+    let tb = -1
+    let tc = -1
+    meas tran ta when v(btn_io)=0.825 td=19.9m fall=1
+    meas tran tb when v(btn_io)=0.825 td=60m rise=1
+    meas tran tc when v(btn_io)=2.475 td=60m rise=1
+    let da = ta - 20m
+    let db = -1
+    let dc = -1
+    if tb > 0
+      let db = tb - 60m
+    end
+    if tc > 0
+      let dc = tc - 60m
+    end
+    let isw = i(Vis)
+    meas tran ipic max isw
+    let t50a = -1
+    let t50b = -1
+    meas tran t50a when isw=50m td=19.9m rise=1
+    meas tran t50b when isw=50m td=19.9m fall=1
+    let d50 = 0
+    if t50a > 0
+      let d50 = t50b - t50a
+    end
+    echo "RESULTAT D ; $p ; $c ; $&vrepos ; $&vappui ; $&vreb ; $&da ; $&db ; $&dc ; $&ipic ; $&d50"
+    destroy all
+  end
+end
+quit
+.endc
+.end

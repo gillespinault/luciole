@@ -6,8 +6,8 @@
 	(paper "A1")
 	(title_block
 		(title "Luciole² : carte v0")
-		(date "2026-11-17")
-		(rev "0.5")
+		(date "2026-11-18")
+		(rev "0.6")
 		(company "Luciole²")
 	)
 	(lib_symbols
@@ -9549,6 +9549,28 @@
 	)
 	(wire
 		(pts
+			(xy 505.46 72.39)
+			(xy 505.46 69.85)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1965654d-051e-54d3-a0d6-71b7574277c6")
+	)
+	(wire
+		(pts
+			(xy 505.46 80.01)
+			(xy 505.46 82.55)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e42e70dc-6a65-5318-8dda-5eca5da2c741")
+	)
+	(wire
+		(pts
 			(xy 441.96 97.79)
 			(xy 441.96 95.25)
 		)
@@ -13858,6 +13880,26 @@
 		)
 		(uuid "cd360bac-9a30-56a7-99ed-9f5b062c3cc3")
 	)
+	(label "Q2_G"
+		(at 505.46 69.85 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "44fbc119-68d3-5c26-9500-f670c107c8c7")
+	)
+	(label "BATN"
+		(at 505.46 82.55 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "be4e8efd-163c-53a7-b781-e49baf22079e")
+	)
 	(label "VBAT"
 		(at 441.96 95.25 90)
 		(effects
@@ -17325,7 +17367,7 @@
 				)
 			)
 		)
-		(property "Value" "1k"
+		(property "Value" "470R"
 			(at 137.16 132.08 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -17368,7 +17410,7 @@
 				)
 			)
 		)
-		(property "LCSC" "C11702"
+		(property "LCSC" "C25117"
 			(at 137.16 132.08 0)
 			(hide yes)
 			(show_name no)
@@ -17415,7 +17457,7 @@
 				)
 			)
 		)
-		(property "Value" "1k5"
+		(property "Value" "1k"
 			(at 157.48 132.08 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -17458,7 +17500,7 @@
 				)
 			)
 		)
-		(property "LCSC" "C25867"
+		(property "LCSC" "C11702"
 			(at 157.48 132.08 0)
 			(hide yes)
 			(show_name no)
@@ -20509,7 +20551,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "DMP1045U"
+		(property "Value" "AO3401A"
 			(at 467.36 55.88 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -20556,7 +20598,7 @@
 				)
 			)
 		)
-		(property "LCSC" "C177033"
+		(property "LCSC" "C15127"
 			(at 462.28 55.88 0)
 			(hide yes)
 			(show_name no)
@@ -20774,6 +20816,98 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:C")
+		(at 505.46 76.2 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "0fd5bb92-4550-5e55-af3c-e144e37edf28")
+		(property "Reference" "C42"
+			(at 506.095 73.66 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "22nF"
+			(at 506.095 78.74 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 506.4252 80.01 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 505.46 76.2 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 505.46 76.2 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C1532"
+			(at 505.46 76.2 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "5c10d246-e32a-5ab5-9425-afc5fb77b9b2")
+		)
+		(pin "2"
+			(uuid "dcf953bf-1b3c-5fe2-88c7-b21bb6db48cd")
+		)
+		(instances
+			(project "v0"
+				(path "/f0d4915f-f17d-5ca0-bf8e-62c0be9acab8"
+					(reference "C42")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R")
 		(at 441.96 101.6 0)
 		(unit 1)
@@ -20884,7 +21018,7 @@
 				)
 			)
 		)
-		(property "Value" "1k"
+		(property "Value" "10k"
 			(at 421.64 101.6 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -20927,7 +21061,7 @@
 				)
 			)
 		)
-		(property "LCSC" "C11702"
+		(property "LCSC" "C25744"
 			(at 421.64 101.6 0)
 			(hide yes)
 			(show_name no)
@@ -21630,7 +21764,7 @@
 				)
 			)
 		)
-		(property "Value" "470k"
+		(property "Value" "200k"
 			(at 436.88 142.24 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21673,7 +21807,7 @@
 				)
 			)
 		)
-		(property "LCSC" "C25790"
+		(property "LCSC" "C25764"
 			(at 436.88 142.24 0)
 			(hide yes)
 			(show_name no)

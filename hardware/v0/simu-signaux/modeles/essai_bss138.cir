@@ -1,0 +1,62 @@
+Luciole2 v0 - calage du modele BSS138 contre les fiches
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/modeles/essai_bss138.cir
+*
+* But : lire sur le modèle le seuil à 250 µA et la résistance à 4,5 V, 10 V, 3,3 V
+* et 2,6 V pour les trois réglages (0 typique, 1 seuil haut, 2 seuil bas), et
+* les comparer à l'autre sous-circuit d'onsemi, « BSS138 » à broche de température,
+* que ngspice lit tel quel (bss138_onsemi_thermique.lib en est l'extrait, sans
+* retouche). Le sous-circuit « BSS138/FAI » dont BSS138P est la copie écrit ses
+* coefficients avec des accolades imbriquées que ngspice refuse.
+* À comparer à la fiche R+O C7420339 : seuil 0,8 / 1,2 / 1,6 V ; 1,2 Ω typique et
+* 3,0 Ω au plus à 4,5 V ; 1,1 Ω typique et 2,5 Ω au plus à 10 V. La fiche ne dit
+* rien en dessous de 4,5 V : les colonnes 3,3 V et 2,6 V sont ce que le modèle
+* extrapole.
+
+.include modeles.lib
+.include bss138_onsemi_thermique.lib
+.param cas=0
+.param vto={cas == 1 ? 1.55 : (cas == 2 ? 0.77 : 1.2948)}
+.param kp={cas == 1 ? 0.21 : 0.6472}
+.param vg=4.5
+.param id=200m
+
+* banc 1 : seuil. Grille reliée au drain, 250 µA injectés.
+I1 0 d1 250u
+X1 d1 d1 0 BSS138P vto={vto} kp={kp}
+* banc 2 : résistance à l'état passant.
+Vg g2 0 {vg}
+I2 0 d2 {id}
+X2 d2 g2 0 BSS138P vto={vto} kp={kp}
+* bancs 3 et 4 : le sous-circuit d'onsemi d'origine (broche 50 : température, 25 °C)
+Vt t 0 25
+I3 0 d3 250u
+X3 d3 d3 0 t BSS138
+Vg4 g4 0 {vg}
+I4 0 d4 {id}
+X4 d4 g4 0 t BSS138
+
+.control
+set noaskquit
+echo "RESULTAT reglage (0 typique, 1 seuil haut, 2 seuil bas) ; grille (V) ; seuil a 250 uA (V) ; resistance (ohms) ; onsemi d'origine : seuil ; resistance"
+foreach c 0 1 2
+  foreach g 10 4.5 3.3 2.6
+    alterparam cas = $c
+    alterparam vg = $g
+    if $g < 4
+      alterparam id = 10m
+    else
+      alterparam id = 200m
+    end
+    reset
+    op
+    let vth = v(d1)
+    let r = v(d2)/@i2[dc]
+    let vth0 = v(d3)
+    let r0 = v(d4)/@i4[dc]
+    echo "RESULTAT $c ; $g ; $&vth ; $&r ; $&vth0 ; $&r0"
+    destroy all
+  end
+end
+quit
+.endc
+.end

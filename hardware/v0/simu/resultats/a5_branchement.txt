@@ -1,0 +1,108 @@
+=== A5a  cellule a l'endroit, carte eteinte, sans USB. Q3 se ferme a 200 us ===
+T(C)  Vcell  Ipic(A)  VGS6min  VGS6max  VBATmax  fin: VBAT  VSYS  chuteQ2(mV)
+-10    3.0    6.707    -1.089    0.314    3    3    3    0
+-10    4.2    10.771    -1.073    0.424    4.2    4.2    4.2    0
+25    3.0    6.36    -1.062    0.326    3    3    3    0
+25    4.2    10.063    -1.142    0.445    4.2    4.2    4.2    0
+60    3.0    6.02    -1.032    0.34    3    3    3    0
+60    4.2    9.747    -1.037    0.454    4.2    4.2    4.2    0
+=== A5b  cellule a l'endroit branchee alors que l'USB est la (VBAT au repos avant le contact) ===
+Q6 ne doit pas devenir passant : VGS6 doit rester au-dessus de son seuil (-0,5 V au pire de la fiche).
+fin, 3 ms apres le contact : la cellule doit recevoir le courant de charge (0,407 A), Q2 passant.
+T(C)  Vcell  rcell  seuilQ6  VBATavant  Ipic(A)  VGS6min  fin: Icharge(A)  chuteQ2(mV)  VGS2
+-10    3.0    0.03    modele    4.203    7.266    -0.021    0.407    21    -3.034
+-10    3.0    0.03    0,5 V     4.204    7.264    -0.021    0.407    21    -3.034
+-10    3.0    0.1    modele    4.204    5.313    -0.021    0.407    20.8    -3.062
+-10    3.0    0.1    0,5 V     4.204    5.313    -0.021    0.407    20.8    -3.062
+-10    3.7    0.03    modele    4.204    3.187    -0.018    0.407    18.3    -3.731
+-10    3.7    0.03    0,5 V     4.204    3.187    -0.018    0.407    18.3    -3.731
+-10    3.7    0.1    modele    4.204    2.306    -0.018    0.407    18.2    -3.759
+-10    3.7    0.1    0,5 V     4.204    2.306    -0.018    0.407    18.2    -3.759
+25    3.0    0.03    modele    4.219    7.006    -0.024    0.407    23.9    -3.036
+25    3.0    0.03    0,5 V     4.219    7    -0.024    0.407    23.9    -3.036
+25    3.0    0.1    modele    4.219    5.18    -0.024    0.407    23.7    -3.065
+25    3.0    0.1    0,5 V     4.219    5.183    -0.024    0.407    23.7    -3.065
+25    3.7    0.03    modele    4.219    3.108    -0.021    0.407    20.8    -3.733
+25    3.7    0.03    0,5 V     4.219    3.108    -0.021    0.407    20.8    -3.733
+25    3.7    0.1    modele    4.219    2.257    -0.021    0.407    20.7    -3.762
+25    3.7    0.1    0,5 V     4.219    2.258    -0.021    0.407    20.7    -3.762
+60    3.0    0.03    modele    4.994    10.998    -0.027    0.408    26.8    -3.039
+60    3.0    0.03    0,5 V     4.994    10.996    -0.027    0.408    26.8    -3.036
+60    3.0    0.1    modele    4.994    8.184    -0.027    0.408    26.6    -3.068
+60    3.0    0.1    0,5 V     4.994    8.183    -0.027    0.408    26.6    -3.065
+60    3.7    0.03    modele    4.994    7.191    -0.023    0.407    23.4    -3.736
+60    3.7    0.03    0,5 V     4.994    7.19    -0.023    0.407    23.4    -3.733
+60    3.7    0.1    modele    4.994    5.385    -0.023    0.407    23.3    -3.764
+60    3.7    0.1    0,5 V     4.994    5.385    -0.023    0.407    23.3    -3.761
+=== A5c  cellule a l'envers, carte eteinte et condensateurs vides, sans USB ===
+T(C)  Vcell  Ipic(A)  VBATmin  VBATmax  VDS2min  VGS2min  VGS2max  VGS6min  fin: I(uA)
+-10    4.2    0.212    0    0    -6.107    -0.061    0.143    -4.151    4.2
+25    4.2    0.213    0    0    -6.108    -0.059    0.145    -4.151    4.2
+60    4.2    0.213    0    0    -6.109    -0.057    0.147    -4.151    4.2
+=== A5d  cellule a l'envers branchee alors que l'USB est la ===
+Attendu (commentaire de R46) : Q6 bloque Q2 en moins d'une microseconde, avant que VBAT passe sous la masse.
+T(C)  Vcell  rcell  Ipic(A)  VBATmin  tQ2(us)  tneg(us)  Idiode(A)  VGS2min  VDS2min  VGS6min  fin: VBAT  I(uA)
+-10    3.0    0.03    22.8    1.06    7.4    0    0    -4.204    -7.2    -7.2    4.2    7.2
+-10    3.0    0.1    22    1.038    8    0    0    -4.204    -7.2    -7.2    4.2    7.2
+-10    3.0    0.3    16.8    0.999    9.8    0    0    -4.204    -7.2    -7.2    4.2    7.2
+-10    3.0    1    6.5    0.957    15.2    0    0    -4.204    -7.2    -7.2    4.2    7.2
+-10    4.2    0.03    23.4    1.141    5.7    0    0    -4.204    -8.4    -8.4    4.2    8.4
+-10    4.2    0.1    22.7    1.107    6.2    0    0    -4.204    -8.4    -8.4    4.2    8.4
+-10    4.2    0.3    19    1.047    7.4    0    0    -4.203    -8.4    -8.4    4.2    8.4
+-10    4.2    1    7.6    0.973    11.8    0    0    -4.204    -8.4    -8.4    4.2    8.4
+25    3.0    0.03    21.1    1.08    7.2    0    0    -4.219    -7.2    -7.2    4.2    7.2
+25    3.0    0.1    20.5    1.051    7.7    0    0    -4.219    -7.2    -7.2    4.2    7.2
+25    3.0    0.3    16.3    0.993    9.6    0    0    -4.219    -7.2    -7.2    4.2    7.2
+25    3.0    1    6.5    0.931    15.2    0    0    -4.219    -7.2    -7.2    4.2    7.2
+25    4.2    0.03    21.6    1.184    5.6    0    0    -4.219    -8.4    -8.4    4.2    8.4
+25    4.2    0.1    21.1    1.145    6    0    0    -4.219    -8.4    -8.4    4.2    8.4
+25    4.2    0.3    18.4    1.064    7.3    0    0    -4.219    -8.4    -8.4    4.2    8.4
+25    4.2    1    7.6    0.96    11.6    0    0    -4.219    -8.4    -8.4    4.2    8.4
+60    3.0    0.03    25.5    0.997    7.8    0    0    -4.994    -7.2    -7.2    4.2    7.2
+60    3.0    0.1    24.6    0.955    8.5    0    0    -4.994    -7.2    -7.2    4.2    7.2
+60    3.0    0.3    18.2    0.88    10.3    0    0    -4.994    -7.2    -7.2    4.2    7.2
+60    3.0    1    7.2    0.813    17    0    0    -4.994    -7.2    -7.2    4.2    7.2
+60    4.2    0.03    26.1    1.138    5.9    0    0    -4.994    -8.4    -8.4    4.2    8.4
+60    4.2    0.1    25.5    1.076    6.5    0    0    -4.994    -8.4    -8.4    4.2    8.4
+60    4.2    0.3    20.7    0.962    8.1    0    0    -4.994    -8.4    -8.4    4.2    8.4
+60    4.2    1    8.3    0.847    13.2    0    0    -4.994    -8.4    -8.4    4.2    8.4
+=== A5e  echange de batterie sans USB : la bonne cellule (3,7 V) est retiree a 10 us, ===
+===      une cellule a l'envers est branchee a 1 ms, les condensateurs encore charges ===
+T(C)  rcell  VBATavant  VSYSavant  Ipic(A)  VBATmin  VSYSmin  tQ2(us)  tneg(us)  VGS2min  VDS2min  fin: VBAT  I(uA)
+-10    0.1    3.7    3.7    18.7    2.154    2.247    5.8    0    -3.7    -6.547    2.247    6.4
+-10    0.3    3.7    3.7    17.2    1.821    1.895    8.5    0    -3.7    -6.121    1.895    6.1
+25    0.1    3.7    3.7    17.1    2.291    2.386    5.4    0    -3.7    -6.669    2.386    6.6
+25    0.3    3.7    3.7    16    1.953    2.031    8    0    -3.7    -6.251    2.031    6.2
+60    0.1    3.696    3.696    15.7    2.412    2.515    5.2    0    -3.7    -6.781    2.515    6.7
+60    0.3    3.696    3.696    14.9    2.088    2.175    7.5    0    -3.7    -6.388    2.175    6.4
+=== A5f  USB present : la cellule a l'envers est retiree a 10 us. Q2 doit redevenir passant (role de R45) ===
+R45    BATP remonte a VBAT-0,3 V en (ms)   fin a 30 ms: BATP  VGS2  VGS6
+1meg    6.195    4.211    -4.211    0
+1e13    30    -4.197    0    -8.397
+=== A5g  cellule a l'endroit deja en place, l'USB est branche a 10 us ===
+Le courant de charge ne doit pas rendre Q6 passant ; fin a 5 ms : charge en cours, Q2 passant.
+T(C)  Vcell  ISET  VGS6min  fin: Icharge(A)  VBAT  chuteQ2(mV)  VGS2
+-10    3.0    0    -0.021    0.407    3.079    20.8    -3.062
+-10    3.0    3.3    -0.046    0.907    3.175    45.8    -3.137
+-10    3.7    0    -0.018    0.407    3.775    18.2    -3.759
+-10    3.7    3.3    -0.04    0.904    3.867    40.1    -3.831
+25    3.0    0    -0.024    0.407    3.083    23.7    -3.065
+25    3.0    3.3    -0.052    0.907    3.184    52.1    -3.144
+25    3.7    0    -0.021    0.407    3.779    20.7    -3.762
+25    3.7    3.3    -0.046    0.904    3.874    45.7    -3.837
+60    3.0    0    -0.027    0.408    3.087    26.6    -3.068
+60    3.0    3.3    -0.059    0.908    3.193    58.5    -3.15
+60    3.7    0    -0.023    0.407    3.782    23.3    -3.764
+60    3.7    3.3    -0.051    0.904    3.882    51.4    -3.843
+=== A5h  cellule a l'envers deja en place, l'USB est branche a 10 us ; Q3 se ferme a 2 ms ===
+T(C)  Ipic(A)  VBATmin  VDS2min  VGS2min  VGS6min  fin a 5 ms: VBAT  BATP  I(uA)
+-10    0    0    -8.4    0    -8.4    4.2    -4.2    8.4
+25    0    0    -8.4    0    -8.4    4.2    -4.2    8.4
+60    0    0    -8.4    0    -8.4    4.2    -4.2    8.4
+=== A5i  deux etats stables sous USB : en partant de Q2 bloque (cellule a l'envers), la tension ===
+===      de la cellule monte lentement de -4,2 a +4,2 V (0,4 s) sans que l'USB soit retire ===
+Q6 ne lache Q2 que lorsque la cellule arrive a moins d'un seuil de Q6 sous VBAT.
+T(C)  Q2 reste bloque jusqu'a Vcell (V)   Icell a +3,0 V (A)   Icell a +4,0 V (A)
+-10    3.304    0    0.404
+25    3.395    0    0.404
+60    3.49    0    0.404

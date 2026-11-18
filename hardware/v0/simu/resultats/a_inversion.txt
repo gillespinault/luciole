@@ -1,0 +1,117 @@
+######################## temperature -10 C ########################
+=== A1  cellule a l'endroit, sans USB, charge tiree sur VBAT, Q3 passant ===
+Vcell  I(A)  VBAT   chuteQ2(mV)  chuteQ3(mV)  VGS_Q2   VGS_Q6
+3.0    0.1    2.98    5.2    4.3    -2.985    0.005
+3.0    1    2.802    53.4    43.8    -2.846    0.053
+3.0    2    2.597    110.7    90.5    -2.687    0.111
+3.3    0.1    3.281    4.8    4.1    -3.285    0.005
+3.3    1    3.107    49.6    42    -3.149    0.05
+3.3    2    2.91    102.2    86    -2.996    0.102
+3.7    0.1    3.681    4.5    4    -3.685    0.005
+3.7    1    3.513    46    40.2    -3.553    0.046
+3.7    2    3.322    94    81.7    -3.404    0.094
+4.2    0.1    4.182    4.2    3.8    -4.186    0.004
+4.2    1    4.018    42.8    38.5    -4.056    0.043
+4.2    2    3.833    87    78    -3.911    0.087
+=== A2  cellule a l'envers, sans USB ===
+Q3 Vcell Icell(uA) VBAT BATP BATN VDS_Q2 VGS_Q2 VGS_Q6 DW01A(vcc-gnd)
+passant  3.0    2.97    0    -2.97    0.03    -2.971    0    -2.971    -0.029
+passant  4.2    4.16    0    -4.159    0.041    -4.159    0    -4.159    -0.041
+ouvert   3.0    2.97    0    -2.97    0.03    -2.971    0    -2.971    -0.029
+ouvert   4.2    4.16    0    -4.159    0.041    -4.159    0    -4.159    -0.041
+=== A3  cellule a l'envers, USB present (le chargeur tient VBAT vers 4,2 V) ===
+Q3       Vcell  Icell(uA)  Ichargeur(mA)  VBAT    BATP    BATN    VDS_Q2   VGS_Q2   VGS_Q6
+passant  3.0    7.2    0.44    4.2    -3    0    -7.2    0    -7.2
+passant  4.2    8.4    0.44    4.2    -4.2    0    -8.4    0    -8.4
+ouvert   3.0    2.97    0.01    4.206    1.236    4.236    -2.971    0    -2.971
+ouvert   4.2    4.16    0.01    4.206    0.048    4.248    -4.159    0    -4.159
+=== A4  pas de cellule, USB present ===
+Q3       VBAT    BATP    BATN    connecteur(BATP-BATN)  VGS_Q2   VGS_Q6
+passant  4.204    4.204    0    4.204    -4.204    0
+ouvert   4.206    4.206    4.206    0    -0.001    0
+######################## temperature 25 C ########################
+=== A1  cellule a l'endroit, sans USB, charge tiree sur VBAT, Q3 passant ===
+Vcell  I(A)  VBAT   chuteQ2(mV)  chuteQ3(mV)  VGS_Q2   VGS_Q6
+3.0    0.1    2.979    5.9    4.6    -2.984    0.006
+3.0    1    2.791    60.8    46.9    -2.838    0.061
+3.0    2    2.575    126    97.4    -2.672    0.126
+3.3    0.1    3.28    5.5    4.4    -3.284    0.006
+3.3    1    3.098    56.5    44.6    -3.142    0.057
+3.3    2    2.89    116.4    91.8    -2.982    0.116
+3.7    0.1    3.681    5.1    4.2    -3.685    0.005
+3.7    1    3.504    52.4    42.4    -3.547    0.052
+3.7    2    3.304    107.1    86.6    -3.391    0.107
+4.2    0.1    4.181    4.8    4    -4.185    0.005
+4.2    1    4.01    48.7    40.4    -4.05    0.049
+4.2    2    3.817    99    82    -3.899    0.099
+=== A2  cellule a l'envers, sans USB ===
+Q3 Vcell Icell(uA) VBAT BATP BATN VDS_Q2 VGS_Q2 VGS_Q6 DW01A(vcc-gnd)
+passant  3.0    2.97    0    -2.971    0.029    -2.971    0    -2.971    -0.029
+passant  4.2    4.16    0    -4.159    0.041    -4.159    0    -4.159    -0.041
+ouvert   3.0    2.97    0    -2.971    0.029    -2.971    0    -2.971    -0.029
+ouvert   4.2    4.16    0    -4.159    0.041    -4.159    0    -4.159    -0.041
+=== A3  cellule a l'envers, USB present (le chargeur tient VBAT vers 4,2 V) ===
+Q3       Vcell  Icell(uA)  Ichargeur(mA)  VBAT    BATP    BATN    VDS_Q2   VGS_Q2   VGS_Q6
+passant  3.0    7.2    0.43    4.2    -3    0    -7.2    0    -7.2
+passant  4.2    8.4    0.43    4.2    -4.2    0    -8.4    0    -8.4
+ouvert   3.0    2.97    0    4.898    1.927    4.927    -2.971    0    -2.971
+ouvert   4.2    4.16    0    4.898    0.739    4.939    -4.159    0    -4.159
+=== A4  pas de cellule, USB present ===
+Q3       VBAT    BATP    BATN    connecteur(BATP-BATN)  VGS_Q2   VGS_Q6
+passant  4.219    4.219    0    4.219    -4.219    0
+ouvert   4.898    4.897    4.897    0.001    -0.001    0
+######################## temperature 60 C ########################
+=== A1  cellule a l'endroit, sans USB, charge tiree sur VBAT, Q3 passant ===
+Vcell  I(A)  VBAT   chuteQ2(mV)  chuteQ3(mV)  VGS_Q2   VGS_Q6
+3.0    0.1    2.978    6.6    4.9    -2.983    0.007
+3.0    1    2.781    68.2    50.2    -2.831    0.068
+3.0    2    2.552    141.5    104.8    -2.657    0.141
+3.3    0.1    3.279    6.2    4.6    -3.284    0.006
+3.3    1    3.088    63.5    47.5    -3.135    0.064
+3.3    2    2.869    130.9    98.2    -2.967    0.131
+3.7    0.1    3.68    5.8    4.4    -3.684    0.006
+3.7    1    3.495    58.9    44.8    -3.54    0.059
+3.7    2    3.286    120.6    91.8    -3.377    0.121
+4.2    0.1    4.18    5.4    4.2    -4.184    0.005
+4.2    1    4.002    54.8    42.4    -4.044    0.055
+4.2    2    3.8    111.5    86.4    -3.886    0.111
+=== A2  cellule a l'envers, sans USB ===
+Q3 Vcell Icell(uA) VBAT BATP BATN VDS_Q2 VGS_Q2 VGS_Q6 DW01A(vcc-gnd)
+passant  3.0    2.97    0    -2.971    0.029    -2.971    0    -2.971    -0.029
+passant  4.2    4.16    0    -4.159    0.041    -4.159    0    -4.159    -0.041
+ouvert   3.0    2.97    0    -2.971    0.029    -2.971    0    -2.971    -0.029
+ouvert   4.2    4.16    0    -4.159    0.041    -4.159    0    -4.159    -0.041
+=== A3  cellule a l'envers, USB present (le chargeur tient VBAT vers 4,2 V) ===
+Q3       Vcell  Icell(uA)  Ichargeur(mA)  VBAT    BATP    BATN    VDS_Q2   VGS_Q2   VGS_Q6
+passant  3.0    7.2    0.29    4.2    -3    0    -7.2    0    -7.2
+passant  4.2    8.4    0.3    4.2    -4.2    0    -8.4    0    -8.4
+ouvert   3.0    2.97    0    4.996    2.025    5.025    -2.971    0    -2.971
+ouvert   4.2    4.16    0    4.996    0.837    5.037    -4.159    0    -4.159
+=== A4  pas de cellule, USB present ===
+Q3       VBAT    BATP    BATN    connecteur(BATP-BATN)  VGS_Q2   VGS_Q6
+passant  4.994    4.994    0    4.994    -4.994    0
+ouvert   4.996    4.996    4.994    0.002    -0.002    0
+######################## contre-epreuves, 25 C ########################
+Chaque ligne change une seule chose ; le resultat doit bouger dans le sens attendu.
+--- A1 : seuil de Q2 aux extremes de la fiche (0,3 et 1,0 V), cellule a 3,0 V, 2 A
+decalage du seuil 0.436 V : chuteQ2 = 112.8 mV
+decalage du seuil 0 V : chuteQ2 = 126 mV
+decalage du seuil -0.264 V : chuteQ2 = 137.6 mV
+--- A2 : le courant d'une cellule a l'envers (4,2 V, sans USB) est celui de R45
+R45 = 1meg : Icell = 4.16 uA
+R45 = 100k : Icell = 38.21 uA
+--- A2 : sans Q6, sans USB, cellule a l'envers 4,2 V : Q2 reste-t-il bloque de lui-meme ?
+Q6 retire : Icell = 3.7 uA, VGS_Q2 = 0.504 V
+--- A3 : sans Q6, USB present, cellule a l'envers 4,2 V : c'est bien Q6 qui bloque Q2
+Q6 present=1 : Icell = 0.01 mA, VBAT = 4.2 V, VGS_Q2 = 0 V, puissance dans Q2 = 0 W
+Q6 present=0 : Icell = 407.42 mA, VBAT = 1.273 V, VGS_Q2 = -1.232 V, puissance dans Q2 = 2.196 W
+--- A3 : seuil de Q6 aux extremes de la fiche (0,5 et 1,3 V), cellule a l'envers 3,0 V, USB
+decalage du seuil de Q6 0.30 V : Icell = 7.2 uA, VGS_Q2 = 0 V
+decalage du seuil de Q6 0 V : Icell = 7.2 uA, VGS_Q2 = 0 V
+decalage du seuil de Q6 -0.50 V : Icell = 7.2 uA, VGS_Q2 = 0 V
+--- A3 : USB a 5,5 V, cellule a l'envers 4,35 V, D22 au pire de la fiche, 60 C : tensions les plus fortes
+Q3 passant : VBAT = 5.446 V, VDS_Q2 = -9.796 V (limite 12), VGS_Q6 = -9.796 V (limite 12)
+Q3 ouvert  : VBAT = 5.497 V, VDS_Q2 = -4.307 V, VGS_Q6 = -4.307 V
+--- A3 : R43 plus faible (le courant permanent pris au chargeur augmente)
+R43 = 10k : courant du chargeur = 0.43 mA, VGS_Q2 = 0 V
+R43 = 1k : courant du chargeur = 4.25 mA, VGS_Q2 = 0 V

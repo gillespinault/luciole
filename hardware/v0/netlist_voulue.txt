@@ -21,7 +21,7 @@
 #        8 CE. 9 : plage thermique, à la masse.
 #   U3   DW01A : 1 OD, 2 CS, 3 OC, 4 TD, 5 VCC, 6 GND.
 #   Q3   FS8205A : 1 S1, 2 et 5 drains communs, 3 S2, 4 G2, 6 G1.
-#   Q2, Q4  DMP1045U (canal P), Q6 AO3401A (canal P), Q1, Q5, Q7 AO3400A et Q8, Q9 BSS138
+#   Q4  DMP1045U (canal P), Q2, Q6 AO3401A (canal P), Q1, Q5, Q7 AO3400A et Q8, Q9 BSS138
 #        (canal N), SOT-23 :
 #        1 grille, 2 source, 3 drain.
 #   U4   RT9080-33GJ5, TSOT-23-5 : 1 VIN, 2 GND, 3 EN, 4 libre, 5 VOUT.
@@ -87,8 +87,8 @@ CHG_INH     R47.1 U6.27
 # ---------------------------------------------------- batterie, protection
 BATP        J2.1 Q2.3 R45.2 R46.1
 Q6_G        R46.2 Q6.1
-BATN        J2.2 U3.6 C3.2 Q3.1 R43.2 TP18.1
-Q2_G        Q2.1 Q6.3 R43.1
+BATN        J2.2 U3.6 C3.2 Q3.1 R43.2 C42.2 TP18.1
+Q2_G        Q2.1 Q6.3 R43.1 C42.1
 VBAT        Q2.2 Q6.2 R45.1 JP1.2 R14.1 R16.1 Q4.3 D22.2 TP2.1
 DW_VCC      R14.2 U3.5 C3.1
 DW_CS       U3.2 R15.1

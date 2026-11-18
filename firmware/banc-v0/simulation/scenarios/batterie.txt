@@ -1,0 +1,16 @@
+# Sur batterie, sans USB, sans réseau Wi-Fi à portée.
+# attendu : USB present (VBUS)     | non
+# attendu : ligne CC               | 3 mV
+# attendu : chargeur CHRG          | 1 (pas en charge)              | 1 sans USB
+# attendu : arret de la charge     | pas d'USB
+# attendu : radio, reception       | aucun reseau
+# attendu : charge rapide REFUSEE
+# attendu : A lire sur TP5 : 4.30 a 4.60 V.
+@scenario batterie
+@scenario sans-reseau
+e
+a
+charge rapide
+conv 1
+leds
+conv 0

@@ -17,3 +17,14 @@ __pycache__/
 
 # Outils tiers (routeurs automatiques), installés à version figée : voir README.md
 tiers/
+
+# Modèles SPICE téléchargés chez les fabricants : gardés en local, pas publiés, comme les
+# fiches. Leurs adresses sont dans le README de chaque dossier de simulation.
+v0/simu/modeles/AO3400.mod
+v0/simu/modeles/AO3401A.mod
+v0/simu/modeles/DMP1045U.spice.txt
+v0/simu-signaux/modeles/bss138_onsemi.lib
+v0/simu-signaux/modeles/bss138_onsemi_thermique.lib
+# Journaux bruts de ngspice
+v0/simu/resultats/journaux/
+v0/simu-signaux/sorties/

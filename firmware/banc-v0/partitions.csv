@@ -1,0 +1,4 @@
+# Banc d'essai de la carte v0 : l'application seule. Pas de partition NVS :
+# rien ne peut s'écrire en mémoire non volatile.
+# Name,     Type, SubType, Offset,  Size
+factory,    app,  factory, 0x10000, 0x300000

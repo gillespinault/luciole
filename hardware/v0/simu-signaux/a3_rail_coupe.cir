@@ -1,0 +1,143 @@
+Luciole2 v0 - A3 port Grove : rail des LED coupe, carte alimentee en 3,3 V
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/a3_rail_coupe.cir
+*
+* Intention du schéma (circuit.py) : rien ne doit réalimenter le rail des LED quand
+* il est coupé. U11 a pour cela son rail d'écrêtage isolé sur C41 ; les entrées de
+* U10 supportent d'être au-dessus de son alimentation ; R35 tient /OE à 1.
+* Ce que le schéma ne dit pas : la sortie de U10 a une diode vers son alimentation
+* (fiche TI, figure 8-2), et JP4 fermé la relie à la broche 2 du port par R36.
+*
+* Montage : 3,3 V présent, convertisseur arrêté, rien de branché sur le port.
+* Deux hypothèses sur le rail coupé, qui encadrent la réalité :
+*   rail = 0 : le rail est tenu à 0 V (les LED absorbent tout) -> courant le plus fort ;
+*   rail = 1 : le rail n'est chargé que par le pont R25 + R26 (381 kΩ) -> tension la
+*              plus haute. La fiche des LED ne dit pas ce qu'elles consomment sous 3,7 V.
+* États : PORT_PU poussée à 1, poussée à 0, ou en l'air (R35 seule) ;
+*         IO1 et IO2 poussées à 1, poussées à 0, ou en l'air.
+*
+* Ce qu'on lit : le courant pris au 3,3 V (c'est le courant de veille dû au port),
+* la part qui part dans le rail coupé par U10, celle qui entre dans U11, et les
+* tensions. Dernier bloc : JP4 coupé, pour vérifier que le courant passe bien par U10.
+
+.include modeles/modeles.lib
+.include port_grove.inc
+
+* pu : 1 poussée à 1 ; 0 poussée à 0 ; 2 en l'air.  io : même code pour IO1 et IO2.
+.param pu=2 io=2 rail=0
+.param rrail={rail == 1 ? 381k : 1m}
+* remise sous tension du rail (dernier bloc) : 0 -> 4,5 V en 1 ms à partir de 10 ms
+.param remise=0
+
+V33   v33 0 3.3
+Vrail vledx 0 pwl(0 0 10m 0 11m {remise == 1 ? 4.5 : 0})
+Rrail vled vledx {rrail}
+Vpuo  pu_out 0 pwl(0 {pu == 1 ? 1 : 0} 400m {pu == 1 ? 1 : 0} 400.001m {(pu == 1 || remise == 1) ? 1 : 0})
+Vpue  pu_oe 0 pwl(0 {pu == 2 ? 0 : 1} 400m {pu == 2 ? 0 : 1} 400.001m {(pu != 2 || remise == 1) ? 1 : 0})
+XPU   port_pup v33 0 pu_out pu_oe ESPPIN
+Vipu  port_pup port_pu 0
+Vioo  io_out 0 {io == 1 ? 1 : 0}
+Vioe  io_oe 0 {io == 2 ? 0 : 1}
+XIO1  io1p v33 0 io_out io_oe ESPPIN
+Vii1  io1p io1 0
+XIO2  io2p v33 0 io_out io_oe ESPPIN
+Vii2  io2p io2 0
+
+.control
+set noaskquit
+echo "RESULTAT A3 ; rail (0 tenu a 0 V, 1 en l'air sur 381 k) ; PORT_PU (1, 0, 2 en l'air) ; IO1 et IO2 (1, 0, 2 en l'air) ; courant pris au 3,3 V (A) ; dont envoye au rail par U10 (A) ; entrant dans U11 (A) ; rail (V) ; PORT_PU (V) ; IO2 (V) ; PORT_2 (V) ; PORT_1 (V) ; C41 (V)"
+foreach r 0 1
+  foreach p 1 0 2
+    foreach i 1 0 2
+      alterparam rail = $r
+      alterparam pu = $p
+      alterparam io = $i
+      reset
+      op
+      let i33 = -i(V33)
+      let iu10 = -i(Vi36)
+      let iu11 = i(Viu11a) + i(Viu11b)
+      echo "RESULTAT A3 ; $r ; $p ; $i ; $&i33 ; $&iu10 ; $&iu11 ; $&v(vled) ; $&v(port_pu) ; $&v(io2) ; $&v(port_2) ; $&v(port_1) ; $&v(port_ecret)"
+      destroy all
+    end
+  end
+end
+
+echo "RESULTAT A3 verification ; meme tableau, rail tenu a 0 V, JP4 coupe : le courant vers le rail doit disparaitre ; PORT_PU ; IO ; courant pris au 3,3 V (A) ; envoye au rail par U10 (A) ; PORT_2 (V)"
+foreach p 1 0 2
+  foreach i 1 0 2
+    alterparam rail = 0
+    alterparam jp4 = 1e12
+    alterparam pu = $p
+    alterparam io = $i
+    reset
+    op
+    let i33 = -i(V33)
+    let iu10 = -i(Vi36)
+    echo "RESULTAT A3 verification JP4 coupe ; $p ; $i ; $&i33 ; $&iu10 ; $&v(port_2)"
+    destroy all
+  end
+end
+alterparam jp4 = 1m
+
+echo "RESULTAT A3 variation ; rail tenu a 0 V, PORT_PU poussee a 1, IO en l'air : le courant doit suivre (3,3 V - chutes) / (R34 + R32 + R36) ; R36 (ohms) ; courant envoye au rail (A)"
+foreach r 22 220 2.2k 22k
+  alterparam rail = 0
+  alterparam pu = 1
+  alterparam io = 2
+  alterparam r36 = $r
+  reset
+  op
+  let iu10 = -i(Vi36)
+  echo "RESULTAT A3 variation R36 ; $r ; $&iu10"
+  destroy all
+end
+alterparam r36 = 220
+
+echo "RESULTAT A3 avec la correction (diode en serie avec R36), rail tenu a 0 V ; PORT_PU ; IO ; courant pris au 3,3 V (A) ; envoye au rail par U10 (A) ; PORT_PU (V) ; PORT_2 (V)"
+foreach p 1 0 2
+  foreach i 1 0 2
+    alterparam rail = 0
+    alterparam dserie = 1
+    alterparam pu = $p
+    alterparam io = $i
+    reset
+    op
+    let i33 = -i(V33)
+    let iu10 = -i(Vi36)
+    echo "RESULTAT A3 avec la correction ; $p ; $i ; $&i33 ; $&iu10 ; $&v(port_pu) ; $&v(port_2)"
+    destroy all
+  end
+end
+alterparam dserie = 0
+
+* Le rail revient alors que le firmware n'a encore rien commandé : PORT_PU, IO1 et
+* IO2 en l'air. Le rail coupé tirait PORT_PU (/OE de U10) vers le bas. Au retour du
+* rail, R35 (1 MΩ) doit remonter PORT_PU en rechargeant C41 à travers R33, R34 et
+* U11 ; pendant ce temps U10 est actif, IO2 est à 0, donc U10 tire PORT_2 à 0, ce
+* qui tient IO2 puis PORT_PU à 0 par Q9 et R34 : l'état se verrouille.
+* À 400 ms le firmware pousse PORT_PU à 1 : on vérifie que cela suffit à en sortir.
+echo "RESULTAT A3 retour du rail, PORT_PU en l'air ; diode de correction (0 non, 1 oui) ; C41 (F) ; PORT_PU avant le retour (V) ; PORT_PU 300 ms apres (V) ; PORT_2 300 ms apres (V) ; courant tire par U10 sur la ligne (A) ; puis PORT_PU poussee a 1 : PORT_PU (V) ; PORT_2 (V)"
+foreach k 0 1
+ foreach c 100n 1p
+  alterparam rail = 0
+  alterparam pu = 2
+  alterparam io = 2
+  alterparam remise = 1
+  alterparam c41 = $c
+  alterparam dserie = $k
+  reset
+  tran 20u 600m
+  meas tran avant find v(port_pu) at=9m
+  meas tran pu300 find v(port_pu) at=310m
+  meas tran p2300 find v(port_2) at=310m
+  let iu = -i(Vi36)
+  meas tran iu300 find iu at=310m
+  meas tran pufin find v(port_pu) at=590m
+  meas tran p2fin find v(port_2) at=590m
+  echo "RESULTAT A3 retour du rail ; $k ; $c ; $&avant ; $&pu300 ; $&p2300 ; $&iu300 ; $&pufin ; $&p2fin"
+  destroy all
+ end
+end
+quit
+.endc
+.end

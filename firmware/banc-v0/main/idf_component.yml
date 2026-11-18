@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.3"
+  # 3.1.0 : première version où les temps de la LED se donnent en clair (LED_MODEL_CUSTOM).
+  espressif/led_strip: "^3.1.0"

@@ -1,0 +1,249 @@
+Luciole2 v0 - A : protection contre l'inversion de la batterie, cas A1 a A4
+* tools/kicad ngspice -b v0/simu/a_inversion.cir
+*
+* Q2 (DMP1045U) est en série dans le pôle positif. R43 tire sa grille vers
+* BATN. Q6 (AO3401A) relie la grille de Q2 à sa source quand BATP passe sous
+* VBAT. Voir les commentaires de v0/circuit.py.
+*
+* Points de repos seulement ; ce qui se passe au moment du branchement est
+* dans a5_branchement.cir.
+* Tensions en volts par rapport à GND sauf mention.
+*   chuteQ2 = BATP - VBAT      chuteQ3 = GND - BATN
+*   VGS = grille - source ; la source de Q2 et de Q6 est VBAT
+*   VDS_Q2 = BATP - VBAT (limite du DMP1045U : 12 V ; grille : 8 V ;
+*   grille de l'AO3401A : 12 V)
+*   « Q3 passant » : les deux transistors de la protection de cellule sont
+*   fermés. « Q3 ouvert » : il ne reste que leurs diodes de corps.
+*   Icell : courant qui traverse la cellule.
+
+.options tnom=25 rshunt=1e11
+.include modeles/luciole.lib
+.include commun.inc
+
+.control
+set noaskquit
+
+define mv(x) floor(x*1e4+0.5)/10
+define v3(x) floor(x*1e3+0.5)/1e3
+define ua(x) floor(x*1e8+0.5)/100
+define ma(x) floor(x*1e5+0.5)/100
+
+foreach t -10 25 60
+  echo
+  echo "######################## temperature $t C ########################"
+  reset
+  option temp=$t
+
+  * ------------------------------------------------------------------ A1
+  echo
+  echo "=== A1  cellule a l'endroit, sans USB, charge tiree sur VBAT, Q3 passant ==="
+  echo "Vcell  I(A)  VBAT   chuteQ2(mV)  chuteQ3(mV)  VGS_Q2   VGS_Q6"
+  alter Vctl_usb dc = 0
+  alter Vctl_cell dc = 1
+  alter Vctl_q3 dc = 1
+  foreach vc 3.0 3.3 3.7 4.2
+    alter Vcell dc = $vc
+    foreach il 0.1 1 2
+      alter Vctl_ibat dc = $il
+      op
+      let a = v3(v(vbat))
+      let b = mv(v(batp)-v(vbat))
+      let c = mv(-v(batn))
+      let e = v3(v(q2_g)-v(vbat))
+      let f = v3(v(q6_g)-v(vbat))
+      echo "$vc    $il    $&a    $&b    $&c    $&e    $&f"
+    end
+  end
+  alter Vctl_ibat dc = 0
+
+  * ------------------------------------------------------------------ A2
+  echo
+  echo "=== A2  cellule a l'envers, sans USB ==="
+  echo "Q3       Vcell  Icell(uA)  VBAT    BATP    BATN    VDS_Q2   VGS_Q2   VGS_Q6   DW01A(vcc-gnd)"
+  foreach f 1 0
+    alter Vctl_q3 dc = $f
+    alter Vctl_usb dc = 0
+    foreach vc 3.0 4.2
+      alter Vcell dc = -$vc
+      op
+      let i = ua(abs(i(Vcell)))
+      let a = v3(v(vbat))
+      let b = v3(v(batp))
+      let c = v3(v(batn))
+      let d = v3(v(batp)-v(vbat))
+      let e = v3(v(q2_g)-v(vbat))
+      let g = v3(v(q6_g)-v(vbat))
+      let h = v3(v(dw_vcc)-v(batn))
+      if $f = 1
+        echo "passant  $vc    $&i    $&a    $&b    $&c    $&d    $&e    $&g    $&h"
+      else
+        echo "ouvert   $vc    $&i    $&a    $&b    $&c    $&d    $&e    $&g    $&h"
+      end
+    end
+  end
+
+  * ------------------------------------------------------------------ A3
+  echo
+  echo "=== A3  cellule a l'envers, USB present (le chargeur tient VBAT vers 4,2 V) ==="
+  echo "Q3       Vcell  Icell(uA)  Ichargeur(mA)  VBAT    BATP    BATN    VDS_Q2   VGS_Q2   VGS_Q6"
+  foreach f 1 0
+    alter Vctl_q3 dc = $f
+    alter Vctl_usb dc = 1
+    foreach vc 3.0 4.2
+      alter Vcell dc = -$vc
+      op
+      let i = ua(abs(i(Vcell)))
+      let k = ma(i(v.xu2.vsens)*1100)
+      let a = v3(v(vbat))
+      let b = v3(v(batp))
+      let c = v3(v(batn))
+      let d = v3(v(batp)-v(vbat))
+      let e = v3(v(q2_g)-v(vbat))
+      let g = v3(v(q6_g)-v(vbat))
+      if $f = 1
+        echo "passant  $vc    $&i    $&k    $&a    $&b    $&c    $&d    $&e    $&g"
+      else
+        echo "ouvert   $vc    $&i    $&k    $&a    $&b    $&c    $&d    $&e    $&g"
+      end
+    end
+  end
+
+  * ------------------------------------------------------------------ A4
+  echo
+  echo "=== A4  pas de cellule, USB present ==="
+  echo "Q3       VBAT    BATP    BATN    connecteur(BATP-BATN)  VGS_Q2   VGS_Q6"
+  foreach f 1 0
+    alter Vctl_q3 dc = $f
+    alter Vctl_usb dc = 1
+    alter Vctl_cell dc = 0
+    op
+    let a = v3(v(vbat))
+    let b = v3(v(batp))
+    let c = v3(v(batn))
+    let d = v3(v(batp)-v(batn))
+    let e = v3(v(q2_g)-v(vbat))
+    let g = v3(v(q6_g)-v(vbat))
+    if $f = 1
+      echo "passant  $&a    $&b    $&c    $&d    $&e    $&g"
+    else
+      echo "ouvert   $&a    $&b    $&c    $&d    $&e    $&g"
+    end
+  end
+end
+
+* ---------------------------------------------------------------- contre-épreuves
+echo
+echo "######################## contre-epreuves, 25 C ########################"
+echo "Chaque ligne change une seule chose ; le resultat doit bouger dans le sens attendu."
+
+echo
+echo "--- A1 : seuil de Q2 aux extremes de la fiche (0,3 et 1,0 V), cellule a 3,0 V, 2 A"
+foreach dv 0.436 0 -0.264
+  alterparam dvto_q2 = $dv
+  reset
+  option temp=25
+  alter Vctl_usb dc = 0
+  alter Vcell dc = 3.0
+  alter Vctl_ibat dc = 2
+  op
+  let b = mv(v(batp)-v(vbat))
+  echo "decalage du seuil $dv V : chuteQ2 = $&b mV"
+end
+alterparam dvto_q2 = 0
+
+echo
+echo "--- A2 : le courant d'une cellule a l'envers (4,2 V, sans USB) est celui de R45"
+foreach r 1Meg 100k
+  alterparam r45 = $r
+  reset
+  option temp=25
+  alter Vctl_usb dc = 0
+  alter Vcell dc = -4.2
+  op
+  let i = ua(abs(i(Vcell)))
+  echo "R45 = $r : Icell = $&i uA"
+end
+alterparam r45 = 1Meg
+
+echo
+echo "--- A2 : sans Q6, sans USB, cellule a l'envers 4,2 V : Q2 reste-t-il bloque de lui-meme ?"
+alterparam q6 = 0
+reset
+option temp=25
+alter Vctl_usb dc = 0
+alter Vcell dc = -4.2
+op
+let i = ua(abs(i(Vcell)))
+let e = v3(v(q2_g)-v(vbat))
+echo "Q6 retire : Icell = $&i uA, VGS_Q2 = $&e V"
+
+echo
+echo "--- A3 : sans Q6, USB present, cellule a l'envers 4,2 V : c'est bien Q6 qui bloque Q2"
+foreach q 1 0
+  alterparam q6 = $q
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Vcell dc = -4.2
+  op
+  let i = ma(abs(i(Vcell)))
+  let a = v3(v(vbat))
+  let e = v3(v(q2_g)-v(vbat))
+  let p = v3(abs(i(Vcell))*(v(vbat)-v(batp)))
+  echo "Q6 present=$q : Icell = $&i mA, VBAT = $&a V, VGS_Q2 = $&e V, puissance dans Q2 = $&p W"
+end
+alterparam q6 = 1
+
+echo
+echo "--- A3 : seuil de Q6 aux extremes de la fiche (0,5 et 1,3 V), cellule a l'envers 3,0 V, USB"
+foreach dv 0.30 0 -0.50
+  alterparam dvto_q6 = $dv
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Vcell dc = -3.0
+  op
+  let i = ua(abs(i(Vcell)))
+  let e = v3(v(q2_g)-v(vbat))
+  echo "decalage du seuil de Q6 $dv V : Icell = $&i uA, VGS_Q2 = $&e V"
+end
+alterparam dvto_q6 = 0
+
+echo
+echo "--- A3 : USB a 5,5 V, cellule a l'envers 4,35 V, D22 au pire de la fiche, 60 C : tensions les plus fortes"
+alterparam d22max = 1
+reset
+option temp=60
+alter Vctl_usb dc = 1
+alter Vusb dc = 5.5
+alter Vcell dc = -4.35
+op
+let a = v3(v(vbat))
+let d = v3(v(batp)-v(vbat))
+let g = v3(v(q6_g)-v(vbat))
+echo "Q3 passant : VBAT = $&a V, VDS_Q2 = $&d V (limite 12), VGS_Q6 = $&g V (limite 12)"
+alter Vctl_q3 dc = 0
+op
+let a = v3(v(vbat))
+let d = v3(v(batp)-v(vbat))
+let g = v3(v(q6_g)-v(vbat))
+echo "Q3 ouvert  : VBAT = $&a V, VDS_Q2 = $&d V, VGS_Q6 = $&g V"
+alterparam d22max = 0
+
+echo
+echo "--- A3 : R43 plus faible (le courant permanent pris au chargeur augmente)"
+foreach r 10k 1k
+  alterparam r43 = $r
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Vcell dc = -4.2
+  op
+  let k = ma(i(v.xu2.vsens)*1100)
+  let e = v3(v(q2_g)-v(vbat))
+  echo "R43 = $r : courant du chargeur = $&k mA, VGS_Q2 = $&e V"
+end
+alterparam r43 = 10k
+quit
+.endc
+.end

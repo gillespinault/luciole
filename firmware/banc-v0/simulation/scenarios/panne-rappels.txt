@@ -1,0 +1,13 @@
+# Rappels absents : ceux du bus de l'accéléromètre et ceux du port Grove.
+# attendu : I2C interne, rappels   | SDA reste a 0, SCL reste a 0
+# attendu : port, rappels (I2C)    | 1 1, 25.2 us, 25.2 us          | 1 1, moins de 3.0 us (4.7 kohm)            | NON <<<
+# attendu : les rappels sont commandes mais les lignes ne remontent pas assez vite
+@scenario sans-rappel-interne
+@scenario rappels-port-absents
+@scenario 3000
+conv 1
+a
+i2c
+port i2c
+port
+conv 0

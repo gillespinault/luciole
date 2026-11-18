@@ -1,0 +1,187 @@
+* Luciole² v0 : modèles écrits à la main d'après les fiches, et enveloppes des
+* modèles des fabricants. Températures de référence : 25 °C (.options tnom=25
+* dans chaque fichier .cir).
+*
+* Modèles des fabricants, recopiés sans y toucher :
+*   DMP1045U.spice.txt  Diodes Inc., « DMP1045U Spice Model v1.0 », 2018
+*   AO3401A.mod         Alpha & Omega
+*   AO3400.mod          Alpha & Omega : modèle de l'AO3400. AOS ne publie pas de
+*                       modèle de l'AO3400A ; les deux pièces sont voisines
+*                       (voir 00_modeles.cir pour l'écart avec la fiche).
+* Ordre des broches des trois : drain, grille, source.
+
+.include DMP1045U.spice.txt
+.include AO3401A.mod
+.include AO3400.mod
+
+* AO3400A (Q1, Q7) : modèle AOS de l'AO3400.
+.subckt AO3400A d g s
+X1 d g s AO3400
+.ends
+
+* ---------------------------------------------------------------------------
+* AO3401A à seuil réglable : copie du modèle AOS où VTO devient un paramètre,
+* pour essayer les extrêmes de la fiche (seuil de -0,5 à -1,3 V à 250 µA).
+* Le modèle d'origine (VTO=-1,1) donne -0,96 V à 250 µA : dvto décale ce seuil.
+.subckt AO3401A_SEUIL 4 1 2 params: dvto=0
+M1  3 1 2 2 PMOSV W=998956u  L=1.0u
+M2  2 1 2 4 NMOSV W=998956u  L=0.7u
+R1  4 3     RTEMPV 17E-3
+CGS 1 2     30E-12
+DBD 3 2     DBDV
+.MODEL  PMOSV      PMOS  (LEVEL  = 3               TOX    = 2.5E-8
++ RS     = 2E-4           RD     = 0               NSUB   = 2E17
++ UO     = 120             THETA  = 0.2            VTO={-1.1+dvto}
++ VMAX   = 5e6             XJ     = 4E-7            KAPPA  = 1.2
++ ETA    = 0              TPG    = 1
++ IS     = 0              LD     = 0
++ CGSO   = 0              CGDO   = 0               CGBO   = 0
++ NFS    = 2E10         DELTA  = 0)
+.MODEL  NMOSV      NMOS (LEVEL   = 3               TOX    = 5.2E-8
++NSUB    = 2.0E16           TPG    = -1)
+.MODEL DBDV D (CJO=900E-13     VJ=0.6    M=0.3
++RS=0.005 FC=0.5 IS=1E-12 TT=1.6E-8 N=1.0 BV=36 IBV=1E-4)
+.MODEL RTEMPV RES (TC1=1.5E-3   TC2=1E-6)
+.ends
+
+* ---------------------------------------------------------------------------
+* DMP1045U à seuil réglable : copie du modèle Diodes Inc. où VTO devient un
+* paramètre (fiche : seuil de -0,3 à -1,0 V à 250 µA, typique -0,55 V).
+.subckt DMP1045U_SEUIL 10 20 30 params: dvto=0
+M1 1 2 3 3 PMOSW L = 1E-006 W = 1E-006
+RD 10 1 0.01808
+RS 30 3 0.001
+RG 20 2 13.4
+CGS 2 3 1.058E-009
+EGD 12 30 2 1 1
+VFB 14 30 0
+FFB 2 1 VFB 1
+CGD 13 14 9.1E-010
+R1 13 30 1
+D1 13 12 DLIMW
+DDG 14 15 DCGDW
+R2 12 15 1
+D2 30 15 DLIMW
+DSD 10 3 DSUBW
+.MODEL PMOSW PMOS LEVEL = 3 U0 = 400 VMAX = 1E+006 ETA = 0.001
++ TOX = 6E-008 NSUB = 1E+016 KP = 35.11 KAPPA = 19.32 VTO = {-0.7328+dvto}
+.MODEL DCGDW D CJO = 1E-009 VJ = 0.587 M = 0.4707
+.MODEL DSUBW D IS = 1.513E-008 N = 1.192 RS = 0.09064
++ BV = 40 CJO = 1.315E-010 VJ = 0.6767 M = 0.9842
+.MODEL DLIMW D IS = 0.0001
+.ends
+
+* ---------------------------------------------------------------------------
+* DSK24 (D16, D22), Schottky 2 A 40 V, Hongjiacheng. Pas de modèle du
+* fabricant. Écrit d'après la fiche :
+*   courbe directe typique (fig. 3) : 0,27 V à 0,1 A, 0,37 V à 1 A ;
+*   maximum garanti 0,55 V à 2 A ;
+*   fuite typique (fig. 4) : environ 8 µA à 25 °C et 2,5 mA à 100 °C sous 4 V ;
+*   maximum garanti à 40 V : 0,2 mA à 25 °C, 20 mA à 100 °C ;
+*   220 pF sous 4 V.
+* DSK24 : typique. DSK24_MAX : chute directe maximale (0,55 V à 2 A) et fuite
+* maximale de la fiche à 25 °C (0,2 mA).
+.model DSK24     D (IS=8u   N=1.05 RS=35m  EG=0.69 XTI=2 CJO=650p VJ=0.4 M=0.45 BV=45 IBV=1m)
+.model DSK24_MAX D (IS=200u N=1.05 RS=150m EG=0.69 XTI=2 CJO=650p VJ=0.4 M=0.45 BV=45 IBV=1m)
+* Variante sans fuite, pour imposer la fuite par une source de courant (cas B4).
+.model DSK24_SANSFUITE D (IS=1p N=1.05 RS=35m CJO=650p VJ=0.4 M=0.45 BV=45 IBV=1m)
+
+* 1N4148WS (D25) : modèle classique du 1N4148, vérifié contre la fiche JSCJ
+* (0,715 V au plus à 1 mA, 0,855 V au plus à 10 mA, 25 nA au plus sous 20 V).
+.model D1N4148WS D (IS=2.52n RS=0.568 N=1.752 CJO=2p M=0.4 TT=4n BV=100 IBV=100u EG=1.11 XTI=3)
+
+* PESD5Z5.0 (D24) : claquage 6,2 V au moins à 1 mA, fuite 5 nA à 5 V, 89 pF.
+.model PESD5Z5V0 D (IS=1n N=1.6 RS=0.3 BV=6.8 IBV=1m CJO=89p)
+
+* Diodes parasites d'une puce (substrat, protection d'entrée) : supposées,
+* les fiches ne les décrivent pas.
+.model DPARASITE D (IS=1e-14 N=1 RS=0.5 CJO=20p)
+
+* ---------------------------------------------------------------------------
+* FS8205A (Q3), une moitié. Pas de modèle du fabricant. Écrit d'après la
+* fiche Tech Public : seuil 0,7 V (0,5 à 1,2), 19,5 mΩ à 4,5 V et 25 mΩ à
+* 2,5 V (typique, 3 A), 466 / 65 / 58 pF, diode de corps 1,2 V au plus à 6 A.
+* Broches : drain, grille, source.
+.model FS8205A_M VDMOS (NCHAN VTO=0.75 KP=55.4 RS=5m RD=9.7m RG=3
++ CGS=410p CGDMAX=300p CGDMIN=58p A=0.6 CJO=120p VJ=0.7 M=0.4
++ IS=1e-11 N=1.05 RB=20m BV=22 IBV=250u MTRIODE=1 LAMBDA=0.01 KSUBTHRES=0.05)
+.subckt FS8205A d g s
+M1 d g s FS8205A_M
+.ends
+
+* ---------------------------------------------------------------------------
+* DW01A (U3), modèle de comportement. Broches : vcc vss od oc cs cmd (vss : la
+* broche GND de la puce, reliée à BATN ; ngspice prend tout nœud nommé « gnd »
+* pour la masse générale, d'où ce nom).
+*   auto=0 : les deux sorties suivent la commande cmd, entre 0 et 1.
+*            1 : transistors de Q3 passants (grilles à vcc) ; 0 : ouverts, il ne
+*            reste que leurs diodes de corps. Sans alimentation (vcc sous vss),
+*            les sorties restent à 0 quelle que soit la commande.
+*   auto=1 : OD passe à 1 quand vcc-vss dépasse 2,7 V (entre les seuils de 2,5
+*            et 2,9 V de la fiche) ; OC passe à 1 quand vcc-cs dépasse 1,2 V
+*            (charge d'une cellule à 0 V) et que vcc-vss reste sous 4,3 V.
+*            Plusieurs points de repos possibles : réservé aux essais.
+* Les délais de la fiche (0,4 à 110 ms) ne sont pas modélisés.
+* Diodes parasites supposées : de vss vers vcc, et de cs vers vcc.
+.subckt DW01A vcc vss od oc cs cmd params: auto=0
+Rcc vcc vss 1.2Meg
+Rcmd cmd 0 1G
+Dsub vss vcc DPARASITE
+Dvm  cs  vcc DPARASITE
+Bod od_i vss V = max(V(vcc,vss),0) * ( {auto}*0.5*(1+tanh((V(vcc,vss)-2.7)/0.02)) + (1-{auto})*V(cmd) )
+Rod od_i od 10k
+Boc oc_i cs  V = max(V(vcc,cs),0) * ( {auto}*0.25*(1+tanh((V(vcc,cs)-1.2)/0.02))*(1-tanh((V(vcc,vss)-4.3)/0.02)) + (1-{auto})*V(cmd) )
+Roc oc_i oc 10k
+.ends
+
+* ---------------------------------------------------------------------------
+* TP4056 (U2), modèle de comportement. Broches :
+*   vcc bat prog ce temp chrg stdby vss (vss : masse)
+* - PROG est tenu à 1 V en courant constant ; le courant de charge vaut 1100
+*   fois le courant qui sort de PROG (formule de la fiche Top Power :
+*   IBAT = VPROG / RPROG x 1100). Près de 4,2 V la tension de PROG baisse :
+*   tension constante. Le passage de l'un à l'autre s'étale sur 50 mV environ,
+*   pour que le calcul converge ; la vraie puce est plus raide.
+* - La charge est permise si vcc dépasse 3,7 V, si vcc dépasse bat de 0,1 V,
+*   si CE est au-dessus de 1,4 V (seuil supposé : la fiche dit seulement
+*   « niveau TTL ou CMOS »), et si TEMP est entre 45 % et 80 % de vcc.
+*   La fiche dit que TEMP à la masse désactive la surveillance, sans donner de
+*   seuil : ce n'est pas modélisé, TEMP sous 45 % suspend toujours la charge.
+* - Près de la tension d'entrée, le courant s'efface (transistor de 0,65 Ω).
+* - La fin de charge au dixième du courant n'est pas modélisée : la sortie
+*   reste une source de 4,2 V limitée en courant, qui ne sait pas absorber.
+* - CHRG et STDBY : sorties à drain ouvert, 60 Ω (0,3 V à 5 mA).
+* - Diode parasite supposée de vss vers bat, de résistance série rsub (0,5 Ω
+*   par défaut ; la fiche n'en dit rien). Fuite de bat : 2 µA.
+.subckt TP4056 vcc bat prog ce temp chrg stdby vss params: vfloat=4.2 rsub=0.5
+.model DSUBBAT D (IS=1e-14 N=1 RS={rsub} CJO=20p)
+Bicc vcc vss I = 150u*0.5*(1+tanh((V(vcc,vss)-3.7)/0.05))
+Rce ce vss 100Meg
+Rtemp temp vss 100Meg
+* drapeaux, entre 0 et 1
+Bvalim  f_alim  0 V = 0.25*(1+tanh((V(vcc,vss)-3.7)/0.05))*(1+tanh((V(vcc,bat)-0.1)/0.03))
+Rf1 f_alim 0 1Meg
+Bvce    f_ce    0 V = 0.5*(1+tanh((V(ce,vss)-1.4)/0.05))
+Rf2 f_ce 0 1Meg
+Bvtemp  f_temp  0 V = 0.25*(1+tanh((V(temp,vss)-0.45*V(vcc,vss))/0.01))*(1-tanh((V(temp,vss)-0.80*V(vcc,vss))/0.01))
+Rf3 f_temp 0 1Meg
+Bven    f_en    0 V = V(f_alim)*V(f_ce)*V(f_temp)
+Rf4 f_en 0 1Meg
+* écart à 4,2 V, lissé pour rester positif. Le lissage laisse un courant
+* résiduel au-dessus de 4,2 V : 4 µA à 4,21 V, moins de 1 µA au-delà de 4,25 V.
+Bvec    f_ec    0 V = 0.5*( ({vfloat}-V(bat,vss)) + sqrt( ({vfloat}-V(bat,vss))^2 + 1e-8 ) )
+Rf5 f_ec 0 1Meg
+* broche PROG : 1 V en courant constant, moins en tension constante
+Bprog prog_i vss V = V(f_en)*tanh(V(f_ec)/0.025)
+Vsens prog_i prog 0
+Rprogfuite prog vss 100Meg
+* courant de charge : 1100 fois le courant de PROG
+Bchg vcc bat I = 1100*I(Vsens)*tanh( 0.5*( V(vcc,bat) + sqrt(V(vcc,bat)^2 + 1e-4) )/0.3 )
+* drapeau « en charge » : courant au-dessus du dixième du courant réglé
+Bvcharge f_chg 0 V = V(f_en)*0.5*(1+tanh((V(prog,vss)-0.1)/0.01))
+Rf6 f_chg 0 1Meg
+Bchrg  chrg  vss I = V(chrg,vss)/60  * V(f_chg)
+Bstdby stdby vss I = V(stdby,vss)/60 * V(f_en)*(1-V(f_chg))
+Dsub vss bat DSUBBAT
+Rbat bat vss 2Meg
+.ends

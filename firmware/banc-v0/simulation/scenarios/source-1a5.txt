@@ -1,0 +1,14 @@
+# Source USB-C qui annonce 1,5 A, cellule à 4,2 V qui ne charge pas, box qui n'accuse pas réception.
+# attendu : batterie (VBAT)        | 4.20 V (broche 1254 mV)
+# attendu : courant annonce        | 1.5 A
+# attendu : remarque : 4.20 V sous USB et pas de charge.
+# attendu : charge RAPIDE : 907 mA
+# attendu : arret de la charge     | pas en charge
+# attendu : radio, emission        | 0 accuse(s) sur 10             | au moins 5 accuses sur 10                  | a voir
+@scenario 1500
+@scenario pleine
+@scenario 4v2
+@scenario sans-accuse
+a
+charge rapide
+e

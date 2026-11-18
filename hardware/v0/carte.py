@@ -503,7 +503,8 @@ b.place("TP14", 14.75, 4.5)
 b.track("LED_OUT", [P("R30", "2"), (P("R30", "2")[0] + 0.6, P("R30", "2")[1] - 0.6), P("TP14", "1")], SIG)
 # Partage de charge entre l'USB et la batterie. VBAT monte du dos par trois vias, VBUS
 # par deux ; VSYS part vers le convertisseur, et vers le régulateur par le dos.
-X_VBAT, Y_VBAT = 33.2, 5.6     # trois vias de VBAT, au pas de 0,9 mm
+X_VBAT, Y_VBAT = 33.78, 5.6    # trois vias de VBAT, à droite de la source de Q6
+PAS_VBAT = 0.8                 # leur pas : 0,5 mm entre perçages, et le dernier à 0,2 mm du condensateur C28
 b.place("Q4", 32.3, 2.4, rot=180)
 assert P("Q4", "3")[0] < P("Q4", "2")[0] and P("Q4", "2")[1] < P("Q4", "1")[1], "Q4 : drain à gauche, source en haut"
 b.place("D16", 38.2, 1.75, rot=180)
@@ -517,9 +518,9 @@ b.place("TP5", 25.6, 2.4)
 b.track("VLED", [P("TP15", "1"), (P("TP15", "1")[0], Y_BUS)], 0.5)
 b.track("VLED", [P("TP5", "1"), (P("TP5", "1")[0], Y_BUS)], 0.4)
 for k in range(3):
-    b.via("VBAT", X_VBAT + 0.9 * k, Y_VBAT)
-b.track("VBAT", [P("TP2", "1"), P("Q4", "3"), (P("Q4", "3")[0], Y_VBAT), (X_VBAT + 1.8, Y_VBAT)], 0.8)
-b.track("VBAT", [(X_VBAT + 1.8, Y_VBAT), (P("D22", "2")[0] - 0.2, P("D22", "2")[1] + 0.3), P("D22", "2")], 0.8)
+    b.via("VBAT", X_VBAT + PAS_VBAT * k, Y_VBAT)
+b.track("VBAT", [P("TP2", "1"), P("Q4", "3"), (P("Q4", "3")[0], Y_VBAT), (X_VBAT + 2 * PAS_VBAT, Y_VBAT)], 0.8)
+b.track("VBAT", [(X_VBAT + 2 * PAS_VBAT, Y_VBAT), (P("D22", "2")[0] - 0.2, P("D22", "2")[1] + 0.3), P("D22", "2")], 0.8)
 for k in range(2):
     b.via("VBUS", 34.75 + 0.85 * k, 1.6)
 b.track("VBUS", [P("Q4", "1"), (34.75, 2.45), (34.75, 1.6), (35.6, 1.6), P("D16", "2")], 0.5)
@@ -786,24 +787,24 @@ assert min(x for x, _ in b.pads("J2", "MP")) > b.pad("J2", "1")[0], "J2 doit s'o
 # positif monte à gauche du connecteur ; VBAT repart à droite, vers ses trois vias.
 X_BATP = 23.2
 b.place("Q2", 26.0, 4.5, rot=180, bottom=True)
-b.place("Q6", 31.3, 4.5, rot=180, bottom=True)
+b.place("Q6", 31.8, 4.5, rot=180, bottom=True)
 q2d, q2s, q6s = P("Q2", "3"), P("Q2", "2"), P("Q6", "2")
 assert q2d[0] < q2s[0] and q2s[1] > 4.5 and q6s[1] > 4.5, "Q2, Q6 : drain à gauche, source en bas à droite"
 j21, j22 = P("J2", "1"), P("J2", "2")
 back("BATP", [(j21[0] - 1.2, j21[1]), (X_BATP, j21[1]), (X_BATP, q2d[1]), q2d], 0.8)
-back("VBAT", [q2s, (q2s[0] + 0.5, Y_VBAT), (X_VBAT + 1.8, Y_VBAT)], 0.8)
+back("VBAT", [q2s, (q2s[0] + 0.5, Y_VBAT), (X_VBAT + 2 * PAS_VBAT, Y_VBAT)], 0.8)
 back("VBAT", [q6s, (q6s[0], Y_VBAT)], 0.5)
 # Les deux autres résistances de la protection, à droite de Q6 : R46 couchée, dans l'axe de
 # la grille de Q6 ; R45 debout, entre elle et les trois vias de VBAT. Le pôle positif leur
 # arrive par une piste fine le long du haut. Aucun via.
-b.place("R46", 34.25, 3.62, rot=180, bottom=True)
-b.place("R45", 35.9, 4.45, rot=VR, bottom=True)
+b.place("R46", 34.8, 3.62, rot=180, bottom=True)
+b.place("R45", 36.45, 4.45, rot=VR, bottom=True)
 r461, r462, r451, r452 = P("R46", "1"), P("R46", "2"), P("R45", "1"), P("R45", "2")
 assert r462[0] < r461[0], "R46 : grille de Q6 à gauche, pôle positif à droite"
 assert r452[1] < r451[1], "R45 : pôle positif en haut, VBAT en bas"
 back("BATP", [(X_BATP, q2d[1]), (X_BATP + 0.5, 2.95), (r461[0], 2.95), r461, (r452[0] - 0.32, r461[1]), r452], 0.2)
 back("Q6_G", [P("Q6", "1"), r462])
-back("VBAT", [r451, (r451[0], 5.25), (r451[0] - 0.35, Y_VBAT), (X_VBAT + 1.8, Y_VBAT)], 0.25)
+back("VBAT", [r451, (r451[0], 5.25), (r451[0] - 0.35, Y_VBAT), (X_VBAT + 2 * PAS_VBAT, Y_VBAT)], 0.25)
 # Rappel de la grille de Q2 vers le pôle négatif : debout entre les deux transistors, sur la
 # liaison qui va de la grille de Q2 au drain de Q6. La grille reste ainsi au dos, sans via.
 # Posée plus à droite, elle obligeait cette liaison à faire le tour du connecteur de
@@ -812,9 +813,14 @@ back("VBAT", [r451, (r451[0], 5.25), (r451[0] - 0.35, Y_VBAT), (X_VBAT + 1.8, Y_
 b.place("R43", 28.45, 4.1, rot=V, bottom=True)
 r431, r432 = P("R43", "1"), P("R43", "2")
 assert r431[1] < r432[1], "R43 : grille en haut, pôle négatif en bas"
-back("Q2_G", [P("Q2", "1"), r431, (29.45, r431[1]), (29.45 + P("Q6", "3")[1] - r431[1], P("Q6", "3")[1]), P("Q6", "3")])
+# C42, en parallèle de R43, juste à sa droite : même grille en haut, même pôle négatif en bas.
+b.place("C42", 29.4, 4.1, rot=V, bottom=True)
+c421, c422 = P("C42", "1"), P("C42", "2")
+assert c421[1] < c422[1], "C42 : grille en haut, pôle négatif en bas"
+q63 = P("Q6", "3")
+back("Q2_G", [P("Q2", "1"), r431, c421, (q63[0] - (q63[1] - c421[1]), c421[1]), q63])
 batn_r43 = b.via("BATN", 27.65, 4.5)           # au bout des pattes de Q2, entre grille et source
-back("BATN", [batn_r43, (r432[0] - 0.3, r432[1]), r432])
+back("BATN", [batn_r43, (r432[0] - 0.3, r432[1]), r432, c422])
 # VBAT redescend entre les pastilles du connecteur, vers le pont du chargeur en face avant.
 X_VBAT2 = 28.6
 back("VBAT", [(X_VBAT2, Y_VBAT), (X_VBAT2, 16.4)], 0.8)

@@ -1,0 +1,11 @@
+# Ligne SDA de l'accéléromètre en court-circuit à la masse, batterie basse, bouton tenu.
+# attendu : batterie (VBAT)        | 2.80 V (broche 836 mV)         | 3.00 a 4.35 V (broche 895 a 1298 mV)       | NON <<<
+# attendu : bouton                 | 0 (appuye)
+# attendu : I2C interne, rappels   | SDA reste a 0, SCL 0.4 us
+# attendu : recherche impossible : SDA reste a 0
+@scenario sda-collee
+@scenario vbat-basse
+@scenario bouton
+a
+i2c
+acc

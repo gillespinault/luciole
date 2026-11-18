@@ -1,0 +1,120 @@
+=== C1  reseau de CE, USB present ===
+Attendu : charge permise si GPIO21 est relachee, a 1 ou sans 3,3 V ; arretee si GPIO21 est a 0 (CE vers 0,22 V) ;
+          la broche ne voit jamais plus de 3,3 V.
+T(C)  VBUS   GPIO21              CE     broche  I_broche(uA)  Icharge(mA)
+-10    4.5    relachee     4.241    2.61    0    407.4
+-10    4.5    a 0     0.18    0.001    -38    0
+-10    4.5    rappel 45k au 3,3v    4.244    3.3    0    407.4
+-10    4.5    poussee a 1     4.244    3.3    0    407.4
+-10    4.5    relachee, sans 3,3v    4.244    0.016    0    407.4
+-10    5    relachee     4.736    2.611    0    407.4
+-10    5    a 0     0.202    0.001    -42.7    0
+-10    5    rappel 45k au 3,3v    4.739    3.3    0    407.4
+-10    5    poussee a 1     4.739    3.3    0    407.4
+-10    5    relachee, sans 3,3v    4.739    0.018    0    407.4
+-10    5.5    relachee     5.232    2.612    0    407.4
+-10    5.5    a 0     0.224    0.001    -47.5    0
+-10    5.5    rappel 45k au 3,3v    5.234    3.3    0    407.4
+-10    5.5    poussee a 1     5.234    3.3    0    407.4
+-10    5.5    relachee, sans 3,3v    5.234    0.02    0    407.4
+25    4.5    relachee     4.361    2.762    0    407.4
+25    4.5    a 0     0.184    0.001    -38.8    0
+25    4.5    rappel 45k au 3,3v    4.364    3.3    0    407.4
+25    4.5    poussee a 1     4.364    3.3    0    407.4
+25    4.5    relachee, sans 3,3v    4.364    0.026    0    407.4
+25    5    relachee     4.856    2.763    0    407.4
+25    5    a 0     0.206    0.001    -43.5    0
+25    5    rappel 45k au 3,3v    4.859    3.3    0    407.4
+25    5    poussee a 1     4.859    3.3    0    407.4
+25    5    relachee, sans 3,3v    4.859    0.028    0    407.4
+25    5.5    relachee     5.352    2.764    0    407.4
+25    5.5    a 0     0.228    0.001    -48.3    0
+25    5.5    rappel 45k au 3,3v    5.351    3.3    0    407.4
+25    5.5    poussee a 1     5.353    3.3    0    407.4
+25    5.5    relachee, sans 3,3v    5.349    0.03    0    407.4
+60    4.5    relachee     4.455    2.95    0    407.4
+60    4.5    a 0     0.187    0.001    -39.6    0
+60    4.5    rappel 45k au 3,3v    4.455    3.3    0    407.4
+60    4.5    poussee a 1     4.456    3.3    0    407.4
+60    4.5    relachee, sans 3,3v    4.456    1.271    0    407.4
+60    5    relachee     4.952    2.951    0    407.4
+60    5    a 0     0.21    0.001    -44.4    0
+60    5    rappel 45k au 3,3v    4.952    3.3    0    407.4
+60    5    poussee a 1     4.952    3.3    0    407.4
+60    5    relachee, sans 3,3v    4.953    1.273    0    407.4
+60    5.5    relachee     5.448    2.952    0    407.4
+60    5.5    a 0     0.232    0.001    -49.1    0
+60    5.5    rappel 45k au 3,3v    5.448    3.3    0    407.4
+60    5.5    poussee a 1     5.449    3.3    0    407.4
+60    5.5    relachee, sans 3,3v    5.449    1.275    0    407.4
+--- C1 : USB absent, sur batterie, GPIO21 tiree au 3,3 V par son rappel interne de 45 kohm
+    Attendu : D25 empeche ce rappel de fuir vers VBUS (18 uA sans elle).
+avec D25 : courant sorti de la broche = 0.4 uA ; CE = 39.265 V ; broche = 3.282 V
+sans D25 : courant sorti de la broche = 21.8 uA ; CE = 2.216 V ; broche = 2.32 V
+--- C1, contre-epreuve : le niveau bas de CE est fixe par R47 / (R44 + R47). USB 5 V, GPIO21 a 0
+R47 = 4.7k : CE = 0.206 V, Icharge = 0 mA
+R47 = 10k : CE = 0.416 V, Icharge = 0 mA
+R47 = 47k : CE = 1.463 V, Icharge = 377 mA
+--- C1 : temps de reaction (C40 de 100 nF). GPIO21 passe a 0 a 20 ms et est relachee a 40 ms
+descente : CE passe sous 1,4 V en 0.83 ms ; montee : CE repasse 1,4 V en 3.3 ms et 2,475 V en 7.5 ms
+=== C2  courant de charge ===
+Attendu : 407 mA par defaut (R8 = 2,7 kohm), 907 mA si ISET est a 1 (R9 = 2,2 kohm en parallele).
+T(C)  ISET                Icharge(mA)  PROG   PROG_X
+-10    a 0     407.4    1    1
+-10    en l'air (r10)     407.4    1    1
+-10    a 1 (3,3 v)     907.4    1    0
+-10    a 1 (3,0 v)     907.4    1    0
+25    a 0     407.4    1    1
+25    en l'air (r10)     407.4    1    1
+25    a 1 (3,3 v)     907.4    1    0
+25    a 1 (3,0 v)     907.4    1    0
+60    a 0     407.4    1    1
+60    en l'air (r10)     407.4    1    1
+60    a 1 (3,3 v)     907.4    1    0
+60    a 1 (3,0 v)     907.4    1    0
+--- C2, contre-epreuve : le courant suit 1100 / R
+R8 = 2.7k, ISET a 0 : Icharge = 407.4 mA
+R8 = 2k, ISET a 0 : Icharge = 550 mA
+R8 = 5.4k, ISET a 0 : Icharge = 203.7 mA
+R9 = 2.2k, ISET a 1 : Icharge = 907.4 mA
+R9 = 1.1k, ISET a 1 : Icharge = 1407.4 mA
+=== C3  niveaux de CHRG (lue par GPIO19) et de STDBY (pastille TP13) ===
+etat                              CHRG   STDBY  VBUS
+en charge (cellule 3,7 v)     0.002    4.999    4.999
+charge finie (cellule 4,2 v)     3.3    0.003    5
+charge arretee par gpio21     3.3    5    5
+trop chaud (thermistance a 60 c)     3.3    5    5
+usb absent     3.3    0.011    0.011
+--- C3 : si STDBY etait reliee a une entree 3,3 V (diode de protection vers le 3,3 V), en charge, USB 5,5 V
+STDBY = 3.845 V, courant injecte dans le 3,3 V par R41 = 16.5 uA
+=== C4  pont de temperature ===
+Attendu (note du schema) : charge de 2 a 46 C. Seuils du TP4056 : 80 % et 45 % de VBUS (82 % et 43 % au pire).
+R11     VBUS   froid 80%  froid 82%  chaud 45%  chaud 43%   (C, temperature de la thermistance)
+Warning: source stepping failed
+5.6k    4.5    2.5    -0.8    46.3    48.9
+5.6k    5.5    2.5    -0.8    46.3    48.9
+Warning: source stepping failed
+4.7k    4.5    7    3.6    51.8    54.4
+4.7k    5.5    7    3.6    51.8    54.4
+Warning: source stepping failed
+6.8k    4.5    -2.4    -5.7    40.4    42.9
+Warning: source stepping failed
+6.8k    5.5    -2.4    -5.7    40.4    42.9
+--- C4 : rapport TEMP / VBUS et courant de charge selon la temperature de la thermistance (USB 5 V)
+T(C)   TEMP/VBUS   Icharge(mA)
+Warning: source stepping failed
+-10    0.868    0
+0    0.815    0
+2    0.803    37.8
+3    0.797    857.3
+10    0.749    721.7
+25    0.63    516.8
+40    0.502    443.2
+45    0.461    431.9
+46    0.453    376.1
+47    0.445    -454
+60    0.348    -184.5
+80    0.232    -53
+--- C4 : thermistance coupee, puis en court-circuit
+coupee : TEMP/VBUS = 0.973 (TEMP = 4.864 V), Icharge = 0 mA dans le modele
+court-circuit : TEMP/VBUS = 0 (TEMP = 0 V), Icharge = 0 mA dans le modele ; la fiche dit que TEMP a la masse desactive la surveillance : la vraie puce chargerait

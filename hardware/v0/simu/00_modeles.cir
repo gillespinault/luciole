@@ -1,0 +1,208 @@
+Luciole2 v0 - 00 : les modeles contre les fiches
+* tools/kicad ngspice -b v0/simu/00_modeles.cir
+*
+* Avant de croire une simulation, vérifier que chaque modèle redonne les
+* valeurs de sa fiche : seuil à 250 µA, résistance à l'état passant à deux
+* tensions de grille, diode de corps à 1 A, chute et fuite des Schottky.
+* Les valeurs attendues sont rappelées dans ce que le fichier affiche.
+
+.options tnom=25
+.include modeles/luciole.lib
+
+* --- DMP1045U (Q2, Q4), canal P -------------------------------------------
+* seuil : grille reliée au drain, 250 µA
+Ip1 p1d 0 dc 250u
+Xp1 p1d p1d 0 DMP1045U
+* résistance à l'état passant : source à 0 V, grille à -Vg, courant imposé
+Vp2g 0 p2g dc 4.5
+Ip2 p2d 0 dc 4
+Xp2 p2d p2g 0 DMP1045U
+* diode de corps : grille à la source, 1 A du drain vers la source
+Ip3 0 p3d dc 1
+Xp3 p3d 0 0 DMP1045U
+* fuite à l'état bloqué : grille à la source, drain à -Vds
+Vp4 0 p4d dc 8.4
+Xp4 p4d 0 0 DMP1045U
+
+* copies à seuil réglable, décalage nul : doivent donner les mêmes valeurs
+Ip5 p5d 0 dc 250u
+Xp5 p5d p5d 0 DMP1045U_SEUIL
+Vp6g 0 p6g dc 2.5
+Ip6 p6d 0 dc 3.5
+Xp6 p6d p6g 0 DMP1045U_SEUIL
+Vp7g 0 p7g dc 2.5
+Ip7 p7d 0 dc 3.5
+Xp7 p7d p7g 0 DMP1045U
+Iq5 q5d 0 dc 250u
+Xq5 q5d q5d 0 AO3401A_SEUIL
+* seuils aux extrêmes de la fiche, par le décalage dvto
+Ip8 p8d 0 dc 250u
+Xp8 p8d p8d 0 DMP1045U_SEUIL params: dvto=0.436
+Ip9 p9d 0 dc 250u
+Xp9 p9d p9d 0 DMP1045U_SEUIL params: dvto=-0.264
+Iq8 q8d 0 dc 250u
+Xq8 q8d q8d 0 AO3401A_SEUIL params: dvto=0.30
+Iq9 q9d 0 dc 250u
+Xq9 q9d q9d 0 AO3401A_SEUIL params: dvto=-0.50
+
+* --- AO3401A (Q6), canal P --------------------------------------------------
+Iq1 q1d 0 dc 250u
+Xq1 q1d q1d 0 AO3401A
+Vq2g 0 q2g dc 4.5
+Iq2 q2d 0 dc 3.5
+Xq2 q2d q2g 0 AO3401A
+Iq3 0 q3d dc 1
+Xq3 q3d 0 0 AO3401A
+
+* --- AO3400A (Q1, Q7), canal N, modèle AO3400 ------------------------------
+In1 0 n1d dc 250u
+Xn1 n1d n1d 0 AO3400A
+Vn2g n2g 0 dc 4.5
+In2 0 n2d dc 5
+Xn2 n2d n2g 0 AO3400A
+In3 n3d 0 dc 1
+Xn3 n3d 0 0 AO3400A
+
+* --- FS8205A (Q3), canal N, écrit à la main ---------------------------------
+If1 0 f1d dc 250u
+Xf1 f1d f1d 0 FS8205A
+Vf2g f2g 0 dc 4.5
+If2 0 f2d dc 3
+Xf2 f2d f2g 0 FS8205A
+If3 f3d 0 dc 6
+Xf3 f3d 0 0 FS8205A
+
+* --- DSK24 (D16, D22), écrit à la main --------------------------------------
+Id1 0 d1a dc 1
+D1 d1a 0 DSK24
+Vd2 d2k 0 dc 4
+D2 0 d2k DSK24
+Id3 0 d3a dc 2
+D3 d3a 0 DSK24_MAX
+
+* --- 1N4148WS (D25) ----------------------------------------------------------
+Ie1 0 e1a dc 1m
+De1 e1a 0 D1N4148WS
+
+.control
+set noaskquit
+set numdgt=4
+foreach t -10 25 60
+  option temp=$t
+  echo
+  echo "================ temperature $t C ================"
+  echo "--- DMP1045U (fiche a 25 C : seuil 0,30 / 0,55 / 1,0 V ; 45 mohm typ a 1,8 V 2,7 A ; 31 typ 45 max a 2,5 V 3,5 A ; 26 typ 31 max a 4,5 V 4 A ; diode 0,6 V a 1 A)"
+  op
+  let seuil = -v(p1d)
+  let diode = v(p3d)
+  let fuite_ua = -i(Vp4)*1e6
+  echo "seuil a 250 uA : $&seuil V ; diode de corps a 1 A : $&diode V ; fuite bloque sous 8,4 V : $&fuite_ua uA"
+  alter Vp2g dc = 1.8
+  alter Ip2 dc = 2.7
+  op
+  let r = -v(p2d)/2.7*1e3
+  echo "Rds a 1,8 V 2,7 A : $&r mohm"
+  alter Vp2g dc = 2.5
+  alter Ip2 dc = 3.5
+  op
+  let r = -v(p2d)/3.5*1e3
+  echo "Rds a 2,5 V 3,5 A : $&r mohm"
+  alter Vp2g dc = 3.0
+  alter Ip2 dc = 2
+  op
+  let r = -v(p2d)/2*1e3
+  echo "Rds a 3,0 V 2 A   : $&r mohm"
+  alter Vp2g dc = 4.5
+  alter Ip2 dc = 4
+  op
+  let r = -v(p2d)/4*1e3
+  echo "Rds a 4,5 V 4 A   : $&r mohm"
+
+  echo "--- AO3401A (fiche : seuil 0,5 / 0,9 / 1,3 V ; 60 typ 85 max a 2,5 V 2,5 A ; 47 typ 60 max a 4,5 V 3,5 A ; diode 0,7 V a 1 A)"
+  let seuil = -v(q1d)
+  let diode = v(q3d)
+  echo "seuil a 250 uA : $&seuil V ; diode de corps a 1 A : $&diode V"
+  alter Vq2g dc = 2.5
+  alter Iq2 dc = 2.5
+  op
+  let r = -v(q2d)/2.5*1e3
+  echo "Rds a 2,5 V 2,5 A : $&r mohm"
+  alter Vq2g dc = 4.5
+  alter Iq2 dc = 3.5
+  op
+  let r = -v(q2d)/3.5*1e3
+  echo "Rds a 4,5 V 3,5 A : $&r mohm"
+
+  echo "--- AO3400A par le modele AO3400 (fiche AO3400A : seuil 0,65 / 1,05 / 1,45 V ; 24 typ 48 max a 2,5 V 3 A ; 19 typ 32 max a 4,5 V 5 A ; diode 0,7 V a 1 A)"
+  let seuil = v(n1d)
+  let diode = -v(n3d)
+  echo "seuil a 250 uA : $&seuil V ; diode de corps a 1 A : $&diode V"
+  alter Vn2g dc = 2.5
+  alter In2 dc = 3
+  op
+  let r = v(n2d)/3*1e3
+  echo "Rds a 2,5 V 3 A : $&r mohm"
+  alter Vn2g dc = 4.5
+  alter In2 dc = 5
+  op
+  let r = v(n2d)/5*1e3
+  echo "Rds a 4,5 V 5 A : $&r mohm"
+
+  echo "--- FS8205A, une moitie (fiche : seuil 0,5 / 0,7 / 1,2 V ; 25 typ 31,5 max a 2,5 V 3 A ; 19,5 typ 25 max a 4,5 V 3 A ; diode 1,2 V max a 6 A)"
+  let seuil = v(f1d)
+  let diode = -v(f3d)
+  echo "seuil a 250 uA : $&seuil V ; diode de corps a 6 A : $&diode V"
+  alter Vf2g dc = 2.5
+  op
+  let r = v(f2d)/3*1e3
+  echo "Rds a 2,5 V 3 A : $&r mohm"
+  alter Vf2g dc = 4.5
+  op
+  let r = v(f2d)/3*1e3
+  echo "Rds a 4,5 V 3 A : $&r mohm"
+
+  echo "--- DSK24 (fiche : 0,37 V typ a 1 A, 0,55 V max a 2 A ; fuite sous 4 V : environ 8 uA typ a 25 C, 2,5 mA typ a 100 C)"
+  let vf1 = v(d1a)
+  let vf2 = v(d3a)
+  let fuite_ua = -i(Vd2)*1e6
+  echo "typique : $&vf1 V a 1 A ; fuite sous 4 V : $&fuite_ua uA ; variante MAX : $&vf2 V a 2 A"
+  alter Id1 dc = 0.1
+  op
+  let vf1 = v(d1a)
+  echo "typique : $&vf1 V a 0,1 A"
+  alter Id1 dc = 2
+  op
+  let vf1 = v(d1a)
+  echo "typique : $&vf1 V a 2 A"
+  alter Id1 dc = 1
+
+  echo "--- 1N4148WS (fiche : 0,715 V max a 1 mA)"
+  let vf = v(e1a)
+  echo "$&vf V a 1 mA"
+end
+option temp=25
+op
+echo
+echo "================ copies a seuil reglable, 25 C ================"
+let a = -v(p1d)
+let b = -v(p5d)
+let c = -v(p7d)/3.5*1e3
+let d = -v(p6d)/3.5*1e3
+echo "DMP1045U : seuil $&a V, copie $&b V ; Rds a 2,5 V : $&c mohm, copie $&d mohm"
+let a = -v(q1d)
+let b = -v(q5d)
+echo "AO3401A  : seuil $&a V, copie $&b V"
+let a = -v(p8d)
+let b = -v(p9d)
+echo "DMP1045U avec dvto = +0,436 puis -0,264 : seuil $&a V puis $&b V (fiche : 0,3 a 1,0 V)"
+let a = -v(q8d)
+let b = -v(q9d)
+echo "AO3401A  avec dvto = +0,30 puis -0,50   : seuil $&a V puis $&b V (fiche : 0,5 a 1,3 V)"
+option temp=100
+op
+let fuite_ma = -i(Vd2)*1e3
+echo
+echo "DSK24 a 100 C : fuite sous 4 V = $&fuite_ma mA (fiche : 2,5 mA typ, 20 mA max a 40 V)"
+quit
+.endc
+.end

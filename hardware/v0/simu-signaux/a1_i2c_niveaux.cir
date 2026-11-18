@@ -1,0 +1,143 @@
+Luciole2 v0 - A1 port Grove en I2C : niveaux en continu
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/a1_i2c_niveaux.cir
+*
+* Intention du schéma (circuit.py) : PORT_PU à 1, rappels R33 et R34 alimentés,
+* tampon U10 inactif. « La broche de la puce ne dépasse jamais 3,3 V, même si
+* l'accessoire tire la ligne à 5 V, et aucun courant n'est renvoyé dans le 3,3 V.
+* Les rappels I2C sont du côté de la puce. »
+*
+* Ce qu'on lit : les lignes RESULTAT. Limites à tenir :
+*   côté puce (fiche ESP32-C6) : bas < 0,825 V, haut > 2,475 V, jamais > 3,6 V ;
+*   côté accessoire (norme I2C) : bas < 0,3 × son alimentation, haut > 0,7 × ;
+*     soit 0,99 V et 2,31 V pour un accessoire en 3,3 V, 1,5 V et 3,5 V en 5 V.
+
+.include modeles/modeles.lib
+.include port_grove.inc
+
+* acc  : 0 accessoire à rappels vers 3,3 V ; 1 vers 5,0 V ; 2 sans rappel
+* tire : 0 personne (niveau haut) ; 1 la puce tire à 0 ; 2 l'accessoire tire à 0
+.param acc=0 tire=0
+.param racc0=4.7k
+.param vacc={acc == 1 ? 5.0 : 3.3}
+.param racc={acc == 2 ? 1e12 : racc0}
+* courant d'entrée de l'accessoire : 1 µA par ligne (la norme I2C admet 10 µA)
+.param ifuite=1u
+* sortie de l'accessoire quand il tire : 133 Ω (0,4 V à 3 mA), ou un niveau bas
+* imposé volacc (la norme I2C admet 0,4 V)
+.param ronacc=133 volacc=0
+.param v33v=3.3
+* le rail des LED alimente l'accessoire : 5,0 V si ses rappels sont en 5 V
+.param vledv={acc == 1 ? 5.0 : 4.5}
+
+V33   v33 0 {v33v}
+VLED  vled 0 {vledv}
+* PORT_PU (GPIO15) poussée à 1
+Vpuo  pu_out 0 1
+Vpue  pu_oe 0 1
+XPU   port_pu v33 0 pu_out pu_oe ESPPIN
+* IO1 (GPIO1) et IO2 (GPIO2) : sorties à drain ouvert, mêmes commandes
+Vioo  io_out 0 0
+Vioe  io_oe 0 {tire == 1 ? 1 : 0}
+XIO1  io1p v33 0 io_out io_oe ESPPIN
+Vii1  io1p io1 0
+XIO2  io2p v33 0 io_out io_oe ESPPIN
+Vii2  io2p io2 0
+* accessoire : rappels, fuite d'entrée, sortie à drain ouvert (0,4 V à 3 mA : 133 Ω)
+Vacc  vacc 0 {vacc}
+Ra1   port_1 vacc {racc}
+Ra2   port_2 vacc {racc}
+If1   port_1 0 {ifuite}
+If2   port_2 0 {ifuite}
+Vat   acct 0 {tire == 2 ? 1 : 0}
+Sa1   port_1 volx acct 0 SWACC
+Sa2   port_2 volx acct 0 SWACC
+Vvol  volx 0 {volacc}
+.model SWACC sw(vt=0.5 vh=0.1 ron={ronacc} roff=1e12)
+
+.control
+set noaskquit
+echo "RESULTAT A1 niveaux ; acc (0 rappels 3,3 V, 1 rappels 5 V, 2 sans rappel) ; tire (0 personne, 1 puce, 2 accessoire) ; Q (0 typique, 1 seuil haut) ; IO1 ; PORT_1 ; IO2 ; PORT_2 (V) ; courant de U10 vers la ligne (A) ; courant du 3,3 V (A)"
+foreach q 0 1
+  foreach a 0 1 2
+    foreach t 0 1 2
+      alterparam fort = $q
+      alterparam acc = $a
+      alterparam tire = $t
+      reset
+      op
+      let i36 = i(Vi36)
+      let i33 = -i(V33)
+      echo "RESULTAT A1 niveaux ; $a ; $t ; $q ; $&v(io1) ; $&v(port_1) ; $&v(io2) ; $&v(port_2) ; $&i36 ; $&i33"
+      destroy all
+    end
+  end
+end
+
+echo "RESULTAT A1 variation ; accessoire sans rappel, personne ne tire, entree de l'accessoire a 10 uA ; Q ; PORT_1 ; PORT_2 (V)"
+foreach q 0 1
+  alterparam fort = $q
+  alterparam acc = 2
+  alterparam tire = 0
+  alterparam ifuite = 10u
+  reset
+  op
+  echo "RESULTAT A1 variation fuite 10 uA ; $q ; $&v(port_1) ; $&v(port_2)"
+  destroy all
+end
+alterparam ifuite = 1u
+alterparam fort = 0
+
+echo "RESULTAT A1 variation ; R31 = R32 change, l'accessoire tire (rappels 3,3 V) : le bas cote puce doit suivre 0,7 mA x R ; R ; IO2 (V)"
+foreach r 1 220 1k
+  alterparam r31 = $r
+  alterparam r32 = $r
+  alterparam acc = 0
+  alterparam tire = 2
+  reset
+  op
+  echo "RESULTAT A1 variation R31/R32 ; $r ; $&v(io2)"
+  destroy all
+end
+alterparam r31 = 220
+alterparam r32 = 220
+
+echo "RESULTAT A1 variation ; rappels de l'accessoire plus forts (vers 5 V), la puce tire : le bas cote accessoire doit monter ; rappel (ohms) ; PORT_2 ; IO2 (V)"
+foreach r 10k 4.7k 1.5k
+  alterparam racc0 = $r
+  alterparam acc = 1
+  alterparam tire = 1
+  reset
+  op
+  echo "RESULTAT A1 variation rappel accessoire ; $r ; $&v(port_2) ; $&v(io2)"
+  destroy all
+end
+alterparam racc0 = 4.7k
+
+echo "RESULTAT A1 pire cas du niveau bas cote puce ; l'accessoire tire et sa sortie reste a 0,4 V, Q a seuil haut ; 3,3 V (V) ; IO2 (V) ; limite 0,25 x le 3,3 V (V)"
+foreach v 3.3 2.97
+  alterparam v33v = $v
+  alterparam fort = 1
+  alterparam acc = 0
+  alterparam tire = 2
+  alterparam volacc = 0.4
+  alterparam ronacc = 1
+  reset
+  op
+  let lim = 0.25*$v
+  echo "RESULTAT A1 pire cas bas ; $v ; $&v(io2) ; $&lim"
+  destroy all
+end
+
+echo "RESULTAT A1 variation ; meme pire cas avec des rappels R33 = R34 plus forts (3,3 V nominal) ; R33 (ohms) ; IO2 (V) ; limite (V)"
+foreach r 10k 4.7k 2.2k 1k
+  alterparam v33v = 3.3
+  alterparam r33 = $r
+  alterparam r34 = $r
+  reset
+  op
+  echo "RESULTAT A1 variation pire cas bas ; $r ; $&v(io2) ; 0.825"
+  destroy all
+end
+quit
+.endc
+.end

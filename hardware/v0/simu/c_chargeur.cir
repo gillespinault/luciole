@@ -1,0 +1,320 @@
+Luciole2 v0 - C : commande du chargeur (TP4056)
+* tools/kicad ngspice -b v0/simu/c_chargeur.cir
+*
+* C1  réseau de CE : D25, R44, C40, Q7 (AO3400A, grille au 3,3 V), R47, GPIO21
+* C2  courant de charge : R8, et R9 mise en parallèle par Q1 (GPIO14)
+* C3  niveaux de CHRG (rappel R13 au 3,3 V) et de STDBY (rappel R41 à VBUS)
+* C4  pont de température R11, R12, thermistance 10 kΩ B3380
+*
+* Le TP4056 est un modèle de comportement (voir modeles/luciole.lib) : PROG à
+* 1 V, courant de charge = 1100 x courant de PROG, charge permise si CE
+* dépasse 1,4 V (seuil supposé) et si TEMP est entre 45 % et 80 % de VBUS.
+* La cellule est à 3,7 V sauf mention. Entrée numérique sous 3,3 V : 0 sûr
+* sous 0,825 V, 1 sûr au-dessus de 2,475 V.
+
+.options tnom=25 rshunt=1e11 noinit
+.include modeles/luciole.lib
+.include commun.inc
+
+* GPIO21 commandée dans le temps, pour la mesure des temps de réaction :
+* conductance de 30 ohms vers la masse quand V(g21) vaut 1, rien quand il vaut 0.
+Vg21 g21 0 dc 0
+Bg21 chg_inh 0 I = V(chg_inh)*V(g21)/30
+
+.control
+set noaskquit
+define v3(x) floor(x*1e3+0.5)/1e3
+define ua(x) floor(x*1e7+0.5)/10
+define ma(x) floor(x*1e4+0.5)/10
+
+* ------------------------------------------------------------------ C1
+echo
+echo "=== C1  reseau de CE, USB present ==="
+echo "Attendu : charge permise si GPIO21 est relachee, a 1 ou sans 3,3 V ; arretee si GPIO21 est a 0 (CE vers 0,22 V) ;"
+echo "          la broche ne voit jamais plus de 3,3 V."
+echo "T(C)  VBUS   GPIO21              CE     broche  I_broche(uA)  Icharge(mA)"
+foreach t -10 25 60
+  foreach vu 4.5 5 5.5
+    foreach e 1 2 3 4 5
+      reset
+      option temp=$t
+      alter Vctl_usb dc = 1
+      alter Vusb dc = $vu
+      alter Rusb = 1m
+      alter Vcell dc = 3.7
+      if $e = 1
+        set nom = "relachee          "
+      end
+      if $e = 2
+        set nom = "a 0               "
+        alter Vinh dc = 0
+        alter Rinh = 30
+      end
+      if $e = 3
+        set nom = "rappel 45k au 3,3v"
+        alter Vinh dc = 3.3
+        alter Rinh = 45k
+      end
+      if $e = 4
+        set nom = "poussee a 1       "
+        alter Vinh dc = 3.3
+        alter Rinh = 30
+      end
+      if $e = 5
+        set nom = "relachee, sans 3,3v"
+        alter Vctl_3v3 dc = 0
+      end
+      op
+      let a = v3(v(ce))
+      let b = v3(v(chg_inh))
+      let c = ua(-i(Vinh))
+      let d = ma(i(v.xu2.vsens)*1100)
+      echo "$t    $vu    $nom    $&a    $&b    $&c    $&d"
+    end
+  end
+end
+
+echo
+echo "--- C1 : USB absent, sur batterie, GPIO21 tiree au 3,3 V par son rappel interne de 45 kohm"
+echo "    Attendu : D25 empeche ce rappel de fuir vers VBUS (18 uA sans elle)."
+foreach d 1 0
+  alterparam d25 = $d
+  reset
+  option temp=25
+  alter Vctl_usb dc = 0
+  alter Vcell dc = 3.7
+  alter Vinh dc = 3.3
+  alter Rinh = 45k
+  op
+  let c = ua(i(Vinh)*-1)
+  let a = v3(v(ce))
+  let b = v3(v(chg_inh))
+  if $d = 1
+    echo "avec D25 : courant sorti de la broche = $&c uA ; CE = $&a V ; broche = $&b V"
+  else
+    echo "sans D25 : courant sorti de la broche = $&c uA ; CE = $&a V ; broche = $&b V"
+  end
+end
+alterparam d25 = 1
+
+echo
+echo "--- C1, contre-epreuve : le niveau bas de CE est fixe par R47 / (R44 + R47). USB 5 V, GPIO21 a 0"
+foreach r 4.7k 10k 47k
+  alterparam r47 = $r
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Rusb = 1m
+  alter Vcell dc = 3.7
+  alter Vinh dc = 0
+  alter Rinh = 30
+  op
+  let a = v3(v(ce))
+  let d = ma(i(v.xu2.vsens)*1100)
+  echo "R47 = $r : CE = $&a V, Icharge = $&d mA"
+end
+alterparam r47 = 4.7k
+
+echo
+echo "--- C1 : temps de reaction (C40 de 100 nF). GPIO21 passe a 0 a 20 ms et est relachee a 40 ms"
+reset
+option temp=25
+alter Vctl_usb dc = 1
+alter Rusb = 1m
+alter Vcell dc = 3.7
+alter @Vg21[pwl] = [ 0 0 20m 0 20.001m 1 40m 1 40.001m 0 ]
+tran 5u 120m 0 50u
+meas tran tbas when v(ce)=1.4 fall=1
+meas tran thaut when v(ce)=1.4 rise=1
+meas tran thaut2 when v(ce)=2.475 rise=1
+let a = floor((tbas-20m)*1e5+0.5)/100
+let b = floor((thaut-40m)*1e4+0.5)/10
+let c = floor((thaut2-40m)*1e4+0.5)/10
+echo "descente : CE passe sous 1,4 V en $&a ms ; montee : CE repasse 1,4 V en $&b ms et 2,475 V en $&c ms"
+
+* ------------------------------------------------------------------ C2
+echo
+echo "=== C2  courant de charge ==="
+echo "Attendu : 407 mA par defaut (R8 = 2,7 kohm), 907 mA si ISET est a 1 (R9 = 2,2 kohm en parallele)."
+echo "T(C)  ISET                Icharge(mA)  PROG   PROG_X"
+foreach t -10 25 60
+  foreach e 1 2 3 4
+    reset
+    option temp=$t
+    alter Vctl_usb dc = 1
+    alter Rusb = 1m
+    alter Vcell dc = 3.7
+    if $e = 1
+      set nom = "a 0               "
+    end
+    if $e = 2
+      set nom = "en l'air (r10)    "
+      alter Riset = 1e12
+    end
+    if $e = 3
+      set nom = "a 1 (3,3 v)       "
+      alter Viset dc = 3.3
+    end
+    if $e = 4
+      set nom = "a 1 (3,0 v)       "
+      alter Viset dc = 3.0
+    end
+    op
+    let d = ma(i(v.xu2.vsens)*1100)
+    let a = v3(v(prog))
+    let b = v3(v(prog_x))
+    echo "$t    $nom    $&d    $&a    $&b"
+  end
+end
+echo "--- C2, contre-epreuve : le courant suit 1100 / R"
+foreach r 2.7k 2k 5.4k
+  alterparam r8 = $r
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Rusb = 1m
+  alter Vcell dc = 3.7
+  op
+  let d = ma(i(v.xu2.vsens)*1100)
+  echo "R8 = $r, ISET a 0 : Icharge = $&d mA"
+end
+alterparam r8 = 2.7k
+foreach r 2.2k 1.1k
+  alterparam r9 = $r
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Rusb = 1m
+  alter Vcell dc = 3.7
+  alter Viset dc = 3.3
+  op
+  let d = ma(i(v.xu2.vsens)*1100)
+  echo "R9 = $r, ISET a 1 : Icharge = $&d mA"
+end
+alterparam r9 = 2.2k
+
+* ------------------------------------------------------------------ C3
+echo
+echo "=== C3  niveaux de CHRG (lue par GPIO19) et de STDBY (pastille TP13) ==="
+echo "etat                              CHRG   STDBY  VBUS"
+foreach e 1 2 3 4 5
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Rusb = 1m
+  alter Vcell dc = 3.7
+  if $e = 1
+    set nom = "en charge (cellule 3,7 v)        "
+  end
+  if $e = 2
+    set nom = "charge finie (cellule 4,2 v)     "
+    alter Vcell dc = 4.2
+  end
+  if $e = 3
+    set nom = "charge arretee par gpio21        "
+    alter Vinh dc = 0
+    alter Rinh = 30
+  end
+  if $e = 4
+    set nom = "trop chaud (thermistance a 60 c) "
+    alter Vtth dc = 60
+  end
+  if $e = 5
+    set nom = "usb absent                       "
+    alter Vctl_usb dc = 0
+  end
+  op
+  let a = v3(v(chrg))
+  let b = v3(v(stdby))
+  let c = v3(v(vbus))
+  echo "$nom    $&a    $&b    $&c"
+end
+echo "--- C3 : si STDBY etait reliee a une entree 3,3 V (diode de protection vers le 3,3 V), en charge, USB 5,5 V"
+alterparam stdbypin = 1
+reset
+option temp=25
+alter Vctl_usb dc = 1
+alter Vusb dc = 5.5
+alter Rusb = 1m
+alter Vcell dc = 3.7
+op
+let b = v3(v(stdby))
+let c = ua(@r41[i])
+echo "STDBY = $&b V, courant injecte dans le 3,3 V par R41 = $&c uA"
+alterparam stdbypin = 0
+
+* ------------------------------------------------------------------ C4
+echo
+echo "=== C4  pont de temperature ==="
+echo "Attendu (note du schema) : charge de 2 a 46 C. Seuils du TP4056 : 80 % et 45 % de VBUS (82 % et 43 % au pire)."
+echo "R11     VBUS   froid 80%  froid 82%  chaud 45%  chaud 43%   (C, temperature de la thermistance)"
+foreach r 5.6k 4.7k 6.8k
+  foreach vu 4.5 5.5
+    alterparam r11 = $r
+    reset
+    option temp=25
+    alter Vctl_usb dc = 1
+    alter Vusb dc = $vu
+    alter Rusb = 1m
+    alter Vcell dc = 3.7
+    dc Vtth -20 80 0.05
+    let ratio = v(temp)/v(vbus)
+    meas dc t80 when ratio=0.80
+    meas dc t82 when ratio=0.82
+    meas dc t45 when ratio=0.45
+    meas dc t43 when ratio=0.43
+    let a = floor(t80*10+0.5)/10
+    let b = floor(t82*10+0.5)/10
+    let c = floor(t45*10+0.5)/10
+    let d = floor(t43*10+0.5)/10
+    echo "$r    $vu    $&a    $&b    $&c    $&d"
+  end
+end
+alterparam r11 = 5.6k
+
+echo "--- C4 : rapport TEMP / VBUS et courant de charge selon la temperature de la thermistance (USB 5 V)"
+echo "T(C)   TEMP/VBUS   Icharge(mA)"
+reset
+option temp=25
+alter Vctl_usb dc = 1
+alter Rusb = 1m
+alter Vcell dc = 3.7
+dc Vtth -20 80 1
+let ratio = v(temp)/v(vbus)
+let ich = i(v.xu2.vsens)*1100
+foreach tt -10 0 2 3 10 25 40 45 46 47 60 80
+  let k = $tt + 20
+  let a = v3(ratio[k])
+  let d = ma(ich[k])
+  echo "$tt    $&a    $&d"
+end
+
+echo "--- C4 : thermistance coupee, puis en court-circuit"
+foreach e 1 2
+  if $e = 1
+    alterparam thcoupe = 1
+    alterparam thcc = 0
+  else
+    alterparam thcoupe = 0
+    alterparam thcc = 1
+  end
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Rusb = 1m
+  alter Vcell dc = 3.7
+  op
+  let a = v3(v(temp)/v(vbus))
+  let b = v3(v(temp))
+  let d = ma(i(v.xu2.vsens)*1100)
+  if $e = 1
+    echo "coupee : TEMP/VBUS = $&a (TEMP = $&b V), Icharge = $&d mA dans le modele"
+  else
+    echo "court-circuit : TEMP/VBUS = $&a (TEMP = $&b V), Icharge = $&d mA dans le modele ; la fiche dit que TEMP a la masse desactive la surveillance : la vraie puce chargerait"
+  end
+end
+alterparam thcoupe = 0
+alterparam thcc = 0
+quit
+.endc
+.end

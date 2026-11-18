@@ -1,0 +1,154 @@
+Luciole2 v0 - B3 : debranchement de l'USB sous charge
+* tools/kicad ngspice -b v0/simu/b3_debranchement.cir
+*
+* La carte démarre sur batterie, l'USB est branché à 1 ms, puis retiré à 40 ms
+* (contact ouvert en 1 µs) pendant que VSYS débite. Tant que VBUS n'est pas
+* redescendu, Q4 reste bloqué et c'est D22 qui porte le courant : VSYS tombe
+* une chute de diode sous VBAT. VBUS se vide dans R5 + R6 (2,5 kΩ) et dans le
+* pont de température ; C1 et C39 (11 µF) le retiennent.
+*
+* La cellule a 0,1 Ω (cellule, protection du pack, fils, contacts). La charge
+* sur VSYS est un courant constant ; une vraie charge (convertisseur des LED)
+* tire davantage quand VSYS baisse.
+* Le 3,3 V est un régulateur idéal à 0,15 V de chute : son creux est indicatif.
+* Le superviseur U5 (TLV803EA30) remet la puce à zéro sous 3,0 V.
+*
+* Colonnes :
+*   VSYSusb   VSYS sous USB, juste avant le retrait
+*   VSYSmin   plus basse tension de VSYS après le retrait
+*   VSYSfin   VSYS une fois Q4 passant (100 ms après le retrait)
+*   creux     VSYSfin - VSYSmin, en mV : ce que la bascule coûte en plus
+*   tD22      durée pendant laquelle D22 porte plus de 50 mA, en ms
+*   3V3min    plus basse tension du 3,3 V (régulateur idéal)
+*   tDET      temps mis par VBUS_DET pour passer sous 0,825 V (0 sûr), en ms
+
+.options tnom=25 rshunt=1e11 method=gear itl4=200 chgtol=1e-12 abstol=1e-9 vntol=1e-5 noinit
+.include modeles/luciole.lib
+.include commun.inc
+
+.control
+set noaskquit
+define r3(x) floor(x*1e3+0.5)/1e3
+define r1(x) floor(x*10+0.5)/10
+
+echo
+echo "=== B3  retrait de l'USB, schema tel quel ==="
+echo "T(C)  Vcell  Isys(A)  VSYSusb  VSYSmin  VSYSfin  creux(mV)  tD22(ms)  3V3min  tDET(ms)"
+foreach t -10 25 60
+  foreach vc 3.3 3.5 3.7 4.2
+    foreach il 0.1 0.5
+      reset
+      option temp=$t
+      alter Vcell dc = $vc
+      alter Vctl_isys dc = $il
+      alter @Vctl_usb[pwl] = [ 0 0 1m 0 1.001m 1 40m 1 40.001m 0 ]
+      save v(vsys) v(vbat) v(vbus) v(vbus_det) v(p3v3) @d22[id] i(Viq4) i(lcell)
+      tran 1u 140m 0 20u
+      let w = time ge 40m
+      let n = length(time)-1
+      meas tran vs0 find v(vsys) at=39.9m
+      let a = r3(vs0)
+      let b = r3(vecmin(v(vsys)*w + 100*(1-w)))
+      let c = r3(v(vsys)[n])
+      let d = r1((v(vsys)[n] - vecmin(v(vsys)*w + 100*(1-w)))*1e3)
+      let td = integ((@d22[id] gt 0.05)*w)
+      let e = r1(td[n]*1e3)
+      let f = r3(vecmin(v(p3v3)*w + 100*(1-w)))
+      let tdet = integ((v(vbus_det) gt 0.825)*w)
+      let g = r1(tdet[n]*1e3)
+      echo "$t    $vc    $il    $&a    $&b    $&c    $&d    $&e    $&f    $&g"
+    end
+  end
+end
+
+echo
+echo "=== contre-epreuves et variantes, 25 C, cellule 3,5 V, 0,5 A ==="
+echo "variante :  VSYSmin  VSYSfin  creux(mV)  tD22(ms)  3V3min  tDET(ms)"
+foreach k 1 2 3 4 5 6 7
+  alterparam kc = 1
+  alterparam r5 = 1k
+  alterparam r6 = 1.5k
+  alterparam d22max = 0
+  alterparam d16max = 0
+  alterparam dvto_q4 = 0
+  if $k = 1
+    set nom = "schema tel quel"
+  end
+  if $k = 2
+    set nom = "condensateurs de 10 uf a 50 %"
+    alterparam kc = 0.5
+  end
+  if $k = 3
+    set nom = "r5 + r6 divisees par 5 (200 + 300 ohm)"
+    alterparam r5 = 200
+    alterparam r6 = 300
+  end
+  if $k = 4
+    set nom = "r5 + r6 multipliees par 4 (4 k + 6 k)"
+    alterparam r5 = 4k
+    alterparam r6 = 6k
+  end
+  if $k = 5
+    set nom = "d22 au pire de la fiche (0,55 v a 2 a)"
+    alterparam d22max = 1
+  end
+  if $k = 6
+    set nom = "seuil de q4 a 1,0 v"
+    alterparam dvto_q4 = -0.264
+  end
+  if $k = 7
+    set nom = "seuil de q4 a 0,3 v"
+    alterparam dvto_q4 = 0.436
+  end
+  reset
+  option temp=25
+  alter Vcell dc = 3.5
+  alter Vctl_isys dc = 0.5
+  alter @Vctl_usb[pwl] = [ 0 0 1m 0 1.001m 1 40m 1 40.001m 0 ]
+  save v(vsys) v(vbat) v(vbus) v(vbus_det) v(p3v3) @d22[id] i(Viq4) i(lcell)
+  tran 1u 240m 0 20u
+  let w = time ge 40m
+  let n = length(time)-1
+  let b = r3(vecmin(v(vsys)*w + 100*(1-w)))
+  let c = r3(v(vsys)[n])
+  let d = r1((v(vsys)[n] - vecmin(v(vsys)*w + 100*(1-w)))*1e3)
+  let td = integ((@d22[id] gt 0.05)*w)
+  let e = r1(td[n]*1e3)
+  let f = r3(vecmin(v(p3v3)*w + 100*(1-w)))
+  let tdet = integ((v(vbus_det) gt 0.825)*w)
+  let g = r1(tdet[n]*1e3)
+  echo "$nom :  $&b    $&c    $&d    $&e    $&f    $&g"
+end
+alterparam r5 = 1k
+alterparam r6 = 1.5k
+alterparam dvto_q4 = 0
+
+echo
+echo "=== allure du retrait, 25 C, cellule 3,5 V, 0,5 A (temps compte depuis le retrait) ==="
+echo "t(ms)  VBUS   VSYS   VBAT   I_D22(A)  I_Q4(A)  VBUS_DET"
+reset
+option temp=25
+alter Vcell dc = 3.5
+alter Vctl_isys dc = 0.5
+alter @Vctl_usb[pwl] = [ 0 0 1m 0 1.001m 1 40m 1 40.001m 0 ]
+save v(vsys) v(vbat) v(vbus) v(vbus_det) v(p3v3) @d22[id] i(Viq4) i(lcell)
+tran 1u 140m 0 20u
+foreach tt -0.1 0.02 0.1 0.5 1 2 5 10 15 20 25 30 40 60 100
+  let ta = 40m + $tt*1m
+  meas tran a find v(vbus) at=$&ta
+  meas tran b find v(vsys) at=$&ta
+  meas tran c find v(vbat) at=$&ta
+  meas tran d find @d22[id] at=$&ta
+  meas tran e find i(Viq4) at=$&ta
+  meas tran f find v(vbus_det) at=$&ta
+  let a = r3(a)
+  let b = r3(b)
+  let c = r3(c)
+  let d = r3(d)
+  let e = r3(e)
+  let f = r3(f)
+  echo "$tt    $&a    $&b    $&c    $&d    $&e    $&f"
+end
+quit
+.endc
+.end

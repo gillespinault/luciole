@@ -1,0 +1,310 @@
+Luciole2 v0 - A5 : branchement de la batterie a chaud
+* tools/kicad ngspice -b v0/simu/a5_branchement.cir
+*
+* Simulations dans le temps. Le contact de la batterie se ferme en 0,1 µs. Quand
+* la carte est déjà sous USB, on la laisse d'abord se poser 3 ms : le calcul du
+* point de départ peut tomber sur un équilibre instable (Q2 à demi bloqué) que
+* la carte réelle quitte en moins d'une milliseconde.
+* La cellule est une source de tension derrière « rcell » (cellule,
+* circuit de protection du pack, fils et contacts : 0,1 Ω par défaut) et 50 nH.
+* Une cellule à l'envers est une source négative.
+*
+* Lecture des colonnes :
+*   Ipic       plus fort courant dans la batterie, en ampères
+*   VBATmin    plus basse tension de VBAT par rapport à GND. La broche BAT du
+*              TP4056 ne doit pas descendre sous -0,3 V (fiche, valeurs limites)
+*   tQ2        durée pendant laquelle plus de 0,1 A traverse Q2, en µs
+*   tneg       durée pendant laquelle VBAT est sous -0,3 V, en µs
+*   Idiode     plus fort courant dans la diode parasite supposée du TP4056
+*   VGS2, VDS2, VGS6   extrêmes atteints (limites : 8 V, 12 V, 12 V)
+*   fin        état à la fin de la simulation
+
+.options tnom=25 rshunt=1e11 method=gear itl4=200 chgtol=1e-12 abstol=1e-9 vntol=1e-5 noinit
+.include modeles/luciole.lib
+.include commun.inc
+
+.control
+set noaskquit
+define r3(x) floor(x*1e3+0.5)/1e3
+define r1(x) floor(x*10+0.5)/10
+
+* ------------------------------------------------------------------ A5a
+echo
+echo "=== A5a  cellule a l'endroit, carte eteinte, sans USB. Q3 se ferme a 200 us ==="
+echo "T(C)  Vcell  Ipic(A)  VGS6min  VGS6max  VBATmax  fin: VBAT  VSYS  chuteQ2(mV)"
+foreach t -10 25 60
+  foreach vc 3.0 4.2
+    reset
+    option temp=$t
+    alter Vctl_usb dc = 0
+    alter Vcell dc = $vc
+    alter @Vctl_cell[pulse] = [ 0 1 10u 100n 100n 1 2 ]
+    alter @Vctl_q3[pulse] = [ 0 1 200u 20u 20u 1 2 ]
+    tran 20n 1.5m 0 1u
+    let ic = i(lcell)
+    let vgs6 = v(q6_g)-v(vbat)
+    let n = length(ic)-1
+    let a = r3(vecmax(ic))
+    let b = r3(vecmin(vgs6))
+    let c = r3(vecmax(vgs6))
+    let d = r3(vecmax(v(vbat)))
+    let e = r3(v(vbat)[n])
+    let f = r3(v(vsys)[n])
+    let g = r1((v(batp)[n]-v(vbat)[n])*1e3)
+    echo "$t    $vc    $&a    $&b    $&c    $&d    $&e    $&f    $&g"
+  end
+end
+
+* ------------------------------------------------------------------ A5b
+echo
+echo "=== A5b  cellule a l'endroit branchee alors que l'USB est la (VBAT au repos avant le contact) ==="
+echo "Q6 ne doit pas devenir passant : VGS6 doit rester au-dessus de son seuil (-0,5 V au pire de la fiche)."
+echo "fin, 3 ms apres le contact : la cellule doit recevoir le courant de charge (0,407 A), Q2 passant."
+echo "T(C)  Vcell  rcell  seuilQ6  VBATavant  Ipic(A)  VGS6min  fin: Icharge(A)  chuteQ2(mV)  VGS2"
+foreach t -10 25 60
+  foreach vc 3.0 3.7
+    foreach rc 0.03 0.1
+      foreach dv 0 0.30
+        alterparam rcell = $rc
+        alterparam dvto_q6 = $dv
+        reset
+        option temp=$t
+        alter Vctl_usb dc = 1
+        alter Vcell dc = $vc
+        alter @Vctl_cell[pulse] = [ 0 1 3m 100n 100n 1 2 ]
+        tran 20n 6m 0 2u
+        let ic = -i(lcell)
+        let vgs6 = v(q6_g)-v(vbat)
+        let w = time ge 2.99m
+        let n = length(ic)-1
+        meas tran vb0 find v(vbat) at=2.99m
+        let v0 = r3(vb0)
+        let a = r3(vecmax(ic*w))
+        let b = r3(vecmin(vgs6*w))
+        let e = r3(ic[n])
+        let g = r1((v(vbat)[n]-v(batp)[n])*1e3)
+        let h = r3(v(q2_g)[n]-v(vbat)[n])
+        if $dv = 0
+          echo "$t    $vc    $rc    modele    $&v0    $&a    $&b    $&e    $&g    $&h"
+        else
+          echo "$t    $vc    $rc    0,5 V     $&v0    $&a    $&b    $&e    $&g    $&h"
+        end
+      end
+    end
+  end
+end
+alterparam rcell = 0.1
+alterparam dvto_q6 = 0
+
+* ------------------------------------------------------------------ A5c
+echo
+echo "=== A5c  cellule a l'envers, carte eteinte et condensateurs vides, sans USB ==="
+echo "T(C)  Vcell  Ipic(A)  VBATmin  VBATmax  VDS2min  VGS2min  VGS2max  VGS6min  fin: I(uA)"
+foreach t -10 25 60
+  reset
+  option temp=$t
+  alter Vctl_usb dc = 0
+  alter Vctl_q3 dc = 0
+  alter Vcell dc = -4.2
+  alter @Vctl_cell[pulse] = [ 0 1 10u 100n 100n 1 2 ]
+  tran 20n 2m 0 1u
+  let ic = -i(lcell)
+  let vgs2 = v(q2_g)-v(vbat)
+  let vgs6 = v(q6_g)-v(vbat)
+  let vds2 = v(batp)-v(vbat)
+  let n = length(ic)-1
+  let a = r3(vecmax(abs(ic)))
+  let b = r3(vecmin(v(vbat)))
+  let c = r3(vecmax(v(vbat)))
+  let d = r3(vecmin(vds2))
+  let e = r3(vecmin(vgs2))
+  let f = r3(vecmax(vgs2))
+  let g = r3(vecmin(vgs6))
+  let h = r1(ic[n]*1e6)
+  echo "$t    4.2    $&a    $&b    $&c    $&d    $&e    $&f    $&g    $&h"
+end
+
+* ------------------------------------------------------------------ A5d
+echo
+echo "=== A5d  cellule a l'envers branchee alors que l'USB est la ==="
+echo "Attendu (commentaire de R46) : Q6 bloque Q2 en moins d'une microseconde, avant que VBAT passe sous la masse."
+echo "T(C)  Vcell  rcell  Ipic(A)  VBATmin  tQ2(us)  tneg(us)  Idiode(A)  VGS2min  VDS2min  VGS6min  fin: VBAT  I(uA)"
+foreach t -10 25 60
+  foreach vc 3.0 4.2
+    foreach rc 0.03 0.1 0.3 1
+      alterparam rcell = $rc
+      reset
+      option temp=$t
+      alter Vctl_usb dc = 1
+      alter Vcell dc = -$vc
+      alter @Vctl_cell[pulse] = [ 0 1 3m 100n 100n 1 2 ]
+      save v(vbat) v(batp) v(batn) v(q2_g) v(q6_g) i(lcell) @d.xu2.dsub[id]
+      tran 5n 3.4m 0 500n
+      let ic = -i(lcell)
+      let vgs2 = v(q2_g)-v(vbat)
+      let vgs6 = v(q6_g)-v(vbat)
+      let vds2 = v(batp)-v(vbat)
+      let w = time ge 2.99m
+      let tq = integ(ic gt 0.1)
+      let tn = integ(v(vbat) lt -0.3)
+      let n = length(ic)-1
+      let a = r1(vecmax(ic*w))
+      let b = r3(vecmin(v(vbat)*w + 100*(1-w)))
+      let c = r1(tq[n]*1e6)
+      let d = r1(tn[n]*1e6)
+      let e = r1(vecmax(@d.xu2.dsub[id]*w))
+      let f = r3(vecmin(vgs2*w))
+      let g = r3(vecmin(vds2*w))
+      let h = r3(vecmin(vgs6*w))
+      let i = r3(v(vbat)[n])
+      let j = r1(ic[n]*1e6)
+      echo "$t    $vc    $rc    $&a    $&b    $&c    $&d    $&e    $&f    $&g    $&h    $&i    $&j"
+    end
+  end
+end
+alterparam rcell = 0.1
+
+* ------------------------------------------------------------------ A5e
+echo
+echo "=== A5e  echange de batterie sans USB : la bonne cellule (3,7 V) est retiree a 10 us, ==="
+echo "===      une cellule a l'envers est branchee a 1 ms, les condensateurs encore charges ==="
+echo "T(C)  rcell  VBATavant  VSYSavant  Ipic(A)  VBATmin  VSYSmin  tQ2(us)  tneg(us)  VGS2min  VDS2min  fin: VBAT  I(uA)"
+foreach t -10 25 60
+  foreach rc 0.1 0.3
+    alterparam rcell = $rc
+    reset
+    option temp=$t
+    alter Vctl_usb dc = 0
+    alter Vcell dc = 3.7
+    alter Vcell2 dc = -4.2
+    alter @Vctl_cell[pulse] = [ 1 0 10u 100n 100n 1 2 ]
+    alter @Vctl_cell2[pulse] = [ 0 1 1m 100n 100n 1 2 ]
+    save v(vbat) v(batp) v(batn) v(q2_g) v(q6_g) i(lcell2) v(vsys)
+    tran 5n 1.4m 0 50n
+    let ic = -i(lcell2)
+    let vgs2 = v(q2_g)-v(vbat)
+    let vds2 = v(batp)-v(vbat)
+    let tq = integ(ic gt 0.1)
+    let tn = integ(v(vbat) lt -0.3)
+    let n = length(ic)-1
+    meas tran vb0 find v(vbat) at=0.99m
+    meas tran vs0 find v(vsys) at=0.99m
+    let v0 = r3(vb0)
+    let s0 = r3(vs0)
+    let a = r1(vecmax(ic))
+    let b = r3(vecmin(v(vbat)))
+    let b2 = r3(vecmin(v(vsys)))
+    let c = r1(tq[n]*1e6)
+    let d = r1(tn[n]*1e6)
+    let f = r3(vecmin(vgs2))
+    let g = r3(vecmin(vds2))
+    let i = r3(v(vbat)[n])
+    let j = r1(ic[n]*1e6)
+    echo "$t    $rc    $&v0    $&s0    $&a    $&b    $&b2    $&c    $&d    $&f    $&g    $&i    $&j"
+  end
+end
+alterparam rcell = 0.1
+
+* ------------------------------------------------------------------ A5f
+echo
+echo "=== A5f  USB present : la cellule a l'envers est retiree a 10 us. Q2 doit redevenir passant (role de R45) ==="
+echo "R45    BATP remonte a VBAT-0,3 V en (ms)   fin a 30 ms: BATP  VGS2  VGS6"
+foreach r 1Meg 1e13
+  alterparam r45 = $r
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Vcell dc = -4.2
+  alter @Vctl_cell[pulse] = [ 1 0 10u 100n 100n 1 2 ]
+  tran 1u 30m 0 20u
+  let ec = v(vbat)-v(batp)
+  let tb = integ(ec gt 0.3)
+  let n = length(ec)-1
+  let a = r3(tb[n]*1e3)
+  let b = r3(v(batp)[n])
+  let c = r3(v(q2_g)[n]-v(vbat)[n])
+  let d = r3(v(q6_g)[n]-v(vbat)[n])
+  echo "$r    $&a    $&b    $&c    $&d"
+end
+alterparam r45 = 1Meg
+
+* ------------------------------------------------------------------ A5g
+echo
+echo "=== A5g  cellule a l'endroit deja en place, l'USB est branche a 10 us ==="
+echo "Le courant de charge ne doit pas rendre Q6 passant ; fin a 5 ms : charge en cours, Q2 passant."
+echo "T(C)  Vcell  ISET  VGS6min  fin: Icharge(A)  VBAT  chuteQ2(mV)  VGS2"
+foreach t -10 25 60
+  foreach vc 3.0 3.7
+    foreach is 0 3.3
+      reset
+      option temp=$t
+      alter Vcell dc = $vc
+      alter Viset dc = $is
+      alter @Vctl_usb[pulse] = [ 0 1 10u 1u 1u 1 2 ]
+      tran 50n 5m 0 5u
+      let ic = -i(lcell)
+      let vgs6 = v(q6_g)-v(vbat)
+      let n = length(ic)-1
+      let b = r3(vecmin(vgs6))
+      let e = r3(ic[n])
+      let f = r3(v(vbat)[n])
+      let g = r1((v(vbat)[n]-v(batp)[n])*1e3)
+      let h = r3(v(q2_g)[n]-v(vbat)[n])
+      echo "$t    $vc    $is    $&b    $&e    $&f    $&g    $&h"
+    end
+  end
+end
+
+* ------------------------------------------------------------------ A5h
+echo
+echo "=== A5h  cellule a l'envers deja en place, l'USB est branche a 10 us ; Q3 se ferme a 2 ms ==="
+echo "T(C)  Ipic(A)  VBATmin  VDS2min  VGS2min  VGS6min  fin a 5 ms: VBAT  BATP  I(uA)"
+foreach t -10 25 60
+  reset
+  option temp=$t
+  alter Vcell dc = -4.2
+  alter @Vctl_usb[pulse] = [ 0 1 10u 1u 1u 1 2 ]
+  alter @Vctl_q3[pulse] = [ 0 1 2m 20u 20u 1 2 ]
+  tran 50n 5m 0 5u
+  let ic = -i(lcell)
+  let vgs2 = v(q2_g)-v(vbat)
+  let vgs6 = v(q6_g)-v(vbat)
+  let vds2 = v(batp)-v(vbat)
+  let n = length(ic)-1
+  let a = r3(vecmax(abs(ic)))
+  let b = r3(vecmin(v(vbat)))
+  let d = r3(vecmin(vds2))
+  let e = r3(vecmin(vgs2))
+  let g = r3(vecmin(vgs6))
+  let i = r3(v(vbat)[n])
+  let k = r3(v(batp)[n])
+  let j = r1(ic[n]*1e6)
+  echo "$t    $&a    $&b    $&d    $&e    $&g    $&i    $&k    $&j"
+end
+
+* ------------------------------------------------------------------ A5i
+echo
+echo "=== A5i  deux etats stables sous USB : en partant de Q2 bloque (cellule a l'envers), la tension ==="
+echo "===      de la cellule monte lentement de -4,2 a +4,2 V (0,4 s) sans que l'USB soit retire ==="
+echo "Q6 ne lache Q2 que lorsque la cellule arrive a moins d'un seuil de Q6 sous VBAT."
+echo "T(C)  Q2 reste bloque jusqu'a Vcell (V)   Icell a +3,0 V (A)   Icell a +4,0 V (A)"
+foreach t -10 25 60
+  reset
+  option temp=$t
+  alter Vctl_usb dc = 1
+  alter Vcell dc = -4.2
+  alter @Vcell[pwl] = [ 0 -4.2 0.4 4.2 ]
+  tran 20u 0.4 0 100u
+  let ic = -i(lcell)
+  let vc = -4.2 + 8.4*time/0.4
+  meas tran tdev when ic=0.1 rise=1
+  meas tran i30 find ic at=0.342857
+  meas tran i40 find ic at=0.390476
+  let a = r3(-4.2 + 8.4*tdev/0.4)
+  let b = r3(i30)
+  let c = r3(i40)
+  echo "$t    $&a    $&b    $&c"
+end
+quit
+.endc
+.end

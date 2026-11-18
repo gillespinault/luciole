@@ -1,0 +1,253 @@
+Luciole2 v0 - A2 port Grove : ruban de LED sur la broche 2, tampon U10 actif
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/a2_ruban.cir
+*
+* Intention du schéma (circuit.py) : PORT_PU à 0, U10 pousse la broche 2 au niveau
+* du rail. « Q9 est alors bloqué, son drain étant au-dessus de sa source : le
+* tampon et la broche de la puce ne se contrarient pas. » U11 : « son rail
+* d'écrêtage reste isolé, sur son propre condensateur » (C41, 100 nF).
+*
+* Montage : IO2 émet des bits à 800 kHz (période 1,25 µs ; bit 0 : 0,32 µs à l'état
+* haut ; bit 1 : 0,70 µs ; fronts de 2 ns), sous 3,3 V. Le connecteur voit le câble
+* (cb) et l'entrée de la première LED du ruban, alimentée par le rail.
+*
+* Ce qu'on lit :
+*   régime établi (C41 chargé) : niveau haut au connecteur contre le seuil d'une
+*     LED, 0,65 × le rail ; fronts 10-90 % ; durée des bits vue au-dessus du seuil
+*     (la LED demande 0,25 à 0,40 µs pour un 0, 0,65 à 1,0 µs pour un 1) ; plus
+*     haute tension sur IO2 (limite 3,6 V).
+*   courants dans Q9, dans la broche IO2 et dans U10 : pointes, moyenne, repos.
+*   variations : R36, temps de propagation de U10, câble.
+*   première trame, C41 vide : nombre de bits émis avant que le niveau haut
+*     atteigne le seuil de la LED, avec le schéma tel quel puis trois corrections.
+
+.include modeles/modeles.lib
+.include port_grove.inc
+
+.param vledv=4.5
+.param v33v=3.3
+.param cb=100p
+* motif : 0 = bits 0 et 1 alternés ; 1 = que des bits 0 (trame sombre, pire cas pour C41)
+.param motif=0
+.param t1h={motif == 1 ? 0.32u : 0.70u}
+* C41 : part chargé (régime établi) ou vide (première trame)
+.param c41vide=0
+* parade sans toucher à la carte : IO1 poussée à 1 pendant l'usage du ruban, ce qui
+* précharge C41 par Q8, la broche 1 du port et U11 (2,84 V d'après A3)
+.param io1haut=0
+* correction essayée : diode du rail des LED vers le rail d'écrêtage (rdiode 1 = montée)
+.param rdiode=1e12
+
+V33   v33 0 {v33v}
+VLED  vled 0 {vledv}
+* PORT_PU (GPIO15) tenue à 0
+Vpuo  pu_out 0 0
+Vpue  pu_oe 0 1
+XPU   port_pu v33 0 pu_out pu_oe ESPPIN
+* IO1 (GPIO1) laissée en entrée, ou poussée à 1 (io1haut)
+Vio1  io1c 0 {io1haut}
+XIO1  io1p v33 0 io1c io1c ESPPIN
+Vii1  io1p io1 0
+* IO2 (GPIO2) : la donnée
+Vdat  dat 0 pwl(0 0 0.1u 0 0.102u 1 0.42u 1 0.422u 0 1.35u 0 1.352u 1 {1.35u + t1h} 1 {1.352u + t1h} 0 2.6u 0) r=0.1u
+Vun   un 0 1
+XIO2  io2p v33 0 dat un ESPPIN
+Vii2  io2p io2 0
+* ruban : câble, entrée de la première LED
+Cb2   port_2 0 {cb}
+Cb1   port_1 0 {cb}
+XLED  port_2 vled 0 LEDDIN
+* correction essayée
+Dfix  vled dfx D4148
+Rfix  dfx port_ecret {rdiode}
+.model D4148 d(is=2.5n n=1.8 rs=0.6 cjo=1p)
+
+.ic v(port_ecret)={c41vide == 1 ? (io1haut == 1 ? 2.84 : 0) : (vledv - 0.43)}
+
+.control
+set noaskquit
+* La donnée se répète toutes les 2,5 µs : bit 0 de 0,1 à 0,42 µs, bit 1 à partir de
+* 1,35 µs. On mesure la troisième répétition : bit 0 de 5,1 à 5,42 µs, bit 1 à 6,35 µs.
+echo "RESULTAT A2 regime etabli ; rail (V) ; Q (0 typique, 1 seuil haut) ; haut au connecteur (V) ; seuil LED 0,65 x rail (V) ; bas (V) ; montee 10-90 % (s) ; descente 90-10 % (s) ; bit 0 au-dessus du seuil (s) ; bit 1 au-dessus du seuil (s) ; IO2 max (V)"
+foreach q 0 1
+  foreach v 4.5 5.0
+    alterparam fort = $q
+    alterparam vledv = $v
+    reset
+    let thr = 0.65*$v
+    let v10 = 0.1*$v
+    let v90 = 0.9*$v
+    tran 0.2n 7.6u
+    meas tran vhaut find v(port_2) at=5.4u
+    meas tran vbas find v(port_2) at=6.3u
+    meas tran tm1 when v(port_2)=$&v10 td=5.0u rise=1
+    meas tran tm2 when v(port_2)=$&v90 td=5.0u rise=1
+    meas tran td1 when v(port_2)=$&v90 td=5.0u fall=1
+    meas tran td2 when v(port_2)=$&v10 td=5.0u fall=1
+    meas tran ts1 when v(port_2)=$&thr td=5.0u rise=1
+    meas tran ts2 when v(port_2)=$&thr td=5.0u fall=1
+    meas tran tu1 when v(port_2)=$&thr td=6.2u rise=1
+    meas tran tu2 when v(port_2)=$&thr td=6.2u fall=1
+    let tm = tm2 - tm1
+    let tdd = td2 - td1
+    let larg0 = ts2 - ts1
+    let larg1 = tu2 - tu1
+    meas tran io2max max v(io2)
+    echo "RESULTAT A2 regime etabli ; $v ; $q ; $&vhaut ; $&thr ; $&vbas ; $&tm ; $&tdd ; $&larg0 ; $&larg1 ; $&io2max"
+    destroy all
+  end
+end
+
+* Courants. Le sens positif de Q9 va du port vers la puce. Les pointes sont surtout
+* la charge des capacités (celles de Q9 et du câble) ; le conflit entre U10 et la
+* broche se lit dans les valeurs au repos, qui doivent être nulles, et dans la moyenne.
+echo "RESULTAT A2 courants ; rail (V) ; Q ; Q9 : pointe (A) ; moyenne sur une periode (A) ; au repos IO2 haut (A) ; au repos IO2 bas (A) ; broche IO2 : pointe entrante (A) ; pointe sortante (A) ; au repos IO2 haut, sortant (A) ; U10 : pointe (A) ; au repos haut (A) ; au repos bas (A)"
+foreach q 0 1
+  foreach v 4.5 5.0
+    alterparam fort = $q
+    alterparam vledv = $v
+    reset
+    tran 0.2n 7.6u
+    let iq9 = i(Viq9)
+    let aq9 = abs(iq9)
+    meas tran q9p max aq9 from=5.1u to=7.6u
+    meas tran q9m avg iq9 from=5.1u to=7.6u
+    meas tran q9h find iq9 at=7.0u
+    meas tran q9b find iq9 at=6.3u
+    let ipin = i(Vii2)
+    meas tran pmin min ipin from=5.1u to=7.6u
+    meas tran pmax max ipin from=5.1u to=7.6u
+    meas tran ph find ipin at=7.0u
+    let pent = -pmin
+    let iu = i(Vi36)
+    let au = abs(iu)
+    meas tran up max au from=5.1u to=7.6u
+    meas tran uh find iu at=7.0u
+    meas tran ub find iu at=6.3u
+    echo "RESULTAT A2 courants ; $v ; $q ; $&q9p ; $&q9m ; $&q9h ; $&q9b ; $&pent ; $&pmax ; $&ph ; $&up ; $&uh ; $&ub"
+    destroy all
+  end
+end
+alterparam fort = 0
+
+echo "RESULTAT A2 variation ; rail 5,0 V ; R36 (ohms) ; temps de propagation de U10 (s) ; cable (F) ; montee 10-90 % (s) ; bit 0 au-dessus du seuil (s) ; pointe de U10 (A) ; moyenne dans Q9 (A)"
+foreach r 22 220 1k
+  foreach p 3n 7.5n
+    foreach c 30p 100p 200p 400p
+      alterparam vledv = 5.0
+      alterparam r36 = $r
+      alterparam u10_tpd = $p
+      alterparam cb = $c
+      reset
+      tran 0.2n 7.6u
+      let tm1 = -1
+      let tm2 = -1
+      let ts1 = -1
+      let ts2 = -1
+      meas tran tm1 when v(port_2)=0.5 td=5.0u rise=1
+      meas tran tm2 when v(port_2)=4.5 td=5.0u rise=1
+      meas tran ts1 when v(port_2)=3.25 td=5.0u rise=1
+      meas tran ts2 when v(port_2)=3.25 td=5.0u fall=1
+      let tm = -1
+      let larg = -1
+      if tm2 > 0
+        let tm = tm2 - tm1
+      end
+      if ts1 > 0
+        let larg = ts2 - ts1
+      end
+      let au = abs(i(Vi36))
+      meas tran up max au from=5.1u to=7.6u
+      let iq9 = i(Viq9)
+      meas tran q9m avg iq9 from=5.1u to=7.6u
+      echo "RESULTAT A2 variation ; $r ; $p ; $c ; $&tm ; $&larg ; $&up ; $&q9m"
+      destroy all
+    end
+  end
+end
+alterparam r36 = 220
+alterparam u10_tpd = 3n
+alterparam cb = 100p
+
+* montage : 1 = C41 de 100 nF comme au schéma ; 2 = 100 nF et diode du rail vers C41 ;
+*           3 = C41 de 1 nF ; 4 = C41 non monté (1 pF) ;
+*           5 = schéma inchangé, IO1 poussée à 1 par le firmware
+echo "RESULTAT A2 premiere trame, C41 vide ; rail (V) ; motif (0 alterne, 1 que des bits 0) ; montage (1 schema, 2 schema + diode du rail vers C41, 3 C41 = 1 nF, 4 C41 non monte, 5 schema + IO1 a 1) ; delai entre le debut du premier bit et le premier niveau haut valable (s) ; soit en bits ; haut atteint au 25e bit (V) ; au 97e bit (V) ; seuil (V)"
+foreach v 4.5 5.0
+  foreach m 0 1
+    foreach k 1 2 3 4 5
+      alterparam vledv = $v
+      alterparam motif = $m
+      alterparam c41vide = 1
+      alterparam c41 = 100n
+      alterparam rdiode = 1e12
+      alterparam io1haut = 0
+      if $k = 5
+        alterparam io1haut = 1
+      end
+      if $k = 2
+        alterparam rdiode = 1
+      end
+      if $k = 3
+        alterparam c41 = 1n
+      end
+      if $k = 4
+        alterparam c41 = 1p
+      end
+      reset
+      let thr = 0.65*$v
+      * pas borné à 1 ns : au-delà, un cas (rail 5 V, bits 0, IO1 à 1) ne converge pas
+      tran 1n 126u 0 1n
+      let t1 = -1
+      meas tran t1 when v(port_2)=$&thr rise=1
+      meas tran h24 max v(port_2) from=30u to=32.5u
+      meas tran h96 max v(port_2) from=120u to=122.5u
+      let nb = -1
+      let d1 = -1
+      if t1 > 0
+        let d1 = t1 - 0.1u
+        let nb = d1/1.25u
+      end
+      echo "RESULTAT A2 premiere trame ; $v ; $m ; $k ; $&d1 ; $&nb ; $&h24 ; $&h96 ; $&thr"
+      destroy all
+    end
+  end
+end
+
+alterparam io1haut = 0
+
+* Les deux corrections ensemble : diode en série avec R36 (voir A3 et A4) et C41
+* non monté. On vérifie que le ruban reçoit toujours un signal correct. Avec la
+* diode, la fin de la montée est lente : le niveau est relevé à la fin du bit 0.
+echo "RESULTAT A2 avec les corrections (diode en serie avec R36, C41 non monte) ; rail (V) ; Q ; cable (F) ; niveau a la fin du bit 0 (V) ; seuil (V) ; bas (V) ; bit 0 au-dessus du seuil (s) ; bit 1 (s) ; premiere trame : delai entre le debut du premier bit et le seuil (s)"
+foreach q 0 1
+  foreach v 4.5 5.0
+    foreach c 30p 100p 200p 400p
+      alterparam fort = $q
+      alterparam vledv = $v
+      alterparam cb = $c
+      alterparam motif = 0
+      alterparam c41vide = 1
+      alterparam c41 = 1p
+      alterparam rdiode = 1e12
+      alterparam dserie = 1
+      reset
+      let thr = 0.65*$v
+      tran 0.2n 7.6u
+      meas tran vhaut find v(port_2) at=5.42u
+      meas tran vbas find v(port_2) at=6.3u
+      meas tran ts1 when v(port_2)=$&thr td=5.0u rise=1
+      meas tran ts2 when v(port_2)=$&thr td=5.0u fall=1
+      meas tran tu1 when v(port_2)=$&thr td=6.2u rise=1
+      meas tran tu2 when v(port_2)=$&thr td=6.2u fall=1
+      meas tran t1 when v(port_2)=$&thr rise=1
+      let d1 = t1 - 0.1u
+      let larg0 = ts2 - ts1
+      let larg1 = tu2 - tu1
+      echo "RESULTAT A2 avec les corrections ; $v ; $q ; $c ; $&vhaut ; $&thr ; $&vbas ; $&larg0 ; $&larg1 ; $&d1"
+      destroy all
+    end
+  end
+end
+quit
+.endc
+.end

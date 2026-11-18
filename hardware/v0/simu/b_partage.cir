@@ -1,0 +1,281 @@
+Luciole2 v0 - B : partage entre USB et batterie, cas B1, B2 et B4
+* tools/kicad ngspice -b v0/simu/b_partage.cir
+*
+* D16 amène l'USB au nœud système VSYS. Q4 (DMP1045U, grille sur VBUS) y relie
+* la batterie quand l'USB est absent ; D22 fait le pont pendant la bascule.
+* R5 et R6 (1 kΩ + 1,5 kΩ) tirent VBUS à la masse et donnent VBUS_DET.
+* Points de repos seulement ; le débranchement est dans b3_debranchement.cir.
+*
+* La cellule est ici une source parfaite (résistance de 1 mΩ) : les chutes
+* affichées sont celles de la carte seule.
+*   chuteQ4 = VBAT - VSYS      VGS_Q4 = VBUS - VSYS
+*   I_Q4 : courant de VBAT vers VSYS dans Q4 (négatif : de VSYS vers VBAT)
+*   Icell : courant fourni par la cellule (négatif : elle est chargée)
+*   Entrée numérique de l'ESP32-C6 sous 3,3 V : 0 sûr sous 0,825 V, 1 sûr
+*   au-dessus de 2,475 V.
+* Sous USB, avec une cellule sous 3,4 V environ, deux points de repos existent
+* (voir A5i). Si Icell vaut 0 pour une cellule à 3,0 V dans B2, le calcul est
+* tombé sur l'autre : le cas A5g de a5_branchement.cir fait foi.
+
+.options tnom=25 rshunt=1e11
+.include modeles/luciole.lib
+.include commun.inc
+
+.control
+set noaskquit
+define mv(x) floor(x*1e4+0.5)/10
+define v3(x) floor(x*1e3+0.5)/1e3
+define ua(x) floor(x*1e7+0.5)/10
+define ma(x) floor(x*1e5+0.5)/100
+alterparam rcell = 1m
+
+foreach t -10 25 60
+  echo
+  echo "######################## temperature $t C ########################"
+  reset
+  option temp=$t
+
+  * ------------------------------------------------------------------ B1
+  echo
+  echo "=== B1  batterie seule ==="
+  echo "Vcell  I(A)  VSYS   chute totale(mV)  chuteQ2(mV)  chuteQ3(mV)  chuteQ4(mV)  VGS_Q4   I_D22(mA)  VBUS"
+  alter Vctl_usb dc = 0
+  foreach vc 3.0 3.3 3.7 4.2
+    alter Vcell dc = $vc
+    foreach il 0.1 1 2
+      alter Vctl_isys dc = $il
+      op
+      let a = v3(v(vsys))
+      let b = mv($vc - v(vsys))
+      let c = mv(v(batp)-v(vbat))
+      let d = mv(-v(batn))
+      let e = mv(v(vbat)-v(vsys))
+      let f = v3(v(vbus)-v(vsys))
+      let g = ma(@d22[id])
+      let h = v3(v(vbus))
+      echo "$vc    $il    $&a    $&b    $&c    $&d    $&e    $&f    $&g    $&h"
+    end
+  end
+  echo "--- au repos (aucune charge sur VSYS) : ce que l'etage d'alimentation prend a la cellule"
+  alter Vctl_isys dc = 0
+  foreach vc 3.0 4.2
+    alter Vcell dc = $vc
+    op
+    let a = ua(-i(Vcell))
+    let b = ua(-@d16[id])
+    let c = v3(v(vbus))
+    echo "Vcell $vc : Icell = $&a uA, dont fuite de D16 vers VBUS = $&b uA ; VBUS = $&c V"
+  end
+
+  * ------------------------------------------------------------------ B2
+  echo
+  echo "=== B2  USB present (5 V derriere 0,2 ohm de cable), chargeur en marche ==="
+  echo "Vcell  Isys(A)  VBUS   VSYS   VGS_Q4  I_Q4(uA)  I_D22(uA)  Icell(A)"
+  alter Vctl_usb dc = 1
+  alter Vusb dc = 5
+  foreach vc 3.0 3.7 4.2
+    alter Vcell dc = $vc
+    foreach il 0.1 1 2
+      alter Vctl_isys dc = $il
+      op
+      let a = v3(v(vbus))
+      let b = v3(v(vsys))
+      let c = v3(v(vbus)-v(vsys))
+      let d = ua(i(Viq4))
+      let e = ua(@d22[id])
+      let f = v3(-i(Vcell))
+      echo "$vc    $il    $&a    $&b    $&c    $&d    $&e    $&f"
+    end
+  end
+  echo "--- chargeur arrete (GPIO21 a 0) : ce qui reste entre le noeud systeme et la cellule"
+  echo "Vcell  I_Q4(uA)  I_D22(uA)  Icell(uA)   (negatif : la cellule recoit du courant)"
+  alter Vinh dc = 0
+  alter Rinh = 30
+  alter Vctl_isys dc = 0.1
+  foreach vc 3.0 3.7 4.2
+    alter Vcell dc = $vc
+    op
+    let d = ua(i(Viq4))
+    let e = ua(@d22[id])
+    let f = ua(-i(Vcell))
+    echo "$vc    $&d    $&e    $&f"
+  end
+  alter Rinh = 1e12
+  echo "--- source USB faible : la batterie complete-t-elle par D22 ? (cellule 4,2 V, 1 A sur VSYS)"
+  echo "Vusb  VBUS   VSYS   VGS_Q4  I_Q4(mA)  I_D22(mA)  Icell(A)"
+  alter Vcell dc = 4.2
+  alter Vctl_isys dc = 1
+  foreach vu 5.25 5 4.75 4.5 4.3
+    alter Vusb dc = $vu
+    op
+    let a = v3(v(vbus))
+    let b = v3(v(vsys))
+    let c = v3(v(vbus)-v(vsys))
+    let d = ma(i(Viq4))
+    let e = ma(@d22[id])
+    let f = v3(-i(Vcell))
+    echo "$vu    $&a    $&b    $&c    $&d    $&e    $&f"
+  end
+  alter Vusb dc = 5
+  alter Vctl_isys dc = 0
+end
+
+* ------------------------------------------------------------------ B2, diodes au pire
+echo
+echo "######################## B2, diodes au pire de la fiche ########################"
+echo "=== USB present, chargeur arrete, cellule pleine (4,2 V) : courant qui entre dans la cellule par la fuite de D22 ==="
+echo "D22      T(C)  I_D22(uA)  I_Q4(uA)  Icell(uA)"
+foreach m 0 1
+  foreach t -10 25 45 60
+    alterparam d22max = $m
+    reset
+    option temp=$t
+    alter Vctl_usb dc = 1
+    alter Vcell dc = 4.2
+    alter Vinh dc = 0
+    alter Rinh = 30
+    alter Vctl_isys dc = 0.1
+    op
+    let d = ua(i(Viq4))
+    let e = ua(@d22[id])
+    let f = ua(-i(Vcell))
+    if $m = 0
+      echo "typique  $t    $&e    $&d    $&f"
+    else
+      echo "maximum  $t    $&e    $&d    $&f"
+    end
+  end
+end
+alterparam d22max = 0
+
+* ------------------------------------------------------------------ B4
+echo
+echo "######################## B4  USB absent, fuite inverse de D16 ########################"
+echo "=== fuite imposee (D16 sans fuite propre), 25 C, 0,5 A sur VSYS ==="
+echo "Vcell  fuite(mA)  VBUS   VBUS_DET  lecture   VGS_Q4  chuteQ4(mV)  I_D22(mA)  VSYS"
+foreach vc 3.3 4.2
+  foreach fu 0 0.2m 0.5m 1m 2m 5m
+    alterparam d16fuite = 0
+    reset
+    option temp=25
+    alter Vctl_usb dc = 0
+    alter Vcell dc = $vc
+    alter Vctl_isys dc = 0.5
+    alter Ifuite dc = $fu
+    op
+    let a = v3(v(vbus))
+    let b = v3(v(vbus_det))
+    let c = v3(v(vbus)-v(vsys))
+    let d = mv(v(vbat)-v(vsys))
+    let e = ma(@d22[id])
+    let f = v3(v(vsys))
+    let g = ma($fu)
+    if v(vbus_det) < 0.825
+      echo "$vc    $&g    $&a    $&b    0 sur     $&c    $&d    $&e    $&f"
+    else
+      if v(vbus_det) > 2.475
+        echo "$vc    $&g    $&a    $&b    1 sur     $&c    $&d    $&e    $&f"
+      else
+        echo "$vc    $&g    $&a    $&b    indefini  $&c    $&d    $&e    $&f"
+      end
+    end
+  end
+end
+alterparam d16fuite = 1
+
+echo
+echo "=== fuite propre du modele de D16 selon la temperature (cellule 4,2 V, 0,5 A sur VSYS) ==="
+echo "D16      T(C)  fuite(mA)  VBUS   VBUS_DET  lecture   VGS_Q4  chuteQ4(mV)"
+foreach m 0 1
+  foreach t -10 25 45 60 85
+    alterparam d16max = $m
+    reset
+    option temp=$t
+    alter Vctl_usb dc = 0
+    alter Vcell dc = 4.2
+    alter Vctl_isys dc = 0.5
+    op
+    let a = v3(v(vbus))
+    let b = v3(v(vbus_det))
+    let c = v3(v(vbus)-v(vsys))
+    let d = mv(v(vbat)-v(vsys))
+    let g = floor(-@d16[id]*1e6+0.5)/1e3
+    if $m = 0
+      set nom = "typique"
+    else
+      set nom = "maximum"
+    end
+    if v(vbus_det) < 0.825
+      echo "$nom  $t    $&g    $&a    $&b    0 sur     $&c    $&d"
+    else
+      if v(vbus_det) > 2.475
+        echo "$nom  $t    $&g    $&a    $&b    1 sur     $&c    $&d"
+      else
+        echo "$nom  $t    $&g    $&a    $&b    indefini  $&c    $&d"
+      end
+    end
+  end
+end
+alterparam d16max = 0
+
+* ---------------------------------------------------------------- contre-épreuves
+echo
+echo "######################## contre-epreuves, 25 C ########################"
+echo "--- B1 : la chute de Q4 depend de sa grille. VBUS force (cellule 3,7 V, 1 A sur VSYS)"
+reset
+option temp=25
+alter Vctl_usb dc = 1
+alter Rusb = 1m
+alter Vcell dc = 3.7
+alter Vctl_isys dc = 1
+alter Vinh dc = 0
+alter Rinh = 30
+foreach vu 0 1 2 2.5 3 3.5
+  alter Vusb dc = $vu
+  op
+  let c = v3(v(vbus)-v(vsys))
+  let d = mv(v(vbat)-v(vsys))
+  let e = ma(@d22[id])
+  echo "VBUS = $vu V : VGS_Q4 = $&c V, chuteQ4 = $&d mV, I_D22 = $&e mA"
+end
+
+echo
+echo "--- B2 : USB present, chargeur arrete, cellule 3,7 V. Q4 ne reste bloque que parce que sa grille est sur VBUS."
+echo "    Avec un seuil decale de +6 V (comme si la grille etait 6 V plus bas), il relie VSYS a VBAT : VBAT monte,"
+echo "    Q6 voit BATP sous VBAT et bloque Q2. Le courant de Q4 est alors celui de R43 (VBAT / 10 kohm)."
+foreach dv 0 6
+  alterparam dvto_q4 = $dv
+  reset
+  option temp=25
+  alter Vctl_usb dc = 1
+  alter Vcell dc = 3.7
+  alter Vinh dc = 0
+  alter Rinh = 30
+  op
+  let d = ma(i(Viq4))
+  let a = v3(v(vbat))
+  let b = v3(v(vsys))
+  let c = v3(v(q2_g)-v(vbat))
+  echo "decalage du seuil de Q4 : $dv V ; I_Q4 = $&d mA ; VBAT = $&a V ; VSYS = $&b V ; VGS_Q2 = $&c V"
+end
+alterparam dvto_q4 = 0
+
+echo
+echo "--- B4 : la tension residuelle de VBUS est proportionnelle a R5+R6 (fuite imposee de 0,5 mA, cellule 4,2 V)"
+foreach k 1 0.5 0.2
+  alterparam d16fuite = 0
+  alterparam r5 = 1k*$k
+  alterparam r6 = 1.5k*$k
+  reset
+  option temp=25
+  alter Vctl_usb dc = 0
+  alter Vcell dc = 4.2
+  alter Ifuite dc = 0.5m
+  op
+  let a = v3(v(vbus))
+  let b = v3(v(vbus_det))
+  echo "R5 et R6 multipliees par $k : VBUS = $&a V, VBUS_DET = $&b V"
+end
+quit
+.endc
+.end

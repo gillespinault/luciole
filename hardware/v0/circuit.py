@@ -10,6 +10,11 @@ La table des broches, l'arbre d'alimentation et les raisons des choix sont dans
 le wiki, page « Conception de la carte v0 ». Deux masses : GND est la masse de
 la carte, BATN le pôle négatif de la batterie, en amont de la protection.
 
+Révision 0.6 du 18 novembre 2026, après la revue du routage, la comparaison aux montages
+de référence et les simulations (v0/simu, v0/simu-signaux) : condensateur C42 sur la grille
+de Q2, R46 à 10 kΩ et Q2 en AO3401A (cellule inversée branchée à chaud), pont de VBUS à
+470 Ω et 1 kΩ, R17 à 200 kΩ.
+
 Révision 0.5 du 17 novembre 2026, après la relecture du schéma contre les
 fiches par un agent Claude, ses contre-relectures, puis les relectures de
 Gemini et de Codex : voir la page « Revue indépendante » du wiki.
@@ -27,6 +32,7 @@ RES = {  # valeur -> référence LCSC (résistances 0402 à 1 %)
 }
 CAP = {  # valeur -> (référence LCSC, empreinte)
     "470pF": ("C1537", "Capacitor_SMD:C_0402_1005Metric"),
+    "22nF": ("C1532", "Capacitor_SMD:C_0402_1005Metric"),
     "100nF": ("C1525", "Capacitor_SMD:C_0402_1005Metric"),
     "1uF": ("C52923", "Capacitor_SMD:C_0402_1005Metric"),
     "10uF": ("C19702", "Capacitor_SMD:C_0603_1608Metric"),
@@ -53,7 +59,7 @@ ROW2, ROW3, ROW4 = 6, 10, 18
 
 
 def build():
-    s = Schematic("v0", "Luciole² : carte v0", rev="0.5", date="2026-11-17", paper="A1",
+    s = Schematic("v0", "Luciole² : carte v0", rev="0.6", date="2026-11-18", paper="A1",
                   libs={**stock("Device", "power", "Connector", "Connector_Generic_MountingPin", "RF_Module",
                                 "Battery_Management", "Power_Protection", "Logic_LevelTranslator",
                                 "Transistor_FET", "Switch", "Jumper"),
@@ -99,8 +105,12 @@ def build():
     C("C39", "1uF", "VBUS", "GND", 46, 52)
     # Présence de l'USB : pont sur VBUS, lu par GPIO7 à travers 100 kΩ. Le pont décharge
     # aussi VBUS au débranchement et absorbe la fuite de D16.
-    R("R5", "1k", "VBUS", "VBUS_SENSE", 54, 52)
-    R("R6", "1k5", "VBUS_SENSE", "GND", 62, 52)
+    # 470 Ω et 1 kΩ depuis la révision 0.6 (avant : 1 kΩ et 1,5 kΩ). La diode D16 fuit en
+    # inverse quand la carte est chaude : le pont absorbe cette fuite, et plus il est faible,
+    # plus VBUS reste bas USB débranché (simulation v0/simu, cas B4). La lecture est garantie
+    # à 1 dès 3,65 V sur VBUS au lieu de 4,13 V. Le pont prend 3,4 mA à l'USB.
+    R("R5", "470R", "VBUS", "VBUS_SENSE", 54, 52)
+    R("R6", "1k", "VBUS_SENSE", "GND", 62, 52)
     R("R7", "100k", "VBUS_SENSE", "VBUS_DET", 70, 52)
     # Courant annoncé par la source : moyenne des deux broches CC, lue par GPIO4.
     R("R37", "200k", "CC1", "CC_SENSE", 30, 62)
@@ -158,16 +168,26 @@ def build():
     # Q2 est rendu passant par R43 quand la batterie est à l'endroit. Batterie inversée,
     # BATP passe sous VBAT : Q6 conduit et relie la grille de Q2 à sa source. Q2 reste
     # bloqué même si le chargeur et la protection de cellule ramènent BATN vers la masse.
-    s.part("Q2", x=182 * G, y=22 * G, **PFET, pins={"D": "BATP", "S": "VBAT", "G": "Q2_G"})
+    # Révision 0.6 : Q2 est un AO3401A (30 V) et non plus un DMP1045U (12 V). Cellule inversée
+    # et USB présent, il tient 8,4 V en permanence, et une pointe quand il coupe le courant.
+    s.part("Q2", x=182 * G, y=22 * G, **PFET_12V, pins={"D": "BATP", "S": "VBAT", "G": "Q2_G"})
     s.part("Q6", x=182 * G, y=38 * G, **PFET_12V, pins={"S": "VBAT", "G": "Q6_G", "D": "Q2_G"})
     R("R43", "10k", "Q2_G", "BATN", 191, 42)
+    # C42 (révision 0.6) tient la grille de Q2 au potentiel de BATN pendant un transitoire.
+    # Sans lui, une cellule inversée branchée alors que Q2 conduit (USB présent, ou
+    # condensateurs encore chargés après un échange de batterie) entraînait la grille avec
+    # la source : Q2 restait passant 16 à 35 µs et VBAT descendait à −3 V, pour −0,3 V
+    # admis par le chargeur. Avec lui, Q2 se pince quand VBAT approche 1 V (simulation
+    # v0/simu, cas A5d et A5e : VBAT ne passe plus sous +0,8 V).
+    C("C42", "22nF", "Q2_G", "BATN", 199, 30)
     # R45 : sans batterie, BATP suit VBAT et Q6 reste bloqué. Sans elle, USB branché le
     # premier, Q6 tiendrait Q2 bloqué et une batterie branchée ensuite resterait isolée.
-    # R46 protège la grille de Q6, qui donne sur une broche du connecteur. 1 kΩ et non
-    # 100 kΩ : Q6 doit bloquer Q2 en moins d'une microseconde quand une batterie inversée
-    # est branchée sous USB, avant que VBAT ne soit tiré sous la masse.
+    # R46 protège la grille de Q6, qui donne sur une broche du connecteur. 10 kΩ depuis la
+    # révision 0.6 : c'est C42 qui arrête Q2 quand une batterie inversée est branchée à
+    # chaud, et Q6 le verrouille ensuite. Avec 1 kΩ, Q6 coupait Q2 d'un coup et le courant
+    # interrompu donnait une pointe de −20 V sur Q2 (simulation v0/simu, a5_corrections).
     R("R45", "1M", "VBAT", "BATP", 174, 40)
-    R("R46", "1k", "BATP", "Q6_G", 166, 40)
+    R("R46", "10k", "BATP", "Q6_G", 166, 40)
     s.part("U3", x=202 * G, y=24 * G, lib_id="Battery_Management:DW01A", lcsc="C351410",
            pins={"VCC": "DW_VCC", "GND": "BATN", "OD": "DW_OD", "OC": "DW_OC", "CS": "DW_CS", "TD": NC})
     R("R14", "100R", "VBAT", "DW_VCC", 216, 16)
@@ -176,7 +196,9 @@ def build():
     s.part("Q3", x=206 * G, y=48 * G, lib_id="luciole:FS8205A",
            pins={"S1": "BATN", "G1": "DW_OD", "D12": "PROT_D", "S2": "GND", "G2": "DW_OC"})
     R("R16", "470k", "VBAT", "VBAT_SENSE", 164, 56)
-    R("R17", "470k", "VBAT_SENSE", "GND", 172, 56)
+    # 200 kΩ depuis la révision 0.6 : 4,2 V donnent 1,25 V, lisibles avec l'atténuation de
+    # 2,5 dB de l'ADC (±12 mV) au lieu de 12 dB (±40 mV). Rapport du pont : 0,2985.
+    R("R17", "200k", "VBAT_SENSE", "GND", 172, 56)
     C("C4", "100nF", "VBAT_SENSE", "GND", 180, 56)
 
     # ------------------------------------------- partage de charge et 3,3 V
@@ -302,7 +324,10 @@ def build():
     C("C33", "100nF", "VLED", "GND", 140, 156 + y)
     R("R36", "220R", "PORT_BUF", "PORT_BUF_R", 148, 156 + y)
     JP("JP4", "PORT_BUF_R", "PORT_2", 158, 156 + y)
-    # /OE de U10 ne doit pas flotter : 1 MΩ au 3,3 V le tient à 1, tampon inactif.
+    # /OE de U10 ne doit pas flotter : 1 MΩ au 3,3 V le tient à 1, tampon inactif, quand le
+    # rail des LED est présent. Rail coupé, la sortie de U10 tire PORT_PU vers 0,5 V par
+    # R34, Q9, R32 et R36 (3 µA) : le firmware met PORT_PU, IO1 et IO2 à 0 tant que le
+    # convertisseur est arrêté, et commande PORT_PU avant de le démarrer.
     R("R35", "1M", "+3V3", "PORT_PU", 166, 156 + y)
 
     # ------------------------------------------------------ pastilles de test

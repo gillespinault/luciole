@@ -1,0 +1,179 @@
+######################## temperature -10 C ########################
+=== B1  batterie seule ===
+Vcell  I(A)  VSYS   chute totale(mV)  chuteQ2(mV)  chuteQ3(mV)  chuteQ4(mV)  VGS_Q4   I_D22(mA)  VBUS
+3.0    0.1    2.987    12.6    5.2    4.3    3    -2.987    0    0
+3.0    1    2.872    127.7    52    43.2    30.5    -2.872    0    0
+3.0    2    2.742    258.5    104.8    87.3    62.3    -2.741    0    0
+3.3    0.1    3.288    12    4.8    4.1    2.9    -3.288    0    0
+3.3    1    3.179    121.1    48.6    41.5    29    -3.179    0    0
+3.3    2    3.056    244.5    97.8    83.7    59    -3.055    0    0
+3.7    0.1    3.689    11.4    4.5    4    2.7    -3.688    0    0
+3.7    1    3.585    114.6    45.3    39.8    27.6    -3.585    0    0
+3.7    2    3.469    230.8    90.9    80.1    55.8    -3.469    0    0
+4.2    0.1    4.189    10.8    4.2    3.8    2.6    -4.189    0    0
+4.2    1    4.091    108.8    42.3    38.2    26.3    -4.091    0    0
+4.2    2    3.981    218.6    84.8    76.8    53    -3.981    0    0
+--- au repos (aucune charge sur VSYS) : ce que l'etage d'alimentation prend a la cellule
+Vcell 3.0 : Icell = 7.4 uA, dont fuite de D16 vers VBUS = 0.2 uA ; VBUS = 0 V
+Vcell 4.2 : Icell = 10.3 uA, dont fuite de D16 vers VBUS = 0.2 uA ; VBUS = 0 V
+=== B2  USB present (5 V derriere 0,2 ohm de cable), chargeur en marche ===
+Vcell  Isys(A)  VBUS   VSYS   VGS_Q4  I_Q4(uA)  I_D22(uA)  Icell(A)
+3.0    0.1    4.897    4.582    0.315    0    -0.2    -0.407
+3.0    1    4.716    4.315    0.401    0    -0.2    -0.407
+3.0    2    4.515    4.063    0.453    0    -0.2    -0.407
+3.7    0.1    4.897    4.583    0.315    0    -0.2    -0.407
+3.7    1    4.717    4.316    0.401    0    -0.2    -0.406
+3.7    2    4.516    4.064    0.453    0    -0.2    -0.403
+4.2    0.1    4.979    4.664    0.315    0    -0.2    -0.001
+4.2    1    4.798    4.397    0.401    0    -0.2    -0.001
+4.2    2    4.597    4.145    0.453    0    1.9    0
+--- chargeur arrete (GPIO21 a 0) : ce qui reste entre le noeud systeme et la cellule
+Vcell  I_Q4(uA)  I_D22(uA)  Icell(uA)   (negatif : la cellule recoit du courant)
+3.0    0    -0.2    7
+3.7    0    -0.2    8.7
+4.2    0    -0.2    9.9
+--- source USB faible : la batterie complete-t-elle par D22 ? (cellule 4,2 V, 1 A sur VSYS)
+Vusb  VBUS   VSYS   VGS_Q4  I_Q4(mA)  I_D22(mA)  Icell(A)
+5.25    5.048    4.647    0.401    0    0    -0.001
+5    4.798    4.397    0.401    0    0    -0.001
+Warning: source stepping failed
+4.75    4.548    4.147    0.401    0    0    0
+4.5    4.305    3.906    0.399    0    40.81    0.032
+4.3    4.181    3.807    0.374    0.05    411.04    0.411
+######################## temperature 25 C ########################
+=== B1  batterie seule ===
+Vcell  I(A)  VSYS   chute totale(mV)  chuteQ2(mV)  chuteQ3(mV)  chuteQ4(mV)  VGS_Q4   I_D22(mA)  VBUS
+3.0    0.1    2.986    13.8    5.9    4.6    3.2    -2.975    0    0.011
+3.0    1    2.86    139.8    59.2    46.1    32.5    -2.85    0.02    0.011
+3.0    2    2.717    283.5    119.3    93.5    66.6    -2.706    0.09    0.011
+3.3    0.1    3.287    13.1    5.5    4.4    3    -3.276    0    0.011
+3.3    1    3.168    132.1    55.4    44    30.8    -3.157    0.02    0.011
+3.3    2    3.033    267.2    111.4    89    62.8    -3.022    0.07    0.011
+3.7    0.1    3.688    12.4    5.1    4.2    2.9    -3.677    0    0.011
+3.7    1    3.575    124.6    51.5    42    29.1    -3.565    0.02    0.011
+3.7    2    3.449    251.2    103.5    84.6    59.1    -3.438    0.06    0.011
+4.2    0.1    4.188    11.7    4.8    4    2.7    -4.178    0    0.011
+4.2    1    4.082    117.7    48.1    40.1    27.6    -4.072    0.01    0.011
+4.2    2    3.963    236.9    96.5    80.6    55.8    -3.952    0.06    0.011
+--- au repos (aucune charge sur VSYS) : ce que l'etage d'alimentation prend a la cellule
+Vcell 3.0 : Icell = 15.2 uA, dont fuite de D16 vers VBUS = 8 uA ; VBUS = 0.011 V
+Vcell 4.2 : Icell = 18.1 uA, dont fuite de D16 vers VBUS = 8 uA ; VBUS = 0.011 V
+=== B2  USB present (5 V derriere 0,2 ohm de cable), chargeur en marche ===
+Vcell  Isys(A)  VBUS   VSYS   VGS_Q4  I_Q4(uA)  I_D22(uA)  Icell(A)
+3.0    0.1    4.897    4.639    0.258    0    -8    -0.407
+3.0    1    4.716    4.365    0.352    0    -8    -0.407
+3.0    2    4.597    4.192    0.405    0    2.8    0
+3.7    0.1    4.897    4.639    0.258    0    -8    -0.407
+3.7    1    4.717    4.365    0.352    0    -8    -0.406
+3.7    2    4.516    4.111    0.405    0    -8    -0.403
+4.2    0.1    4.979    4.721    0.258    0    -8    -0.001
+4.2    1    4.798    4.447    0.352    0    -8    -0.001
+4.2    2    4.597    4.192    0.405    0    2.8    0
+--- chargeur arrete (GPIO21 a 0) : ce qui reste entre le noeud systeme et la cellule
+Vcell  I_Q4(uA)  I_D22(uA)  Icell(uA)   (negatif : la cellule recoit du courant)
+3.0    0    -8    -0.8
+3.7    0    -8    0.9
+4.2    0    -8    2.1
+--- source USB faible : la batterie complete-t-elle par D22 ? (cellule 4,2 V, 1 A sur VSYS)
+Vusb  VBUS   VSYS   VGS_Q4  I_Q4(mA)  I_D22(mA)  Icell(A)
+5.25    5.048    4.696    0.352    0    -0.01    -0.001
+5    4.798    4.447    0.352    0    -0.01    -0.001
+4.75    4.548    4.197    0.352    0    0    0
+4.5    4.306    3.958    0.348    0.04    52.02    0.039
+4.3    4.18    3.857    0.323    0.34    406.63    0.407
+######################## temperature 60 C ########################
+=== B1  batterie seule ===
+Vcell  I(A)  VSYS   chute totale(mV)  chuteQ2(mV)  chuteQ3(mV)  chuteQ4(mV)  VGS_Q4   I_D22(mA)  VBUS
+3.0    0.1    2.985    15.2    6.6    4.9    3.5    -2.79    0.02    0.194
+3.0    1    2.847    153.5    66.5    49.2    35.8    -2.652    0.33    0.194
+3.0    2    2.688    312.3    134.1    100.2    74    -2.493    1.54    0.194
+3.3    0.1    3.286    14.3    6.2    4.6    3.3    -3.091    0.02    0.194
+3.3    1    3.155    144.5    62.3    46.7    33.6    -2.961    0.3    0.194
+3.3    2    3.007    292.9    125.3    94.7    68.8    -2.813    1.28    0.194
+3.7    0.1    3.687    13.5    5.8    4.4    3.1    -3.492    0.02    0.194
+3.7    1    3.564    135.7    58    44.3    31.4    -3.37    0.27    0.194
+3.7    2    3.426    274    116.6    89.4    64    -3.232    1.07    0.194
+4.2    0.1    4.187    12.7    5.4    4.2    2.9    -3.993    0.01    0.194
+4.2    1    4.072    127.6    54.1    42.1    29.5    -3.878    0.24    0.194
+4.2    2    3.943    257.1    108.7    84.7    59.7    -3.748    0.91    0.194
+--- au repos (aucune charge sur VSYS) : ce que l'etage d'alimentation prend a la cellule
+Vcell 3.0 : Icell = 152.4 uA, dont fuite de D16 vers VBUS = 145.2 uA ; VBUS = 0.194 V
+Vcell 4.2 : Icell = 155.2 uA, dont fuite de D16 vers VBUS = 145.2 uA ; VBUS = 0.194 V
+=== B2  USB present (5 V derriere 0,2 ohm de cable), chargeur en marche ===
+Vcell  Isys(A)  VBUS   VSYS   VGS_Q4  I_Q4(uA)  I_D22(uA)  Icell(A)
+3.0    0.1    4.897    4.697    0.201    -0.9    -145.2    -0.407
+3.0    1    4.717    4.415    0.301    -0.9    -145.2    -0.406
+3.0    2    4.515    4.158    0.357    -0.9    -145.2    -0.408
+3.7    0.1    4.897    4.697    0.201    -0.9    -145.2    -0.407
+3.7    1    4.717    4.415    0.301    -0.9    -145.2    -0.406
+3.7    2    4.516    4.159    0.357    -0.9    -145.1    -0.403
+4.2    0.1    4.979    4.778    0.201    -0.9    -145.1    -0.001
+4.2    1    4.798    4.497    0.301    -0.9    -145    -0.001
+4.2    2    4.597    4.24    0.357    -0.6    -106.4    -0.001
+--- chargeur arrete (GPIO21 a 0) : ce qui reste entre le noeud systeme et la cellule
+Vcell  I_Q4(uA)  I_D22(uA)  Icell(uA)   (negatif : la cellule recoit du courant)
+3.0    -0.9    -145.2    -138.9
+3.7    -0.9    -145.2    -137.2
+4.2    -0.9    -145.1    -136
+--- source USB faible : la batterie complete-t-elle par D22 ? (cellule 4,2 V, 1 A sur VSYS)
+Vusb  VBUS   VSYS   VGS_Q4  I_Q4(mA)  I_D22(mA)  Icell(A)
+5.25    5.048    4.747    0.301    0    -0.15    -0.001
+5    4.798    4.497    0.301    0    -0.14    -0.001
+4.75    4.548    4.247    0.301    0    -0.11    -0.001
+4.5    4.307    4.01    0.297    0.2    62.96    0.046
+4.3    4.179    3.908    0.272    1.46    401.66    0.403
+######################## B2, diodes au pire de la fiche ########################
+=== USB present, chargeur arrete, cellule pleine (4,2 V) : courant qui entre dans la cellule par la fuite de D22 ===
+D22      T(C)  I_D22(uA)  I_Q4(uA)  Icell(uA)
+typique  -10    -0.2    0    9.9
+typique  25    -8    0    2.1
+typique  45    -45.2    -0.2    -35.3
+typique  60    -145.1    -0.9    -136
+maximum  -10    -5.3    0    4.8
+maximum  25    -200    0    -189.9
+maximum  45    -1129.7    -0.2    -1119.8
+maximum  60    -3628.7    -0.9    -3619.5
+######################## B4  USB absent, fuite inverse de D16 ########################
+=== fuite imposee (D16 sans fuite propre), 25 C, 0,5 A sur VSYS ===
+Vcell  fuite(mA)  VBUS   VBUS_DET  lecture   VGS_Q4  chuteQ4(mV)  I_D22(mA)  VSYS
+3.3    0    0    0    0 sur     -3.234    15.2    0.01    3.234
+3.3    0.2    0.268    0.182    0 sur     -2.966    15.9    0.01    3.234
+3.3    0.5    0.67    0.456    0 sur     -2.562    17.3    0.01    3.232
+3.3    1    1.34    0.911    indefini  -1.888    21.8    0.01    3.228
+3.3    2    2.68    1.823    indefini  -0.254    315.5    501.55    2.934
+3.3    5    3.514    2.39    indefini  0.58    315.6    502.36    2.934
+4.2    0    0    0    0 sur     -4.141    13.7    0.01    4.141
+4.2    0.2    0.268    0.182    0 sur     -3.873    14.1    0.01    4.141
+4.2    0.5    0.67    0.456    0 sur     -3.47    14.7    0.01    4.14
+4.2    1    1.34    0.911    indefini  -2.799    16.4    0.01    4.138
+4.2    2    2.679    1.823    indefini  -1.446    29.1    0.02    4.126
+4.2    5    4.201    2.858    1 sur     0.362    315.8    504.54    3.839
+=== fuite propre du modele de D16 selon la temperature (cellule 4,2 V, 0,5 A sur VSYS) ===
+D16      T(C)  fuite(mA)  VBUS   VBUS_DET  lecture   VGS_Q4  chuteQ4(mV)
+typique  -10    0    0    0    0 sur     -4.145    13.1
+typique  25    0.008    0.011    0.007    0 sur     -4.131    13.7
+typique  45    0.045    0.061    0.041    0 sur     -4.078    14.2
+typique  60    0.145    0.194    0.132    0 sur     -3.942    14.6
+typique  85    0.824    1.103    0.75    0 sur     -3.028    17.2
+maximum  -10    0.005    0.007    0.005    0 sur     -4.139    13.1
+maximum  25    0.2    0.268    0.182    0 sur     -3.873    14.1
+maximum  45    1.13    1.514    1.03    indefini  -2.621    17.7
+maximum  60    3.011    3.834    2.608    1 sur     -0.054    263.1
+maximum  85    3.074    3.917    2.665    1 sur     -0.006    225.1
+######################## contre-epreuves, 25 C ########################
+--- B1 : la chute de Q4 depend de sa grille. VBUS force (cellule 3,7 V, 1 A sur VSYS)
+VBUS = 0 V : VGS_Q4 = -3.575 V, chuteQ4 = 29.1 mV, I_D22 = 0.02 mA
+VBUS = 1 V : VGS_Q4 = -2.57 V, chuteQ4 = 34.5 mV, I_D22 = 0.02 mA
+VBUS = 2 V : VGS_Q4 = -1.552 V, chuteQ4 = 52.6 mV, I_D22 = 0.05 mA
+VBUS = 2.5 V : VGS_Q4 = -1.003 V, chuteQ4 = 101.6 mV, I_D22 = 0.34 mA
+VBUS = 3 V : VGS_Q4 = -0.254 V, chuteQ4 = 350.3 mV, I_D22 = 978.74 mA
+VBUS = 3.5 V : VGS_Q4 = 0.239 V, chuteQ4 = 348.3 mV, I_D22 = 946.74 mA
+--- B2 : USB present, chargeur arrete, cellule 3,7 V. Q4 ne reste bloque que parce que sa grille est sur VBUS.
+    Avec un seuil decale de +6 V (comme si la grille etait 6 V plus bas), il relie VSYS a VBAT : VBAT monte,
+    Q6 voit BATP sous VBAT et bloque Q2. Le courant de Q4 est alors celui de R43 (VBAT / 10 kohm).
+decalage du seuil de Q4 : 0 V ; I_Q4 = 0 mA ; VBAT = 3.7 V ; VSYS = 4.98 V ; VGS_Q2 = -3.7 V
+decalage du seuil de Q4 : 6 V ; I_Q4 = -594.46 mA ; VBAT = 4.542 V ; VSYS = 4.556 V ; VGS_Q2 = -1.291 V
+--- B4 : la tension residuelle de VBUS est proportionnelle a R5+R6 (fuite imposee de 0,5 mA, cellule 4,2 V)
+R5 et R6 multipliees par 1 : VBUS = 1.073 V, VBUS_DET = 0.644 V
+R5 et R6 multipliees par 0.5 : VBUS = 0.577 V, VBUS_DET = 0.346 V
+R5 et R6 multipliees par 0.2 : VBUS = 0.242 V, VBUS_DET = 0.145 V

@@ -1,0 +1,81 @@
+================ temperature -10 C ================
+--- DMP1045U (fiche a 25 C : seuil 0,30 / 0,55 / 1,0 V ; 45 mohm typ a 1,8 V 2,7 A ; 31 typ 45 max a 2,5 V 3,5 A ; 26 typ 31 max a 4,5 V 4 A ; diode 0,6 V a 1 A)
+seuil a 250 uA : 0.812112 V ; diode de corps a 1 A : 0.682591 V ; fuite bloque sous 8,4 V : 0.000114255 uA
+Rds a 1,8 V 2,7 A : 44.167 mohm
+Rds a 2,5 V 3,5 A : 33.3844 mohm
+Rds a 3,0 V 2 A   : 29.9513 mohm
+Rds a 4,5 V 4 A   : 25.5229 mohm
+--- AO3401A (fiche : seuil 0,5 / 0,9 / 1,3 V ; 60 typ 85 max a 2,5 V 2,5 A ; 47 typ 60 max a 4,5 V 3,5 A ; diode 0,7 V a 1 A)
+seuil a 250 uA : 0.897567 V ; diode de corps a 1 A : 0.777951 V
+Rds a 2,5 V 2,5 A : 63.0384 mohm
+Rds a 4,5 V 3,5 A : 41.2214 mohm
+--- AO3400A par le modele AO3400 (fiche AO3400A : seuil 0,65 / 1,05 / 1,45 V ; 24 typ 48 max a 2,5 V 3 A ; 19 typ 32 max a 4,5 V 5 A ; diode 0,7 V a 1 A)
+seuil a 250 uA : 1.16443 V ; diode de corps a 1 A : 0.729605 V
+Rds a 2,5 V 3 A : 36.1911 mohm
+Rds a 4,5 V 5 A : 20.5771 mohm
+--- FS8205A, une moitie (fiche : seuil 0,5 / 0,7 / 1,2 V ; 25 typ 31,5 max a 2,5 V 3 A ; 19,5 typ 25 max a 4,5 V 3 A ; diode 1,2 V max a 6 A)
+seuil a 250 uA : 0.605937 V ; diode de corps a 6 A : 0.889536 V
+Rds a 2,5 V 3 A : 23.3897 mohm
+Rds a 4,5 V 3 A : 18.7133 mohm
+--- DSK24 (fiche : 0,37 V typ a 1 A, 0,55 V max a 2 A ; fuite sous 4 V : environ 8 uA typ a 25 C, 2,5 mA typ a 100 C)
+typique : 0.401103 V a 1 A ; fuite sous 4 V : 0.210082 uA ; variante MAX : 0.605964 V a 2 A
+typique : 0.314777 V a 0,1 A
+typique : 0.452607 V a 2 A
+--- 1N4148WS (fiche : 0,715 V max a 1 mA)
+0.651526 V a 1 mA
+================ temperature 25 C ================
+--- DMP1045U (fiche a 25 C : seuil 0,30 / 0,55 / 1,0 V ; 45 mohm typ a 1,8 V 2,7 A ; 31 typ 45 max a 2,5 V 3,5 A ; 26 typ 31 max a 4,5 V 4 A ; diode 0,6 V a 1 A)
+seuil a 250 uA : 0.736065 V ; diode de corps a 1 A : 0.615538 V ; fuite bloque sous 8,4 V : 0.0151552 uA
+Rds a 1,8 V 2,7 A : 47.2196 mohm
+Rds a 2,5 V 3,5 A : 35.6183 mohm
+Rds a 3,0 V 2 A   : 31.7585 mohm
+Rds a 4,5 V 4 A   : 26.6978 mohm
+--- AO3401A (fiche : seuil 0,5 / 0,9 / 1,3 V ; 60 typ 85 max a 2,5 V 2,5 A ; 47 typ 60 max a 4,5 V 3,5 A ; diode 0,7 V a 1 A)
+seuil a 250 uA : 0.804458 V ; diode de corps a 1 A : 0.724041 V
+Rds a 2,5 V 2,5 A : 71.993 mohm
+Rds a 4,5 V 3,5 A : 46.972 mohm
+--- AO3400A par le modele AO3400 (fiche AO3400A : seuil 0,65 / 1,05 / 1,45 V ; 24 typ 48 max a 2,5 V 3 A ; 19 typ 32 max a 4,5 V 5 A ; diode 0,7 V a 1 A)
+seuil a 250 uA : 1.08062 V ; diode de corps a 1 A : 0.670548 V
+Rds a 2,5 V 3 A : 43.3773 mohm
+Rds a 4,5 V 5 A : 25.6064 mohm
+--- FS8205A, une moitie (fiche : seuil 0,5 / 0,7 / 1,2 V ; 25 typ 31,5 max a 2,5 V 3 A ; 19,5 typ 25 max a 4,5 V 3 A ; diode 1,2 V max a 6 A)
+seuil a 250 uA : 0.610754 V ; diode de corps a 6 A : 0.844922 V
+Rds a 2,5 V 3 A : 25.1957 mohm
+Rds a 4,5 V 3 A : 19.5415 mohm
+--- DSK24 (fiche : 0,37 V typ a 1 A, 0,55 V max a 2 A ; fuite sous 4 V : environ 8 uA typ a 25 C, 2,5 mA typ a 100 C)
+typique : 0.351606 V a 1 A ; fuite sous 4 V : 8 uA ; variante MAX : 0.548472 V a 2 A
+typique : 0.257991 V a 0,1 A
+typique : 0.405306 V a 2 A
+--- 1N4148WS (fiche : 0,715 V max a 1 mA)
+0.580847 V a 1 mA
+================ temperature 60 C ================
+--- DMP1045U (fiche a 25 C : seuil 0,30 / 0,55 / 1,0 V ; 45 mohm typ a 1,8 V 2,7 A ; 31 typ 45 max a 2,5 V 3,5 A ; 26 typ 31 max a 4,5 V 4 A ; diode 0,6 V a 1 A)
+seuil a 250 uA : 0.655665 V ; diode de corps a 1 A : 0.54571 V ; fuite bloque sous 8,4 V : 0.901269 uA
+Rds a 1,8 V 2,7 A : 50.0144 mohm
+Rds a 2,5 V 3,5 A : 37.7944 mohm
+Rds a 3,0 V 2 A   : 33.5505 mohm
+Rds a 4,5 V 4 A   : 27.895 mohm
+--- AO3401A (fiche : seuil 0,5 / 0,9 / 1,3 V ; 60 typ 85 max a 2,5 V 2,5 A ; 47 typ 60 max a 4,5 V 3,5 A ; diode 0,7 V a 1 A)
+seuil a 250 uA : 0.705501 V ; diode de corps a 1 A : 0.668849 V
+Rds a 2,5 V 2,5 A : 81.0277 mohm
+Rds a 4,5 V 3,5 A : 52.9779 mohm
+--- AO3400A par le modele AO3400 (fiche AO3400A : seuil 0,65 / 1,05 / 1,45 V ; 24 typ 48 max a 2,5 V 3 A ; 19 typ 32 max a 4,5 V 5 A ; diode 0,7 V a 1 A)
+seuil a 250 uA : 0.991941 V ; diode de corps a 1 A : 0.610463 V
+Rds a 2,5 V 3 A : 50.4901 mohm
+Rds a 4,5 V 5 A : 30.7153 mohm
+--- FS8205A, une moitie (fiche : seuil 0,5 / 0,7 / 1,2 V ; 25 typ 31,5 max a 2,5 V 3 A ; 19,5 typ 25 max a 4,5 V 3 A ; diode 1,2 V max a 6 A)
+seuil a 250 uA : 0.615046 V ; diode de corps a 6 A : 0.795427 V
+Rds a 2,5 V 3 A : 27.1172 mohm
+Rds a 4,5 V 3 A : 20.4205 mohm
+--- DSK24 (fiche : 0,37 V typ a 1 A, 0,55 V max a 2 A ; fuite sous 4 V : environ 8 uA typ a 25 C, 2,5 mA typ a 100 C)
+typique : 0.301405 V a 1 A ; fuite sous 4 V : 145.175 uA ; variante MAX : 0.490319 V a 2 A
+typique : 0.200535 V a 0,1 A
+typique : 0.357297 V a 2 A
+--- 1N4148WS (fiche : 0,715 V max a 1 mA)
+0.509105 V a 1 mA
+================ copies a seuil reglable, 25 C ================
+DMP1045U : seuil 0.736065 V, copie 0.736065 V ; Rds a 2,5 V : 35.6183 mohm, copie 35.6183 mohm
+AO3401A  : seuil 0.804458 V, copie 0.804458 V
+DMP1045U avec dvto = +0,436 puis -0,264 : seuil 0.300677 V puis 0.999687 V (fiche : 0,3 a 1,0 V)
+AO3401A  avec dvto = +0,30 puis -0,50   : seuil 0.504458 V puis 1.30446 V (fiche : 0,5 a 1,3 V)
+DSK24 a 100 C : fuite sous 4 V = 2.09567 mA (fiche : 2,5 mA typ, 20 mA max a 40 V)

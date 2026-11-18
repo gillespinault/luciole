@@ -1,0 +1,4 @@
+# R17 absente : la broche de mesure de la batterie monte au-dessus de la plage de l'ADC.
+# attendu : batterie (VBAT)        | hors plage : broche 3200 mV    | 3.00 a 4.35 V (broche 895 a 1298 mV)       | NON <<<
+@scenario r17-absente
+e

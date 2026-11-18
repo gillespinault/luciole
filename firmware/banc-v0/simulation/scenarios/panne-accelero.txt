@@ -1,0 +1,8 @@
+# Accéléromètre absent ou mal soudé.
+# attendu : I2C interne, adresses  | aucune                         | 0x19 seule                                 | NON <<<
+# attendu : LIS2DH12, identifiant  | pas de reponse
+# attendu : accelerometre, adresse 0x19 : pas de reponse. NON <<<
+@scenario sans-acc
+a
+i2c
+acc

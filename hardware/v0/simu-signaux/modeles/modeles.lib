@@ -1,0 +1,185 @@
+* Luciole² v0 : modèles de la simulation des signaux.
+*
+* Chaque modèle dit d'où viennent ses chiffres. « fiche » = fiche technique de la
+* pièce commandée (hardware/fiches/). « hypothèse » = valeur que la fiche ne donne
+* pas : elle est nommée, et les fichiers de cas la font varier quand elle compte.
+*
+* Attention : dans ngspice, « gnd » est le nœud 0. Les sous-circuits nomment donc
+* leur masse « vss ».
+
+* ----------------------------------------------------------------------------
+* BSS138 (Q8, Q9). Copie du sous-circuit « BSS138/FAI » d'onsemi (fichier
+* bss138_onsemi.lib, téléchargé de onsemi.com), où les expressions PSpice en
+* TEMP sont remplacées par leur valeur à 27 °C et où le seuil et le gain
+* deviennent des paramètres :
+*   vto 1,2948 V, kp 0,6472 A/V² : valeurs d'onsemi à 27 °C. Elles donnent un seuil
+*     de 1,32 V à 250 µA et 1,1 Ω à 4,5 V : c'est le typique de la copie R+O
+*     C7420339 (1,2 V, 1,2 Ω).
+*   Pire cas de la copie R+O : seuil 1,6 V et 3,0 Ω à 4,5 V -> vto 1,55, kp 0,21.
+*   Seuil bas : 0,8 V -> vto 0,77.
+*   rfuite : fuite drain-source, 50 V / 0,5 µA = 100 MΩ (maximum de la fiche R+O).
+* Vérifié par modeles/essai_bss138.cir.
+.subckt BSS138P d g s params: vto=1.2948 kp=0.6472 rfuite=100meg
+Rg     g    1    1
+M1     2    1    3    3    DMOS    L=1u   W=1u
+.model DMOS nmos(level=3 vto={vto} kp={kp} theta=0.086 vmax=2.2e5)
+Cgs    1    3    40p
+Rd     d    4    0.2
+Dds    3    4    DDS
+.model DDS d(bv=50 m=0.36 cjo=23p vj=0.8)
+Dbody  3    d    DBODY
+.model DBODY d(is=1.4e-13 n=1 rs=40m tt=100n)
+Ra     4    2    0.3
+Rs     3    5    10m
+Ls     5    s    0.5n
+M2     1    8    6    6    INTER
+E2     8    6    4    1    2
+.model INTER nmos(vto=0 kp=10 level=1)
+Cgdmax 7    4    68p
+Rcgd   7    4    10meg
+Dgd    6    4    DGD
+Rdgd   4    6    10meg
+.model DGD d(m=0.3 cjo=68p vj=0.4)
+M3     7    9    1    1    INTER
+E3     9    1    4    1    -2
+Rf     d    s    {rfuite}
+.ends
+
+* ----------------------------------------------------------------------------
+* AO3400A (Q5). Pas de modèle du fabricant trouvé (aosmd.com n'en publie pas pour
+* cette référence) : modèle de niveau 1 écrit d'après la fiche AOS rév. 3.
+*   seuil 1,05 V typique (0,65 à 1,45) ; 19 mΩ à 4,5 V et 24 mΩ à 2,5 V
+*   -> kp 80 A/V², 15 mΩ en série ; Ciss 630 pF, Coss 75 pF, Crss 50 pF ;
+*   diode : 0,7 V à 1 A ; fuite : 30 V / 1 µA = 30 MΩ (maximum à 25 °C).
+.subckt AO3400A d g s params: vto=1.05 rfuite=30meg
+M1  dd g ss ss MAO
+Rs  ss s 15.4m
+Rd  d dd 1m
+Cgs g ss 580p
+Cgd g dd 50p
+Cds dd ss 25p
+Db  ss dd DAO
+Rf  d s {rfuite}
+.model MAO nmos(level=1 vto={vto} kp=80 is=1e-30)
+.model DAO d(is=1.8e-12 n=1 rs=20m)
+.ends
+
+* ----------------------------------------------------------------------------
+* Broche d'entrée-sortie de l'ESP32-C6 (fiche de la puce v1.6, tableau 5-4).
+*   out, oe : commandes idéales 0..1 (ce que fait le firmware).
+*   rout : 35 Ω. La fiche donne 40 mA à 2,64 V et 28 mA à 0,495 V au réglage de
+*     force 3, soit 17 Ω ; le réglage par défaut (2) vaut la moitié -> hypothèse 35 Ω.
+*   cpin 2 pF ; fuite 50 nA au plus -> 66 MΩ ; rappel interne 45 kΩ (rpu, absent
+*     par défaut).
+*   Diodes de protection vers le 3,3 V et la masse : hypothèse. La fiche ne les
+*     montre pas, elle borne seulement la tension d'entrée à VDD + 0,3 V.
+.subckt ESPPIN pad vdd vss out oe params: rout=35 rpu=1e12 rfuite=66meg cpin=2p
+* La sortie est faite de deux conductances 1/rout, l'une vers VDD, l'autre vers la
+* masse, que « oe » et « out » dosent de 0 à 1 : pas d'interrupteur idéal, dont la
+* fermeture instantanée ferait sonner le montage. Le courant fourni sort bien de VDD.
+Bh   vdd pad I = (V(vdd,vss) - V(pad,vss)) / {rout} * min(max(V(oe),0),1) * min(max(V(out),0),1)
+Bl   pad vss I = V(pad,vss) / {rout} * min(max(V(oe),0),1) * (1 - min(max(V(out),0),1))
+Cpin pad vss {cpin}
+Dh   pad vdd DESD
+Dl   vss pad DESD
+Rlk  pad vss {rfuite}
+Rpu  pad vdd {rpu}
+.model DESD d(is=1e-14 n=1 rs=5 cjo=0.5p)
+.ends
+
+* ----------------------------------------------------------------------------
+* SN74LV1T34 (U9) et SN74LV1T125 (U10) : même puce, U9 a /OE à la masse.
+* Fiches TI SCLS743A et SCLS745D ; la copie TECH PUBLIC C51886115 reprend les
+* mêmes tableaux.
+*   Entrées : diode vers la masse seulement, 2 pF, fuite 0,1 µA à 25 °C -> 55 MΩ.
+*     Aucune diode vers VCC : l'entrée supporte 5,5 V, VCC à 0 V (fiche, II à VCC = 0).
+*   Seuil : la fiche garantit VIH 2,02 à 2,11 V et VIL 0,8 V de 4,5 à 5,5 V. Le
+*     typique n'est pas chiffré : hypothèse 0,25 × VCC + 0,2 V (1,45 V à 5 V).
+*     vthfix > 0 impose un seuil, pour essayer les limites garanties.
+*   Sortie : deux transistors dimensionnés sur les limites à 25 °C sous 4,5 V
+*     (4,1 V à -8 mA, 0,3 V à 8 mA) : c'est la sortie la plus faible admise.
+*     Leurs jonctions font les diodes vers VCC et vers la masse que la fiche TI
+*     montre en figure 8-2. Il n'y a pas de protection « Ioff » sur la sortie.
+*   Temps de propagation tpd : 3 ns typique, 7,5 ns au plus (5 V, 30 pF).
+.subckt LV1T a oen y vcc vss params: vthfix=0 tpd=3n kpp=5.56m kpn=7.31m
+Da   vss a   DINP
+Doe  vss oen DINP
+Ca   a   vss 2p
+Coe  oen vss 2p
+Ria  a   vss 55meg
+Rioe oen vss 55meg
+Bth  vth vss V = {vthfix} > 0 ? {vthfix} : (0.25 * V(vcc,vss) + 0.2)
+Bina la  vss V = 0.5 * (1 + tanh((V(a,vss) - V(vth,vss)) / 0.02))
+Bino lo  vss V = 0.5 * (1 + tanh((V(oen,vss) - V(vth,vss)) / 0.02))
+Rda  la  lad 1k
+Cda  lad vss {tpd / 0.693 / 1k}
+Rdo  lo  lod 1k
+Cdo  lod vss {tpd / 0.693 / 1k}
+Bh   h   vss V = 0.5 * (1 + tanh((V(lad,vss) - 0.5) / 0.05))
+Ben  en  vss V = 0.5 * (1 - tanh((V(lod,vss) - 0.5) / 0.05))
+Bgp  gp  vss V = V(vcc,vss) * (1 - V(en,vss) * V(h,vss))
+Bgn  gn  vss V = V(vcc,vss) * V(en,vss) * (1 - V(h,vss))
+MP   y gp vcc vcc PSORTIE
+MN   y gn vss vss NSORTIE
+Cy   y vss 2.5p
+.model PSORTIE pmos(level=1 vto=-0.7 kp={kpp} is=1e-14 lambda=0.02)
+.model NSORTIE nmos(level=1 vto=0.7  kp={kpn} is=1e-14 lambda=0.02)
+.model DINP d(is=1e-14 n=1 rs=10 cjo=0.5p)
+.ends
+
+* ----------------------------------------------------------------------------
+* USBLC6-2SC6 (U11) : fiche ST rév. 5.
+*   Par ligne : une diode vers la broche 5 (rail d'écrêtage), une depuis la masse.
+*   Entre la broche 5 et la masse : diode d'écrêtage de 6,1 V (6 V au moins à 1 mA).
+*   Chute directe : 1,1 V au plus à 10 mA ; le modèle donne 0,86 V (hypothèse du
+*     typique). Capacité ligne-masse 2,5 pF typique.
+*   Fuite : 10 nA typique, 150 nA au plus sous 5,25 V -> rfuite 525 MΩ ou 35 MΩ.
+*   ctvs : capacité de la diode d'écrêtage, non chiffrée par la fiche : hypothèse 30 pF.
+.subckt USBLC6 io1 io2 vbus vss params: rfuite=525meg ctvs=30p
+D1h io1 vbus DLIGNE
+D1l vss io1  DLIGNE
+D2h io2 vbus DLIGNE
+D2l vss io2  DLIGNE
+Dz  vss vbus DECRET
+Rf  vbus vss {rfuite}
+Ct  vbus vss {ctvs}
+.model DLIGNE d(is=1e-14 n=1.2 rs=0.5 cjo=1.2p)
+.model DECRET d(is=1e-15 n=1 rs=0.5 bv=6.1 ibv=1m)
+.ends
+
+* ----------------------------------------------------------------------------
+* TLV803EA30 (U5) : fiche TI ZHCSJX8J.
+*   Seuil descendant 3,08 V (± 2 %), hystérésis 1,2 % (0,9 à 1,5), délai « A » de
+*   200 ms (130 à 270). Sortie à drain ouvert : 0,3 V au plus à 2 mA sous 3,3 V
+*   (150 Ω), à 0,5 mA sous 1,7 V (600 Ω), à 15 µA sous 0,7 V (20 kΩ). En dessous de
+*   0,7 V la sortie n'est pas définie : le modèle la laisse en l'air, pire cas pour
+*   EN. Fuite de la sortie relâchée : 350 nA au plus sous 6 V -> 17 MΩ.
+.subckt TLV803 vdd rst vss params: vitm=3.08 hys=0.012 td=0.2 vpor=0.7
+Bc  c  vss V = V(vdd,vss) > ({vitm} * (1 + {hys} * (1 - V(cm,vss)))) ? 1 : 0
+Rc  c  cm 1k
+Cc  cm vss 1n
+Bd  vss d I = V(cm,vss) > 0.5 ? (V(d,vss) < 1.5 ? 1u : 0) : (-1m * V(d,vss))
+Cd  d  vss {td * 1u}
+Rd  d  vss 1e12
+Bo  rst vss I = u(V(vdd,vss) - {vpor}) * u(1 - V(d,vss)) * V(rst,vss)
++             / pwl(V(vdd,vss), 0.7, 20k, 1.7, 600, 3.3, 150, 6, 150)
+Rlk rst vss 17meg
+.ends
+
+* ----------------------------------------------------------------------------
+* Entrée de donnée d'une LED SK6812MINI-B-012 (fiche OPSCO rév. B/1).
+*   La fiche donne les seuils (haut 0,65 × VDD, bas 0,3 × VDD) et rien d'autre sur
+*   la broche. Hypothèses : 15 pF, diodes de protection vers VDD et la masse.
+.subckt LEDDIN din vdd vss params: cdin=15p
+Cd  din vss {cdin}
+Dh  din vdd DLED
+Dl  vss din DLED
+Rlk din vss 100meg
+.model DLED d(is=1e-14 n=1 rs=20 cjo=0.5p)
+.ends
+
+* ----------------------------------------------------------------------------
+* Diode de protection PESD5Z5.0 (D19) : fiche Nexperia.
+*   Capacité 89 pF typique, 150 pF au plus à 0 V ; fuite 5 nA typique, 50 nA au
+*   plus sous 5 V ; claquage 6,2 V au moins.
+.model PESD5Z5 d(is=1e-13 n=1.1 rs=0.5 cjo=89p vj=0.7 m=0.33 bv=6.8 ibv=1m)

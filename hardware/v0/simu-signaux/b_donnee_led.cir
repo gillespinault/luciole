@@ -1,0 +1,127 @@
+Luciole2 v0 - B donnee des LED : puce -> U9 -> R29 -> D1, puis D1 -> D2
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/b_donnee_led.cir
+*
+* Intention du schéma (circuit.py) : « 15 LED, tampon de niveau alimenté par le
+* rail ». GPIO18 sort la donnée sous 3,3 V ; U9 (SN74LV1T34, alimenté par VLED) la
+* remonte au niveau du rail ; R29 de 470 Ω ; entrée de D1.
+*
+* Le seuil de U9 n'est pas simulé mais lu dans la fiche : niveau haut reconnu à
+* partir de 2,03 V sous 4,5 à 5,0 V et de 2,11 V sous 5,5 V (-40 à 125 °C). La
+* puce sort au moins 0,8 × son alimentation, soit 2,376 V sous 3,3 V - 10 %.
+* La simulation vérifie que ce pire cas (seuil imposé à 2,11 V, 3,3 V à 2,97 V,
+* rail à 5,25 V) commute bien, et mesure ce que D1 reçoit.
+*
+* Ce qu'on lit : niveau haut à l'entrée de D1 contre son seuil (0,65 × le rail),
+* fronts 10-90 %, durée des bits vue au-dessus du seuil (bit 0 émis 0,32 µs, la
+* LED demande 0,25 à 0,40 ; bit 1 émis 0,70 µs, demande 0,65 à 1,0), retard.
+* Puis de D1 à D2 : la fiche ne dit rien de la sortie d'une LED ; hypothèse d'une
+* sortie logique au niveau du rail, de résistance rdout.
+
+.include modeles/modeles.lib
+
+.param vledv=4.5 v33v=3.3
+.param vth9=0
+.param r29=470 cdin=15p cpiste=3p rdout=100
+
+V33   v33 0 {v33v}
+VLED  vled 0 {vledv}
+* GPIO18 : même train que pour le port (bit 0 de 5,1 à 5,42 µs, bit 1 de 6,35 à 7,05 µs)
+Vdat  dat 0 pwl(0 0 0.1u 0 0.102u 1 0.42u 1 0.422u 0 1.35u 0 1.352u 1 2.05u 1 2.052u 0 2.6u 0) r=0.1u
+Vun   un 0 1
+XIO18 led_data v33 0 dat un ESPPIN
+Cp0   led_data 0 {cpiste}
+XU9   led_data 0 led_buf vled 0 LV1T vthfix={vth9}
+Cp1   led_buf 0 {cpiste}
+R29   led_buf led_d0 {r29}
+Cp2   led_d0 0 {cpiste}
+XD1   led_d0 vled 0 LEDDIN cdin={cdin}
+* sortie de D1 (hypothèse) : remise en forme, bascule à la moitié du rail
+Bd1   d1o 0 V = V(vled) * 0.5 * (1 + tanh((V(led_d0) - 0.5 * V(vled)) / 0.05))
+Rd1   d1o led_d1 {rdout}
+Cp3   led_d1 0 {cpiste}
+XD2   led_d1 vled 0 LEDDIN cdin={cdin}
+
+.control
+set noaskquit
+echo "RESULTAT B entree de D1 ; rail (V) ; 3,3 V (V) ; seuil de U9 (0 = typique, sinon impose, V) ; haut a D1 (V) ; seuil de D1, 0,65 x rail (V) ; bas (V) ; montee 10-90 % (s) ; descente (s) ; bit 0 au-dessus du seuil (s) ; bit 1 (s) ; retard GPIO18 -> D1 au seuil (s)"
+foreach v 4.5 5.0 5.25
+  foreach a 3.3 2.97
+    foreach t 0 2.11 0.8
+      alterparam vledv = $v
+      alterparam v33v = $a
+      alterparam vth9 = $t
+      reset
+      let thr = 0.65*$v
+      let v10 = 0.1*$v
+      let v90 = 0.9*$v
+      let mi = 0.5*$a
+      tran 0.2n 7.6u
+      meas tran vhaut find v(led_d0) at=5.4u
+      meas tran vbas find v(led_d0) at=6.3u
+      meas tran tm1 when v(led_d0)=$&v10 td=5.0u rise=1
+      meas tran tm2 when v(led_d0)=$&v90 td=5.0u rise=1
+      meas tran td1 when v(led_d0)=$&v90 td=5.0u fall=1
+      meas tran td2 when v(led_d0)=$&v10 td=5.0u fall=1
+      meas tran ts1 when v(led_d0)=$&thr td=5.0u rise=1
+      meas tran ts2 when v(led_d0)=$&thr td=5.0u fall=1
+      meas tran tu1 when v(led_d0)=$&thr td=6.2u rise=1
+      meas tran tu2 when v(led_d0)=$&thr td=6.2u fall=1
+      meas tran te1 when v(led_data)=$&mi td=5.0u rise=1
+      let tm = tm2 - tm1
+      let tdd = td2 - td1
+      let l0 = ts2 - ts1
+      let l1 = tu2 - tu1
+      let ret = ts1 - te1
+      echo "RESULTAT B entree de D1 ; $v ; $a ; $t ; $&vhaut ; $&thr ; $&vbas ; $&tm ; $&tdd ; $&l0 ; $&l1 ; $&ret"
+      destroy all
+    end
+  end
+end
+alterparam v33v = 3.3
+alterparam vth9 = 0
+
+echo "RESULTAT B variation ; rail 5,0 V ; R29 (ohms) ; capacite d'entree de D1 (F) ; montee 10-90 % (s) ; bit 0 au-dessus du seuil (s)"
+foreach r 47 470 4.7k
+  foreach c 5p 15p 50p
+    alterparam vledv = 5.0
+    alterparam r29 = $r
+    alterparam cdin = $c
+    reset
+    tran 0.2n 7.6u
+    meas tran tm1 when v(led_d0)=0.5 td=5.0u rise=1
+    meas tran tm2 when v(led_d0)=4.5 td=5.0u rise=1
+    meas tran ts1 when v(led_d0)=3.25 td=5.0u rise=1
+    meas tran ts2 when v(led_d0)=3.25 td=5.0u fall=1
+    let tm = tm2 - tm1
+    let l0 = ts2 - ts1
+    echo "RESULTAT B variation ; $r ; $c ; $&tm ; $&l0"
+    destroy all
+  end
+end
+alterparam r29 = 470
+alterparam cdin = 15p
+
+echo "RESULTAT B de D1 a D2 (hypothese sur la sortie de D1) ; rail (V) ; resistance de sortie supposee (ohms) ; haut a D2 (V) ; seuil (V) ; montee 10-90 % (s) ; bit 0 au-dessus du seuil (s)"
+foreach v 4.5 5.0
+  foreach r 50 100 500 2k
+    alterparam vledv = $v
+    alterparam rdout = $r
+    reset
+    let thr = 0.65*$v
+    let v10 = 0.1*$v
+    let v90 = 0.9*$v
+    tran 0.2n 7.6u
+    meas tran vhaut find v(led_d1) at=5.4u
+    meas tran tm1 when v(led_d1)=$&v10 td=5.0u rise=1
+    meas tran tm2 when v(led_d1)=$&v90 td=5.0u rise=1
+    meas tran ts1 when v(led_d1)=$&thr td=5.0u rise=1
+    meas tran ts2 when v(led_d1)=$&thr td=5.0u fall=1
+    let tm = tm2 - tm1
+    let l0 = ts2 - ts1
+    echo "RESULTAT B de D1 a D2 ; $v ; $r ; $&vhaut ; $&thr ; $&tm ; $&l0"
+    destroy all
+  end
+end
+quit
+.endc
+.end

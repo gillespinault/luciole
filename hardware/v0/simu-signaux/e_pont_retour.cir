@@ -1,0 +1,149 @@
+Luciole2 v0 - E pont de retour du convertisseur : R25, R26, R27, Q5, C37
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/e_pont_retour.cir
+*
+* Intention du schéma (circuit.py) : « Rail des LED : 4,45 V, ou 5,04 V si VSEL est
+* à 1. » R28 de 1 MΩ : pendant le reset, le rappel interne de GPIO20 choisit 5,04 V,
+* convertisseur arrêté. C37 de 470 pF, non monté : le zéro à 1 kHz que TI demande
+* quand la sortie dépasse 40 µF.
+*
+* Le convertisseur est remplacé par ce qu'il fait en régime établi : il règle sa
+* sortie pour que FB soit égale à sa référence (source Ereg, gain 1e6).
+* Référence du TPS61023 (fiche TI SLVSF14B) : 595 mV, de 580 à 610 mV, -40 à 125 °C,
+* en découpage continu ; 601 mV typique (585 au moins) à faible charge.
+* Fuite de la broche FB : 20 nA au plus. Résistances à 1 %.
+*
+* Ce qu'on lit : la tension du rail dans les deux réglages, au nominal puis aux
+* deux extrêmes (référence et résistances toutes dans le mauvais sens) ; limites :
+* LED 3,7 à 5,5 V, tampons 5,5 V, protection du convertisseur 5,5 V au plus tôt.
+* Puis VSEL pendant le reset, puis le zéro et le pôle donnés par C37.
+
+.include modeles/modeles.lib
+
+.param vref=0.595
+* tol : -1 tout au plus bas, 0 nominal, +1 tout au plus haut
+.param tol=0
+.param r25={330k * (1 + 0.01 * tol)}
+.param r26={51k * (1 - 0.01 * tol)}
+.param r27={330k * (1 - 0.01 * tol)}
+.param ifb={-20n * tol}
+* vsel : 0 broche à 0 ; 1 broche à 1 ; 2 broche en l'air ; 3 reset (rappel interne de 45 kΩ)
+.param vsel=0
+.param c37=1f
+* fuite de Q5 bloqué : 30 MΩ = 1 µA sous 30 V (maximum de la fiche à 25 °C)
+.param q5rf=30meg
+
+V33   v33 0 3.3
+Vref  ref 0 {vref}
+Ereg  vled 0 ref fb 1e6
+R25   vled fb {r25}
+R26   fb 0 {r26}
+R27   fb fb_x {r27}
+XQ5   fb_x vselx 0 AO3400A rfuite={q5rf}
+R28   vselx 0 1meg
+Ifb   fb 0 {ifb}
+C37   vled fb {c37}
+Vso   so 0 {vsel == 1 ? 1 : 0}
+Vse   se 0 {(vsel == 0 || vsel == 1) ? 1 : 0}
+XIO20 vselx v33 0 so se ESPPIN rpu={vsel == 3 ? 45k : 1e12}
+
+* le même pont, seul, pour la réponse en fréquence de VLED vers FB
+Vac   a 0 dc 0 ac 1
+R25b  a fbb 330k
+R26b  fbb 0 51k
+R27b  fbb fbxb 330k
+Rq5b  fbxb 0 {(vsel == 1 || vsel == 3) ? 30m : 30meg}
+C37b  a fbb {c37}
+
+.control
+set noaskquit
+echo "RESULTAT E tension du rail ; VSEL (0 broche a 0, 1 a 1) ; cas (1 tout au plus bas, 2 nominal, 3 tout au plus haut, 4 faible charge typique, 5 faible charge tout au plus haut : reference supposee a 616 mV, la fiche ne borne pas ce cas) ; reference (V) ; R25 (ohms) ; rail (V) ; FB (V) ; grille de Q5 (V)"
+foreach s 0 1
+  foreach k 1 2 3 4 5
+    alterparam vsel = $s
+    if $k = 1
+      alterparam vref = 0.580
+      alterparam tol = -1
+    end
+    if $k = 2
+      alterparam vref = 0.595
+      alterparam tol = 0
+    end
+    if $k = 3
+      alterparam vref = 0.610
+      alterparam tol = 1
+    end
+    if $k = 4
+      alterparam vref = 0.601
+      alterparam tol = 0
+    end
+    if $k = 5
+      alterparam vref = 0.616
+      alterparam tol = 1
+    end
+    reset
+    op
+    echo "RESULTAT E tension du rail ; $s ; $k ; $&v(ref) ; $&@r25[r] ; $&v(vled) ; $&v(fb) ; $&v(vselx)"
+    destroy all
+  end
+end
+alterparam vref = 0.595
+alterparam tol = 0
+
+echo "RESULTAT E etats de VSEL ; VSEL (2 en l'air, 3 reset) ; grille de Q5 (V) ; rail choisi (V)"
+foreach s 2 3
+  alterparam vsel = $s
+  reset
+  op
+  echo "RESULTAT E etats de VSEL ; $s ; $&v(vselx) ; $&v(vled)"
+  destroy all
+end
+
+echo "RESULTAT E variation ; fuite de Q5 bloque (ohms equivalents) ; rail en reglage bas (V)"
+foreach f 30meg 3meg 300k
+  alterparam vsel = 0
+  alterparam q5rf = $f
+  reset
+  op
+  echo "RESULTAT E variation fuite de Q5 ; $f ; $&v(vled)"
+  destroy all
+end
+alterparam q5rf = 30meg
+
+echo "RESULTAT E variation ; R26 (ohms) ; rail en reglage bas (V) : doit suivre 0,595 x (1 + 330k / R26)"
+foreach r 47k 51k 56k
+  alterparam vsel = 0
+  alterparam r26 = $r
+  reset
+  op
+  echo "RESULTAT E variation R26 ; $r ; $&v(vled)"
+  destroy all
+end
+alterparam r26 = 51k
+
+echo "RESULTAT E zero de C37 ; VSEL ; C37 (F) ; gain en continu ; frequence ou le gain a monte de 3 dB, soit le zero (Hz) ; avance de phase la plus forte (degres) ; a la frequence (Hz) ; calcul direct du zero 1/(2 pi R25 C37) (Hz) ; du pole (Hz)"
+foreach s 0 1
+  foreach c 470p 1n 220p
+    alterparam vsel = $s
+    alterparam c37 = $c
+    reset
+    ac dec 200 1 1meg
+    let g = vm(fbb)
+    let ph = 180/pi*cph(v(fbb))
+    meas ac g0 find g at=1
+    let g3 = g0*sqrt(2)
+    meas ac fz when g=$&g3 rise=1
+    meas ac phmax max ph
+    meas ac fph max_at ph
+    let rb = 51k
+    if $s = 1
+      let rb = 51k*330k/(51k+330k)
+    end
+    let fzc = 1/(2*pi*330k*$c)
+    let fpc = 1/(2*pi*(330k*rb/(330k+rb))*$c)
+    echo "RESULTAT E zero de C37 ; $s ; $c ; $&g0 ; $&fz ; $&phmax ; $&fph ; $&fzc ; $&fpc"
+    destroy all
+  end
+end
+quit
+.endc
+.end

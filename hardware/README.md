@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Deux modèles l'ont relu le 18 novembre : huit corrections sont faites et contre-relues (dossier dans `v0/revue/`). Le brochage des 27 pièces autres que résistances et condensateurs a été relevé à l'aveugle dans les fiches des pièces commandées, et l'orientation de chaque pièce contrôlée dans l'aperçu de pose de JLCPCB. Rien n'est commandé |
+| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.6, concordent : 160 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Deux modèles l'ont relu le 18 novembre : huit corrections sont faites et contre-relues (dossier dans `v0/revue/`). Le brochage des 27 pièces autres que résistances et condensateurs a été relevé à l'aveugle dans les fiches des pièces commandées, et l'orientation de chaque pièce contrôlée dans l'aperçu de pose de JLCPCB. Rien n'est commandé |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -120,6 +120,28 @@ Le tri complet est dans le wiki, page « Revue du routage du 18 novembre 2026 »
 - Une piste courte entre deux grandes pastilles ne chauffe presque pas : la chaleur part par ses deux bouts. Les abaques de largeur supposent une piste longue. Chiffrer avant de redessiner un bloc.
 - Toute piste ajoutée en face avant peut fermer une poche du plan de masse. Le compte des groupes restés isolés, à la fin de chaque essai, l'a signalé aux douze graines pour une correction mal placée.
 - Un relecteur se trompe aussi. Sur trente constats, trois reposaient sur une lecture fausse des pièces ou de la nomenclature. Chaque constat se vérifie sur la carte avant d'être corrigé.
+
+### Simulations
+
+    v0/simu/lancer.sh            alimentation : inversion de la batterie, partage USB/batterie, chargeur
+    v0/simu-signaux/lancer.sh    port Grove, donnée des LED, reset, boutons, pont du convertisseur
+
+Chaque dossier porte ses fichiers ngspice, ses modèles (fabricant quand il existe, écrit d'après la fiche sinon), un README qui dit quoi lire, et ses résultats. ngspice est dans l'image KiCad : rien à installer. Les valeurs du schéma sont recopiées en tête de `commun.inc` (alimentation) : les y changer avant de toucher à `circuit.py` dit en trois minutes si un changement tient dans tous les cas d'usage. Une ligne « ATTENTION » de `lancer.sh` signale un calcul qui n'a pas abouti ; son tableau n'est pas un résultat.
+
+### Ce que les simulations et la comparaison aux montages de référence ont appris (18 novembre 2026)
+
+- Un raisonnement écrit dans un commentaire n'est pas une vérification. Le schéma disait que le transistor Q6 bloquait Q2 « en moins d'une microseconde » quand une cellule inversée est branchée à chaud. La simulation a montré 16 à 35 µs, avec la sortie du chargeur tirée à −3 V. Deux analyses indépendantes l'ont trouvé le même jour, après quatre relectures par lecture.
+- Un transistor déjà passant ne se bloque pas par le circuit qui surveille la tension à ses bornes : cette tension est nulle tant qu'il conduit. Il faut tenir sa grille (C42), pas seulement la commander.
+- Couper vite un courant fort donne une pointe de tension. La première correction essayée (blocage rapide) remplaçait une tension négative par −20 V sur un transistor de 12 V. Simuler la correction autant que le défaut.
+- Les valeurs maximales des fiches comptent : la fuite inverse d'une diode Schottky va de 5 µA à 25 °C à plus de 1 mA à 45 °C pour une pièce en limite de fiche. Elle suffit à fausser une détection de tension ou à recharger lentement une cellule pleine.
+- Le moment fragile de cette carte est le branchement de la cellule. Règle d'atelier : la cellule d'abord, USB débranché, puis l'USB.
+- Comparer à un montage de référence trouve surtout des limites d'usage (accessoires sans résistances de rappel, sens du ruban selon la marque), pas des erreurs de câblage : celles-ci avaient été trouvées par les relectures du schéma.
+
+### Plan des pastilles de test
+
+    tools/kicad python3 tools/pastilles.py v0/v0.kicad_pcb v0/revue/pastilles.png
+
+La carte ne porte aucune inscription près de ses pastilles. Ce plan les situe, avec le nom de leur réseau.
 
 ### Ce que le contrôle de la pose du 18 novembre 2026 a appris
 

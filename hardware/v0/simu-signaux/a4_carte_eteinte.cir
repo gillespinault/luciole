@@ -1,0 +1,90 @@
+Luciole2 v0 - A4 port Grove : accessoire alimente, carte eteinte
+* Lancer depuis hardware/ :  tools/kicad ngspice -b v0/simu-signaux/a4_carte_eteinte.cir
+*
+* Intention du schéma (circuit.py) : Q8 et Q9, grille au 3,3 V, sont bloqués quand
+* le 3,3 V est absent ; U11 écrête sur un rail isolé. Un accessoire alimenté par
+* ailleurs ne doit donc pas réalimenter la carte par les lignes du port.
+*
+* Montage : 3,3 V absent (rail à la masse par 1 kΩ, hypothèse sur ce que la carte
+* éteinte présente), broches de la puce en l'air, convertisseur arrêté.
+* L'accessoire met 5 V sur les deux lignes :
+*   src = 0 : par ses rappels de 4,7 kΩ (accessoire I2C au repos) ;
+*   src = 1 : par une sortie logique franche, 50 Ω (ruban, liaison série).
+* Le rail des LED coupé, deux hypothèses qui encadrent la réalité, comme en A3 :
+*   rail = 0 tenu à 0 V ; rail = 1 chargé par 381 kΩ seulement.
+* Cas à part, rail = 2 : l'accessoire met aussi 5 V sur la broche d'alimentation du
+* port (VPORT), donc sur le rail des LED à travers F1.
+*
+* Ce qu'on lit : le courant qui entre par chaque ligne et où il va (U10 vers le
+* rail des LED, U11, Q8 et Q9 vers la puce), et les tensions qui en résultent.
+
+.include modeles/modeles.lib
+.include port_grove.inc
+
+.param src=0 rail=0
+.param rsrc={src == 1 ? 50 : 4.7k}
+.param rrail={rail == 1 ? 381k : 1m}
+.param vrail={rail == 2 ? 5 : 0}
+
+* 3,3 V absent
+R33off v33 0 1k
+Vrail vledx 0 {vrail}
+Rrail vled vledx {rrail}
+Vz    zero 0 0
+XPU   port_pup v33 0 zero zero ESPPIN
+Vipu  port_pup port_pu 0
+XIO1  io1p v33 0 zero zero ESPPIN
+Vii1  io1p io1 0
+XIO2  io2p v33 0 zero zero ESPPIN
+Vii2  io2p io2 0
+* accessoire
+Vacc  vacc 0 5
+Vl1   vacc l1 0
+Rs1   l1 port_1 {rsrc}
+Vl2   vacc l2 0
+Rs2   l2 port_2 {rsrc}
+
+.control
+set noaskquit
+echo "RESULTAT A4 ; source (0 rappels 4,7 k, 1 sortie franche 50 ohms) ; rail (0 tenu a 0 V, 1 en l'air sur 381 k, 2 alimente en 5 V par le port) ; JP4 (1 ferme, 0 coupe) ; courant entrant par PORT_1 (A) ; par PORT_2 (A) ; de U10 vers la ligne, negatif = vers le rail (A) ; dans U11 (A) ; par Q8 et Q9 vers la puce (A) ; PORT_1 ; PORT_2 ; rail des LED ; 3,3 V ; IO2 ; PORT_PU (V)"
+foreach j 1m 1e12
+  foreach s 0 1
+    foreach r 0 1 2
+      alterparam jp4 = $j
+      alterparam src = $s
+      alterparam rail = $r
+      reset
+      op
+      let i1 = i(Vl1)
+      let i2 = i(Vl2)
+      let iu10 = i(Vi36)
+      let iu11 = i(Viu11a) + i(Viu11b)
+      let iq = i(Viq8) + i(Viq9)
+      let jf = 1
+      if $j > 1
+        let jf = 0
+      end
+      echo "RESULTAT A4 ; $s ; $r ; $&jf ; $&i1 ; $&i2 ; $&iu10 ; $&iu11 ; $&iq ; $&v(port_1) ; $&v(port_2) ; $&v(vled) ; $&v(v33) ; $&v(io2) ; $&v(port_pu)"
+      destroy all
+    end
+  end
+end
+alterparam jp4 = 1m
+
+echo "RESULTAT A4 avec la correction (diode en serie avec R36) ; source ; rail ; courant entrant par PORT_1 (A) ; par PORT_2 (A) ; PORT_2 (V) ; rail des LED (V)"
+foreach s 0 1
+  foreach r 0 1 2
+    alterparam dserie = 1
+    alterparam src = $s
+    alterparam rail = $r
+    reset
+    op
+    let i1 = i(Vl1)
+    let i2 = i(Vl2)
+    echo "RESULTAT A4 avec la correction ; $s ; $r ; $&i1 ; $&i2 ; $&v(port_2) ; $&v(vled)"
+    destroy all
+  end
+end
+quit
+.endc
+.end
