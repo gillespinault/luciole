@@ -68,6 +68,27 @@ La construction normale rejoue ce fichier. Sa signature dit pour quelle carte il
 
 Le routeur sur grille applique nos règles d'isolement, sur une grille de 0,05 mm, à 45 degrés, sur deux faces. Quand une liaison ne passe pas, il défait les pistes qu'il a lui-même tracées et qui la barrent, la trace, puis retrace les réseaux défaits. Il ne touche jamais aux pistes tracées par script. Il redonne toujours le même tracé. Il signale les alimentations qu'il a dû tracer plus fin que leur classe. Il ne route pas la masse : les plans la relient, et `Router.stitch()` raccorde par un via les pastilles que le plan de leur face n'atteint pas.
 
+Pour comparer des variantes sans toucher au projet, `v0/carte.py` accepte des options d'essai. Avec l'une d'elles, la carte et son tracé s'écrivent dans `v0/out/`, sous un nom qui dit la variante ; plusieurs essais peuvent tourner en même temps.
+
+    tools/kicad python3 v0/carte.py --router --largeur=28 --graine=7
+
+| Option | Effet |
+|--------|-------|
+| `--largeur=28` | Largeur de la carte. Elle s'élargit par le bas : la rangée de LED, le module et les connecteurs gardent leur place |
+| `--graine=7` | Autre ordre de passage du routeur. Chaque graine donne un autre tracé ; une graine donnée redonne le même |
+| `--ecart=0.35` | Écart que le poseur laisse entre deux composants (0,2 mm par défaut) |
+| `--dos=1` | Surcoût d'une piste nouvelle au dos, sous la batterie (3 par défaut) |
+| `--sans=SW1,SW2` | Ne pose pas ces composants, pour mesurer ce que leur retrait libère sans toucher au schéma |
+
+`--graine` seule n'ouvre pas le mode d'essai : elle sert aussi à tracer la carte du projet avec l'ordre retenu.
+
+### Ce que les essais du 18 novembre 2026 ont appris
+
+- La largeur compte plus que tout le reste. Avec toutes les fonctions, le routeur laisse 26 liaisons à 22 mm, 19 à 24 mm, 15 à 26 mm, 5 à 28 mm et 4 à 30 mm. La carte est passée à 28 mm.
+- Retirer les boutons internes ne change rien. Lever le surcoût du dos non plus : les blocs qui coincent sont là où le dos est déjà pris. Un écart du poseur de 0,35 ou 0,5 mm fait moins bien que 0,2 mm.
+- Lancer le routeur avec une douzaine de graines dit où chercher. Une liaison qui échoue à un endroit différent selon la graine relève de l'ordre de passage. Un réseau qui échoue à toutes les graines désigne une erreur de structure : une piste tracée par script qui enferme d'autres signaux. La commande du convertisseur, tracée en face avant devant le module, enfermait ainsi la donnée des LED et les sorties de la colonne de gauche ; elle passe maintenant au dos, dans le faisceau.
+- Une protection à deux pastilles par ligne (USBLC6) se relie sous son boîtier, par script. Laissé seul, le routeur y croisait les deux lignes.
+
 ### Ce que les essais du 17 novembre 2026 sur la carte v0 ont appris
 
 - Deux routeurs libres ont été essayés : Freerouting 2.5.0 et KiCadRoutingTools 0.24.1 (`tools/outils.sh` les installe, `tools/routeur.sh` les lance sur une copie, `tools/gel.py` fige leur tracé). Aucun ne route la carte. Sur deux placements rangés automatiquement, Freerouting laissait entre 61 et 89 liaisons sur 129 et KiCadRoutingTools échouait sur 30 réseaux. Avec la structure tracée par script, Freerouting laissait encore 55 liaisons, dont des liaisons de 1 mm entre pastilles voisines.

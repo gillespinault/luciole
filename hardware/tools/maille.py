@@ -32,6 +32,7 @@ pas de masse (les plans la relient), pas d'optimisation globale.
 import heapq
 import json
 import math
+import random
 from array import array
 from collections import Counter, deque
 
@@ -678,9 +679,13 @@ class Router:
             return ripped
         return None
 
-    def route(self, skip=(), order=(), only=None, max_rips=6):
+    def route(self, skip=(), order=(), only=None, max_rips=6, seed=None):
         """Route tous les réseaux, sauf ceux de `skip`. `order` : réseaux à router d'abord ;
-        les autres suivent, du plus court au plus long. Rend le nombre de liaisons non faites."""
+        les autres suivent, du plus court au plus long. Rend le nombre de liaisons non faites.
+
+        seed : graine d'un tirage qui bouscule cet ordre (longueur comptée de 60 à 140 %).
+        Le résultat dépend de l'ordre de passage ; plusieurs graines donnent plusieurs
+        tracés, dont on garde le meilleur. Une graine donnée redonne le même ordre."""
         names = [k for k in self.items if k not in skip and not k.startswith("unconnected-")
                  and (only is None or k in only)]
 
@@ -689,7 +694,12 @@ class Router:
             return (max(p[0] for p in pts) - min(p[0] for p in pts) + max(p[1] for p in pts) - min(p[1] for p in pts), k)
 
         first = [k for k in order if k in names]
-        queue = deque(first + [x for x in sorted(names, key=span) if x not in first])
+        if seed is None:
+            rest = sorted(names, key=span)
+        else:
+            rnd = random.Random(seed)
+            rest = [k for _, k in sorted((span(k)[0] * rnd.uniform(0.6, 1.4), k) for k in sorted(names))]
+        queue = deque(first + [x for x in rest if x not in first])
         rips, undone, stuck_nets = Counter(), 0, {}
         while queue:
             name = queue.popleft()
