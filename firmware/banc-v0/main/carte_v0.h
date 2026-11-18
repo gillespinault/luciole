@@ -117,6 +117,13 @@ static inline v0_cc_t v0_cc_class(int cc_sense_mv)
     return V0_CC_INVALID;
 }
 
+/* Alimentation 3,3 V. Le superviseur U5 (TLV803EA30, seuil 3,08 V) retient la
+ * puce avant son détecteur interne de sous-tension (2,51 V) : un creux du
+ * 3,3 V se lit comme une mise sous tension ordinaire, jamais comme une
+ * sous-tension. Sur cellule seule et sous 3,5 V, le 3,3 V passerait sous ce
+ * seuil pendant une émission radio : le banc ne lance alors pas l'essai radio. */
+#define V0_RADIO_VBAT_MIN_MV 3500
+
 /* ------------------------------------------------------------------ */
 /* Règles du port Grove, révision 0.6 (simulations hardware/v0/simu-signaux) :
  *  1. Convertisseur arrêté, PORT_PU, IO1 et IO2 sont à 0. Un niveau haut
@@ -185,10 +192,14 @@ static inline int lis2dh12_mg(uint8_t low, uint8_t high)
  * sans risque pour une carte dont on ne connaît encore ni le convertisseur
  * ni les soudures : pas d'échauffement, et une prise USB de 500 mA tient ce
  * courant en plus de la charge lente (407 mA) hors émission radio. La fiche
- * demande aussi de rester sous 70 % en blanc : on en est loin. */
+ * demande aussi de rester à 70 % au plus en blanc : 32/255 fait 12,5 %, et la
+ * compilation s'arrête si le plafond dépasse un jour 70 %. */
 #define BANC_LED_MAX        32
 #define BANC_LED_DEFAULT    16      /* niveau « faible » au démarrage */
+#define V0_LED_WHITE_MAX_PCT 70     /* fiche OPSCO : 70 % au plus quand les trois couleurs sont allumées */
 _Static_assert(BANC_LED_DEFAULT <= BANC_LED_MAX && BANC_LED_MAX <= 64, "plafond des LED : rester prudent");
+/* Le plafond vaut pour chaque couleur, donc aussi pour le blanc : 32/255 = 12,5 %. */
+_Static_assert(BANC_LED_MAX * 100 <= 255 * V0_LED_WHITE_MAX_PCT, "plafond des LED au-dessus de 70 % en blanc");
 
 /* Courant moyen du rail pour une image dont la somme des composantes (R + G + B
  * de toutes les LED, chacune sur 255) vaut sum : en milliampères. */

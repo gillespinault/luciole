@@ -1,6 +1,8 @@
 # Carte saine, sous USB, batterie en charge : toutes les commandes.
-# attendu : bilan : 19 bon(s), 0 NON, 2 a voir.
-# attendu : bilan : 20 bon(s), 0 NON, 1 a voir.
+# attendu : bilan : 20 bon(s), 0 NON, 2 a voir.
+# attendu : bilan : 21 bon(s), 0 NON, 1 a voir.
+# attendu : revision de la puce    | v0.2                           | v0.2 ou plus : ADC complet                 | BON
+# attendu : Cause du demarrage : mise sous tension, bouton reset (SW1) ou creux du 3.3 V.
 # attendu : fin : 0 violation(s)
 # attendu : batterie (VBAT)        | 3.91 V (broche 1170 mV)        | 3.00 a 4.35 V (broche 895 a 1298 mV)       | BON
 # attendu : port au repos          | PORT_PU=0, lignes 0 0          | 0 0 0 (convertisseur arrete)               | BON
@@ -63,6 +65,7 @@ charge arret
 e
 charge lente
 radio
+radio force
 blabla
 led 0
 conv

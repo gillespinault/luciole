@@ -38,6 +38,10 @@ Branchez la cellule sur la carte USB débranché, puis branchez l'USB.
 
 Dans l'autre ordre, une cellule correcte peut rester déconnectée de la carte. On lit alors 4,2 V sur la batterie alors qu'elle ne charge pas, et cela dure jusqu'au débranchement de l'USB. Dans ce cas, débranchez l'USB puis rebranchez-le.
 
+Au premier branchement d'une cellule, ou après un échange, la protection de cellule peut rester ouverte : la carte paraît morte sur cellule seule. Ce n'est pas une panne. Branchez l'USB une seconde, la protection se referme. Sans USB, reliez un instant TP18 à TP6.
+
+Cellule en place, débrancher l'USB ne coupe pas la carte : elle continue sur la cellule.
+
 ## Flasher et ouvrir la console
 
 Les étapes de cette section n'ont pas pu être essayées. Elles reprennent ce que `../flash.sh` fait pour les NanoC6, qui ont la même puce.
@@ -52,6 +56,8 @@ Les étapes de cette section n'ont pas pu être essayées. Elles reprennent ce q
 
 Tout terminal série convient aussi, à 115200 bauds. Le programme renvoie les caractères tapés ; la touche d'effacement fonctionne.
 
+Sur une puce jamais programmée, le port série apparaît et disparaît toutes les 2 à 3 secondes : la puce redémarre en boucle faute de programme. C'est normal, et le flash passe quand même. Sinon, faites la manœuvre des boutons ci-dessous.
+
 ### Si l'USB ne répond pas
 
 Une puce vierge ou un programme planté peuvent ne pas se présenter en USB. La manœuvre des boutons force le mode téléchargement :
@@ -60,6 +66,8 @@ Une puce vierge ou un programme planté peuvent ne pas se présenter en USB. La 
 2. Appuyez brièvement sur le bouton reset (SW1), puis relâchez BOOT.
 3. Relancez `idf.py -p PORT flash`.
 4. Après le flash, appuyez sur reset (SW1) pour lancer le programme.
+
+Une console restée muette après un branchement est un défaut connu de cette puce, rapporté pour 6 à 15 % des mises sous tension : appuyez sur reset (SW1). Débrancher l'USB ne suffit pas quand la cellule est en place.
 
 Si le port USB n'apparaît toujours pas, mesurez d'abord l'alimentation : 5 V sur TP1 (VBUS), 3,3 V sur TP4. Sans 3,3 V, la panne est avant la puce. Avec 3,3 V et sans port USB, passez par l'UART de secours.
 
@@ -127,7 +135,7 @@ Les tensions attendues viennent du schéma et des fiches techniques. Aucune n'a 
 
 ### Démarrage
 
-Après le flash, la bannière donne la révision de la puce, le nom de l'unité (les deux derniers octets de son adresse) et la cause du démarrage. Une cause `CHUTE DU 3.3 V` signale une alimentation qui s'effondre. `ERREUR DU PROGRAMME` ou `CHIEN DE GARDE` signalent un défaut du banc lui-même, pas de la carte.
+Après le flash, la bannière donne la révision de la puce, le nom de l'unité (les deux derniers octets de son adresse) et la cause du démarrage. Une chute du 3,3 V ne s'affiche pas comme telle : le superviseur U5 (3,08 V) retient la puce avant que son détecteur interne (2,51 V) la voie, et la cause lue est une mise sous tension ordinaire. Une bannière qui revient toute seule, pendant l'essai radio par exemple, signale donc un creux du 3,3 V. `ERREUR DU PROGRAMME` ou `CHIEN DE GARDE` signalent un défaut du banc lui-même, pas de la carte.
 
 ### État : `e`
 
@@ -146,6 +154,7 @@ demarrage, au reset    | IO8=1 IO9=1 IO15=0 IO5=0 IO4=0 | IO8=1 IO9=1 IO5=0 ; IO
 demarrage, maintenant  | IO8=1 IO9=1 IO15=0             | 1 1 0 (BOOT relache, PORT_PU a 0)          | BON
 interruption accelero  | 0                              | 0 au repos                                 | BON
 temperature de la puce | 31.4 C                         | 10 a 70 C                                  | BON
+revision de la puce    | v0.2                           | v0.2 ou plus : ADC complet                 | BON
 ```
 
 Ce que disent les lignes :
@@ -155,6 +164,7 @@ Ce que disent les lignes :
 - Ligne CC. La source USB-C annonce son courant par une tension sur l'une des deux broches CC. La puce lit la moyenne des deux, donc la moitié. Un câble USB-A vers USB-C donne 0,5 A. Sous USB, « aucune annonce » désigne un câble sans résistance ou une liaison CC coupée.
 - Chargeur. Seule la sortie CHRG est reliée à la puce. Sans batterie, CHRG peut alterner entre 0 et 1 : la fiche du TP4056 annonce une période de 1 à 4 secondes. La sortie STDBY (charge finie) se lit au voltmètre sur TP13.
 - Bouton. Refaites `e` en tenant le bouton : la ligne doit passer à 0.
+- Révision de la puce. Les puces v0.0 et v0.1, montées dans les modules d'avant novembre 2024, perdent les quatre bits bas de l'ADC : les tensions y sont lues plus grossièrement. Le banc le signale.
 - Démarrage. « Au reset » est ce que la puce a figé à sa mise sous tension. IO15 (PORT_PU) n'y est pas jugée : rail coupé, le tampon du port la tire vers 0,5 V, et la puce ne s'en sert pas. « Maintenant » se relit à chaque `e` : tenez BOOT (SW2), IO9 passe à 0.
 
 Sous le tableau, l'état des commandes. Une sortie que la puce pousse est relue : `LA BROCHE NE SUIT PAS LA COMMANDE` signale un court-circuit sur cette broche.
@@ -195,7 +205,7 @@ Le convertisseur doit être en marche, sinon rien ne s'allume et le banc le rapp
 - `couleurs` : rouge, vert, bleu, une seconde chacune. Un autre ordre signale une erreur d'ordre des couleurs dans le programme, pas dans la carte.
 - `chenillard` : un point blanc qui va de D1 à D15, un pas toutes les 150 ms.
 
-La luminosité est plafonnée à 32 sur 255 (`BANC_LED_MAX` dans `main/carte_v0.h`). Raison : quinze LED en blanc à fond tirent 540 mA sur le rail ; à 32 sur 255, 77 mA au plus. Chaque commande affiche le courant estimé du rail, à comparer à un ampèremètre si on en a un.
+La luminosité est plafonnée à 32 sur 255, soit 12,5 % (`BANC_LED_MAX` dans `main/carte_v0.h`). La fiche de la LED demande de rester à 70 % au plus quand les trois couleurs sont allumées : la compilation s'arrête si ce plafond est un jour dépassé. Raison : quinze LED en blanc à fond tirent 540 mA sur le rail ; à 32 sur 255, 77 mA au plus. Chaque commande affiche le courant estimé du rail, à comparer à un ampèremètre si on en a un.
 
 ### Charge : `charge arret`, `charge lente`, `charge rapide`
 
@@ -237,14 +247,16 @@ En mode I2C, `port` lit les deux lignes et mesure leur vitesse de remontée, en 
 
 En mode ruban, voltmètre sur la broche 2 du port : `ligne2 1` doit donner la tension du rail des LED, et non 3 V ; `ligne2 0`, 0 V. Avec un ruban de LED branché sur le port, `ruban 5` allume ses cinq premières LED en blanc faible et `ruban 0` les éteint. Le banc pilote 30 LED au plus, à 8 sur 255 : 56 mA au pire pour un ruban à 20 mA par couleur.
 
-### Radio : `radio`
+### Radio : `radio`, `radio force`
 
 Le banc met la radio en marche, écoute les réseaux Wi-Fi pendant trois secondes, puis envoie dix trames à la box la plus forte et compte les accusés de réception. Il arrête ensuite la radio. Rien n'est enregistré.
 
 - Réception : au moins un réseau, le plus fort au-dessus de −85 dBm. À quelques mètres d'une box, −30 à −60 dBm. Aucun réseau près d'une box : antenne ou radio en défaut.
 - Émission : au moins 5 accusés sur 10. Un accusé prouve que la carte a émis, que la box l'a entendue et que la carte a entendu la réponse. Zéro accusé ne condamne pas l'émission : certaines box peuvent ne pas répondre à ces trames. Refaites l'essai près d'une autre box.
 
-Si la carte redémarre pendant l'essai avec la cause `CHUTE DU 3.3 V`, le rail 3,3 V ne tient pas le courant de l'émission.
+Avant d'allumer la radio, le banc lit la batterie. Sur cellule seule et sous 3,5 V, il ne lance pas l'essai : le 3,3 V passerait sous le seuil du superviseur pendant l'émission, et la carte redémarrerait. Branchez l'USB, ou tapez `radio force` pour essayer quand même.
+
+Si la bannière du banc revient pendant l'essai, le rail 3,3 V ne tient pas le courant de l'émission.
 
 ## Pastilles de test
 
@@ -308,6 +320,21 @@ Vérifié sans carte, le 18 novembre 2026 :
 - l'ADC, le capteur de température, le pilote des LED, sur la carte et sur un ruban ;
 - la radio sans partition NVS, et l'accusé de réception des trames par une box ;
 - la mesure de la vitesse de remontée des lignes, dont la limite de 3 µs est calculée et non mesurée.
+
+## Règles pour le firmware final
+
+Ce que le banc respecte et que le vrai firmware de la carte v0 devra respecter aussi. Elles viennent du schéma, des simulations et des retours d'expérience relevés le 18 novembre 2026.
+
+- Lire la batterie avant d'allumer la radio. Sur cellule seule et sous 3,5 V, ne pas l'allumer.
+- Plafonner la puissance des LED selon la batterie, et à 70 % au plus en blanc.
+- Mettre la donnée des LED à 0 avant d'allumer le rail.
+- Port Grove : PORT_PU, IO1 et IO2 à 0 tant que le rail est coupé ; PORT_PU avant BOOST_EN ; première trame d'un ruban envoyée deux fois ; I2C à 100 kHz.
+- La puce n'a qu'un contrôleur I2C : bus logiciel pour l'accéléromètre ou pour le port.
+- Borner la charge et les LED par le courant que la source annonce sur CC.
+- Arrêter la charge par CHG_INH si la batterie reste sous 3,0 V après 30 minutes, ou si la charge dépasse une durée maximale : le chargeur n'a pas de minuterie.
+- Si des trames de LED se corrompent quand la radio émet, piloter les LED par le SPI plutôt que par le RMT.
+- Le Wi-Fi sans économie d'énergie et le 802.15.4 ne s'écoutent pas en même temps.
+- Ne jamais flasher sur une carte v0 un binaire prévu pour le NanoC6 : il pousse GPIO19 contre la sortie CHRG du chargeur.
 
 ## Fichiers
 

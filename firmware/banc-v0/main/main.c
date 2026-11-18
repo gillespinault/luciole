@@ -57,7 +57,7 @@
 #include "carte_v0.h"
 #include "soft_i2c.h"
 
-#define BANC_VERSION    "1.1"
+#define BANC_VERSION    "1.2"
 
 /* ------------------------------------------------------------------ */
 /* État des commandes. C'est la seule mémoire du banc ; elle repart de  */
@@ -362,6 +362,7 @@ typedef struct {
     int  g8, g9, g15;       /* niveaux lus maintenant */
     bool temp_ok;
     float temp_c;
+    int  chip_rev;          /* 100 × majeure + mineure : 2 pour v0.2 */
 } measures_t;
 
 /* Registre des broches de démarrage, figé par la puce au reset (manuel de
@@ -389,6 +390,9 @@ static void measure(measures_t *m)
     m->g9 = gpio_get_level(V0_BOOT_GPIO);
     m->g15 = gpio_get_level(V0_PORT_PU_GPIO);
     m->temp_ok = s_temp && temperature_sensor_get_celsius(s_temp, &m->temp_c) == ESP_OK;
+    esp_chip_info_t chip;
+    esp_chip_info(&chip);
+    m->chip_rev = chip.revision;
 }
 
 static const char *cc_text(v0_cc_t c)
@@ -401,6 +405,8 @@ static const char *cc_text(v0_cc_t c)
         default:          return "hors norme";
     }
 }
+
+#define CHIP_REV_FULL_ADC   2       /* v0.2 */
 
 static void rows_measures(const measures_t *m)
 {
@@ -460,6 +466,9 @@ static void rows_measures(const measures_t *m)
 
     if (m->temp_ok) row("temperature de la puce", m->temp_c >= 10 && m->temp_c <= 70 ? V_BON : V_NON, "10 a 70 C", "%.1f C", (double)m->temp_c);
     else            row("temperature de la puce", V_NON, "10 a 70 C", "capteur muet");
+
+    /* Les puces v0.0 et v0.1 perdent les quatre bits bas de l'ADC. */
+    row("revision de la puce", m->chip_rev >= CHIP_REV_FULL_ADC ? V_BON : V_VOIR, "v0.2 ou plus : ADC complet", "v%d.%d", m->chip_rev / 100, m->chip_rev % 100);
 }
 
 /* Sous USB, 4,1 V ou plus et pas de charge : trois causes, que la puce ne
@@ -467,6 +476,9 @@ static void rows_measures(const measures_t *m)
  * une cellule branchée alors que l'USB est déjà là peut rester déconnectée. */
 static void hints(const measures_t *m)
 {
+    if (m->chip_rev < CHIP_REV_FULL_ADC)
+        say("remarque : puce v%d.%d. Les v0.0 et v0.1 perdent les quatre bits bas de l'ADC : les tensions sont lues par pas\n"
+            "  de 16 sur 4096, donc plus grossierement.\n", m->chip_rev / 100, m->chip_rev % 100);
     if (m->usb && m->chrg && s_charge != CHARGE_STOPPED && m->vbat_mv >= 4100 && m->vbat_pin_mv <= V0_ADC_FINE_MAX_MV)
         say("remarque : %d.%02d V sous USB et pas de charge. La cellule est pleine, ou absente, ou restee deconnectee parce\n"
             "  qu'elle a ete branchee apres l'USB. Dans le doute : debranchez l'USB, puis rebranchez-le.\n",
@@ -981,6 +993,26 @@ static void radio_tx_test(const wifi_ap_record_t *ap, radio_result_t *r)
     esp_now_deinit();
 }
 
+/* Avant d'allumer la radio, la batterie. Sur cellule seule et sous 3,5 V, le
+ * courant de l'émission ferait passer le 3,3 V sous le seuil du superviseur
+ * U5 : la carte redémarrerait au milieu de l'essai. Le banc ne le lance donc
+ * pas, sauf si on le force. Sous USB, la cellule ne compte pas. */
+static bool radio_power_ok(bool force)
+{
+    int pin = vbat_pin_mv();
+    int vbat = pin < 0 ? -1 : v0_vbat_mv(pin);
+    if (gpio_get_level(V0_VBUS_DET_GPIO) || vbat >= V0_RADIO_VBAT_MIN_MV) return true;
+    if (vbat < 0) { say("attention : batterie non mesuree et pas d'USB, essai radio lance quand meme.\n"); return true; }
+    if (force) {
+        say("batterie a %d.%02d V sans USB : essai radio force. Si la banniere revient, le 3.3 V a fait un creux.\n", vbat / 1000, vbat % 1000 / 10);
+        return true;
+    }
+    say("essai radio NON LANCE : batterie a %d.%02d V et pas d'USB. Sur cellule seule et sous %d.%d V, le 3.3 V passerait sous\n"
+        "  le seuil du superviseur U5 (3.08 V) pendant l'emission, et la carte redemarrerait. Branchez l'USB, ou tapez\n"
+        "  'radio force' pour essayer quand meme.\n", vbat / 1000, vbat % 1000 / 10, V0_RADIO_VBAT_MIN_MV / 1000, V0_RADIO_VBAT_MIN_MV % 1000 / 100);
+    return false;
+}
+
 static void radio_test(radio_result_t *r)
 {
     static bool netif_ok, loop_ok, wifi_ok;
@@ -998,6 +1030,7 @@ static void radio_test(radio_result_t *r)
     /* Réglages en mémoire vive seulement. */
     if (!radio_step(esp_wifi_set_storage(WIFI_STORAGE_RAM), "esp_wifi_set_storage")) return;
     if (!radio_step(esp_wifi_set_mode(WIFI_MODE_STA), "esp_wifi_set_mode")) return;
+    say("si la banniere du banc revient pendant cet essai, le 3.3 V a fait un creux a l'emission.\n");
     if (!radio_step(esp_wifi_start(), "le demarrage de la radio")) return;
     esp_wifi_get_mac(WIFI_IF_STA, mac);
     say("radio en marche, adresse %02x:%02x:%02x:%02x:%02x:%02x. Ecoute des reseaux Wi-Fi, 3 secondes environ...\n",
@@ -1039,14 +1072,19 @@ static void radio_test(radio_result_t *r)
 
 /* ------------------------------------------------------------------ */
 /* Commandes d'ensemble                                                 */
+/* Un creux du 3,3 V ne se lit pas comme une sous-tension : le superviseur U5
+ * (3,08 V) retient la puce avant que son détecteur interne (2,51 V) le voie,
+ * et elle repart comme à une mise sous tension. Le banc affiche la cause lue
+ * telle quelle ; c'est une mise sous tension inattendue, pendant une émission
+ * radio par exemple, qui signale un creux. */
 static const char *reset_text(void)
 {
     switch (esp_reset_reason()) {
-        case ESP_RST_POWERON:  return "mise sous tension ou bouton reset (SW1)";
+        case ESP_RST_POWERON:  return "mise sous tension, bouton reset (SW1) ou creux du 3.3 V";
         case ESP_RST_SW:       return "redemarrage demande (commande reset)";
         case ESP_RST_USB:      return "reset par l'USB (flashage, ouverture du terminal)";
         case ESP_RST_JTAG:     return "reset par JTAG";
-        case ESP_RST_BROWNOUT: return "CHUTE DU 3.3 V (brownout) : alimentation a controler";
+        case ESP_RST_BROWNOUT: return "sous-tension vue par la puce (inattendu : le superviseur U5 agit avant elle)";
         case ESP_RST_PANIC:    return "ERREUR DU PROGRAMME (panique) : a signaler";
         case ESP_RST_INT_WDT:
         case ESP_RST_TASK_WDT:
@@ -1195,16 +1233,20 @@ static void cmd_autotest(void)
     }
     int bon = s_tally.bon, non = s_tally.non, voir = s_tally.voir;
 
-    /* Radio, en dernier : ses lignes s'écrivent sous le tableau. */
+    /* Radio, en dernier : ses lignes s'écrivent sous le tableau. Elle n'est pas
+     * lancée sur une cellule trop basse sans USB. */
     say("\n");
-    radio_result_t r;
-    radio_test(&r);
+    radio_result_t r = {0};
+    bool radio_run = radio_power_ok(false);
+    if (radio_run) radio_test(&r);
     say("\n");
     table_begin();
-    if (!r.ran) row("radio, reception", V_NON, "au moins 1 reseau", "essai interrompu");
+    if (!radio_run) row("radio", V_VOIR, "a refaire sous USB ou cellule chargee", "pas lancee : batterie basse");
+    else if (!r.ran) row("radio, reception", V_NON, "au moins 1 reseau", "essai interrompu");
     else if (r.ap_count == 0) row("radio, reception", V_NON, "au moins 1 reseau, plus de -85 dBm", "aucun reseau");
     else row("radio, reception", r.best_rssi > -85 ? V_BON : V_NON, "au moins 1 reseau, plus de -85 dBm", "%d reseau(x), max %d dBm", r.ap_count, r.best_rssi);
-    if (!r.tx_tried) row("radio, emission", V_VOIR, "au moins 5 accuses sur 10", "pas essayee");
+    if (!radio_run) { /* rien à juger */ }
+    else if (!r.tx_tried) row("radio, emission", V_VOIR, "au moins 5 accuses sur 10", "pas essayee");
     else row("radio, emission", r.tx_acked >= 5 ? V_BON : V_VOIR, "au moins 5 accuses sur 10", "%d accuse(s) sur %d", r.tx_acked, r.tx_sent);
     bon += s_tally.bon; non += s_tally.non; voir += s_tally.voir;
 
@@ -1246,6 +1288,7 @@ static void cmd_help(void)
         "  ruban N              en mode ruban : allume N LED d'un ruban branche sur le port (0 a %d)\n", BANC_RIBBON_MAX);
     say(" radio\n"
         "  radio                reseaux Wi-Fi entendus, puis emission avec accuse de reception\n"
+        "  radio force          le meme essai, meme sur une cellule sous 3.5 V sans USB\n"
         " divers\n"
         "  reset                redemarre la puce : retour a l'etat sur\n");
 }
@@ -1259,6 +1302,8 @@ static void banner(void)
     say("\n=== Banc d'essai Luciole2, carte v0 (schema rev. %s) - version %s ===\n", V0_SCHEMA_REV, BANC_VERSION);
     say("puce ESP32-C6 revision v%d.%d, unite %02x%02x. Cause du demarrage : %s.\n",
         chip.revision / 100, chip.revision % 100, mac[4], mac[5], reset_text());
+    say("  si cette banniere revient toute seule, pendant 'radio' par exemple, le 3.3 V a fait un creux : la puce le lit\n"
+        "  comme une mise sous tension, jamais comme une sous-tension.\n");
     say("etat sur : convertisseur arrete, charge lente, port au repos, LED eteintes, radio arretee.\n");
     say("cellule : la brancher USB debranche, puis brancher l'USB. Branchee apres l'USB, elle peut rester deconnectee.\n");
     say("rien ne change sans commande. Tapez ? pour la liste, e pour l'etat, a pour l'autotest.\n");
@@ -1316,7 +1361,10 @@ static void console_exec(char *line)
     else if (!strcmp(line, "tampon")) cmd_buffer(arg);
     else if (!strcmp(line, "ligne2")) cmd_line2(arg);
     else if (!strcmp(line, "ruban")) cmd_ribbon(arg);
-    else if (!strcmp(line, "radio")) { radio_result_t r; radio_test(&r); }
+    else if (!strcmp(line, "radio")) {
+        radio_result_t r;
+        if (radio_power_ok(!strcmp(arg, "force"))) radio_test(&r);
+    }
     else if (!strcmp(line, "reset")) {
         if (s_conv) cmd_conv("0");              /* arrêt en ordre : le port à 0 avant le rail */
         say("redemarrage...\n");

@@ -10,8 +10,8 @@ void app_main(void);
 
 static struct {
     bool usb, charging, acc_present, sda_stuck, port_pullup_broken, no_ap, no_ack, int_pullup_missing, button;
-    int vbat_pin_mv, cc_mv;
-} sc = { .usb = true, .charging = true, .acc_present = true, .vbat_pin_mv = 1170, .cc_mv = 205 };   /* 1170 mV : 3,92 V × 200/670 */
+    int vbat_pin_mv, cc_mv, chip_rev;
+} sc = { .chip_rev = 2, .usb = true, .charging = true, .acc_present = true, .vbat_pin_mv = 1170, .cc_mv = 205 };   /* 1170 mV : 3,92 V × 200/670 */
 
 static uint64_t cyc = 1000;
 #define US(x) ((uint64_t)((x) * 160))
@@ -206,7 +206,7 @@ void esp_restart(void)
     finish();
 }
 esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t t) { (void)t; memcpy(mac, "\x40\x4c\xca\x12\x39\x6c", 6); return ESP_OK; }
-void esp_chip_info(esp_chip_info_t *c) { memset(c, 0, sizeof *c); c->revision = 2; }
+void esp_chip_info(esp_chip_info_t *c) { memset(c, 0, sizeof *c); c->revision = (uint16_t)sc.chip_rev; }
 esp_err_t esp_flash_get_physical_size(esp_flash_t *chip, uint32_t *size) { (void)chip; *size = 4 * 1024 * 1024; return ESP_OK; }
 
 /* --------------------------------------------------------- UART et USB */
@@ -229,6 +229,7 @@ int usb_serial_jtag_write_bytes(const void *src, size_t size, TickType_t t)
 
 static char script[80][80];
 static int script_n, script_i, script_pos, idle;
+static const char *current_cmd = "";
 
 static void scenario(const char *w)
 {
@@ -238,6 +239,8 @@ static void scenario(const char *w)
     else if (!strcmp(w, "pleine")) sc.charging = false;
     else if (!strcmp(w, "4v2")) sc.vbat_pin_mv = 1254;             /* 4,20 V */
     else if (!strcmp(w, "vbat-basse")) sc.vbat_pin_mv = 836;       /* 2,80 V */
+    else if (!strcmp(w, "3v3")) sc.vbat_pin_mv = 985;              /* 3,30 V */
+    else if (!strcmp(w, "puce-v0.1")) sc.chip_rev = 1;
     else if (!strcmp(w, "r17-absente")) sc.vbat_pin_mv = 3200;     /* la broche monte vers VBAT */
     else if (!strcmp(w, "sans-acc")) sc.acc_present = false;
     else if (!strcmp(w, "sda-collee")) sc.sda_stuck = true;
@@ -263,7 +266,7 @@ int usb_serial_jtag_read_bytes(void *buf, uint32_t len, TickType_t t)
     if (script_i >= script_n) finish();
     char *l = script[script_i];
     uint32_t n = 0;
-    if (script_pos == 0) commands_seen++;
+    if (script_pos == 0) { commands_seen++; current_cmd = l; }
     while (n < len && l[script_pos]) ((char *)buf)[n++] = l[script_pos++];
     if (!l[script_pos] && n < len) { ((char *)buf)[n++] = '\r'; script_i++; script_pos = 0; idle = 3; }
     return (int)n;
@@ -375,7 +378,12 @@ esp_err_t esp_event_loop_create_default(void) { return ESP_OK; }
 esp_err_t esp_wifi_init(const wifi_init_config_t *c) { (void)c; return ESP_OK; }
 esp_err_t esp_wifi_set_storage(int s) { if (s != WIFI_STORAGE_RAM) violation("stockage Wi-Fi hors RAM"); return ESP_OK; }
 esp_err_t esp_wifi_set_mode(int m) { (void)m; return ESP_OK; }
-esp_err_t esp_wifi_start(void) { wifi_started = 1; printf("    ~ radio : marche\n"); return ESP_OK; }
+esp_err_t esp_wifi_start(void)
+{
+    /* Cellule seule sous 3,5 V : la radio ne doit démarrer que si on l'a forcée. */
+    if (!sc.usb && sc.vbat_pin_mv * 670 / 200 < 3500 && !strstr(current_cmd, "force")) violation("radio lancee sur une cellule sous 3,5 V sans USB");
+    wifi_started = 1; printf("    ~ radio : marche\n"); return ESP_OK;
+}
 esp_err_t esp_wifi_stop(void) { wifi_started = 0; printf("    ~ radio : arret\n"); return ESP_OK; }
 esp_err_t esp_wifi_get_mac(int i, uint8_t *mac) { (void)i; return esp_read_mac(mac, ESP_MAC_WIFI_STA); }
 esp_err_t esp_wifi_scan_start(const wifi_scan_config_t *c, bool block) { (void)c; (void)block; return wifi_started ? ESP_OK : ESP_FAIL; }

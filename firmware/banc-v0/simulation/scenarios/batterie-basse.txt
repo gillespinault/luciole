@@ -1,0 +1,12 @@
+# Sur cellule seule à 3,30 V : l'essai radio n'est pas lancé, sauf forcé.
+# attendu : batterie (VBAT)        | 3.29 V (broche 985 mV)
+# attendu : essai radio NON LANCE : batterie a 3.29 V et pas d'USB.
+# attendu : radio                  | pas lancee : batterie basse    | a refaire sous USB ou cellule chargee      | a voir
+# attendu : batterie a 3.29 V sans USB : essai radio force.
+# attendu : emission : 10 trame(s) envoyee(s)
+@scenario batterie
+@scenario 3v3
+e
+radio
+a
+radio force

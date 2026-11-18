@@ -1,0 +1,5 @@
+# Puce en révision v0.1 : l'ADC perd ses quatre bits bas, le banc le dit.
+# attendu : revision de la puce    | v0.1                           | v0.2 ou plus : ADC complet                 | a voir
+# attendu : remarque : puce v0.1.
+@scenario puce-v0.1
+e
