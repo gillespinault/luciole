@@ -32,7 +32,7 @@ class Placer:
         self.skip = set(skip_nets)
         self.yards = {False: [], True: []}
         for ref, fp in b.fps.items():
-            self.yards[bool(fp.IsFlipped())].append(b.courtyard(ref))
+            self.yards[bool(fp.IsFlipped())] += b.courtyard_boxes(ref)
         self.vias = []
         for t in b.board.GetTracks():
             if t.GetClass() == "PCB_VIA":
@@ -92,7 +92,7 @@ class Placer:
             for vx, vy in self.vias:               # pas de via sous une pastille ni contre elle
                 dx = px1 - vx if vx < px1 else (vx - px2 if vx > px2 else 0.0)
                 dy = py1 - vy if vy < py1 else (vy - py2 if vy > py2 else 0.0)
-                if dx * dx + dy * dy < (r.via_r + 0.15) ** 2:
+                if dx * dx + dy * dy < (r.via_r + r.clr + 0.03) ** 2:   # isolement, le via pouvant être d'un autre réseau
                     why["via"] = why.get("via", 0) + 1
                     return False
             for fx in (0.0, 0.5, 1.0):

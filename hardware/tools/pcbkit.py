@@ -7,6 +7,7 @@ de la description du circuit : le schéma reste la seule source des connexions.
 """
 import hashlib
 import json
+import math
 import os
 
 import pcbnew
@@ -317,6 +318,254 @@ class Board:
         self.board.Add(z)
         return z
 
+    def stitch_zones(self, net="GND", step=0.25, passes=8, quiet=False, reach=8.0):
+        """Coud entre eux les morceaux des plans de `net`. Les pistes découpent chaque plan
+        en morceaux ; ceux qui ne touchent le reste par aucune pastille ni aucun via restent
+        isolés, et KiCad les compte comme des liaisons manquantes.
+
+        À chaque passe : remplir les plans, regrouper les morceaux déjà reliés (par un via,
+        une patte traversante, une piste ou une pastille du réseau), puis, pour chaque groupe
+        isolé, poser un via à un endroit où l'un de ses morceaux recouvre, sur l'autre face,
+        un morceau du groupe principal. Le via tient tout entier dans le cuivre des deux
+        morceaux, à l'écart des pastilles et des autres perçages.
+
+        Rend le nombre de vias posés et la liste des groupes restés isolés, qui n'ont aucun
+        recouvrement avec le plan principal. Chacun est décrit par sa face, son rectangle,
+        son aire, ses pastilles (« C16.2 ») et, sous `near`, des points du cuivre principal
+        pris à moins de `reach` mm : `Router.tie()` relie une pastille à l'un d'eux."""
+        code = self._net(net).GetNetCode()
+        rv = self.rules["via_diameter"] / 2 + 0.1         # rayon du via, avec une marge dans le cuivre
+        ring = [(rv * dx, rv * dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (.7, .7), (.7, -.7), (-.7, .7), (-.7, -.7))]
+        mm = pcbnew.ToMM
+
+        def pt(x, y):
+            return pcbnew.VECTOR2I(MM(x), MM(y))
+
+        posed = 0
+        for _ in range(passes):
+            self.board.BuildConnectivity()
+            pcbnew.ZONE_FILLER(self.board).Fill(self.board.Zones())
+            frags = []                                    # (couche, polygones, indice, rectangle, aire)
+            for z in self.board.Zones():
+                if z.GetNetCode() != code or z.GetIsRuleArea():
+                    continue
+                lid = z.GetFirstLayer()
+                polys = z.GetFilledPolysList(lid)
+                for k in range(polys.OutlineCount()):
+                    bb = polys.Outline(k).BBox()
+                    frags.append((lid, polys, k, (mm(bb.GetLeft()), mm(bb.GetTop()), mm(bb.GetRight()), mm(bb.GetBottom())),
+                                  abs(polys.Outline(k).Area())))
+            parent = list(range(len(frags)))
+
+            def find(i):
+                while parent[i] != i:
+                    parent[i] = parent[parent[i]]
+                    i = parent[i]
+                return i
+
+            def at(lid, x, y):
+                """Morceau de la couche `lid` qui contient le point (cotes du fichier), ou None."""
+                for i, (l, polys, k, (x1, y1, x2, y2), _) in enumerate(frags):
+                    if l == lid and x1 <= x <= x2 and y1 <= y <= y2 and polys.Contains(pt(x, y), k):
+                        return i
+                return None
+
+            def link(points):
+                found = [i for i in (at(lid, x, y) for lid, x, y in points) if i is not None]
+                for i in found[1:]:
+                    parent[find(i)] = find(found[0])
+
+            pads, holes = [], []                          # rectangles des pastilles, centres des perçages
+            own = {}                                      # morceau -> pastilles du réseau qu'il porte
+            for t in self.board.GetTracks():
+                if t.GetClass() == "PCB_VIA":
+                    p = t.GetPosition()
+                    holes.append((mm(p.x), mm(p.y)))
+                    if t.GetNetCode() == code:
+                        link([(pcbnew.F_Cu, mm(p.x), mm(p.y)), (pcbnew.B_Cu, mm(p.x), mm(p.y))])
+                elif t.GetNetCode() == code:
+                    a, e = t.GetStart(), t.GetEnd()
+                    link([(t.GetLayer(), mm(a.x), mm(a.y)), (t.GetLayer(), mm(e.x), mm(e.y)),
+                          (t.GetLayer(), mm(a.x + e.x) / 2, mm(a.y + e.y) / 2)])
+            for fp in self.board.GetFootprints():
+                for pad in fp.Pads():
+                    bb = pad.GetBoundingBox()
+                    box = (mm(bb.GetLeft()), mm(bb.GetTop()), mm(bb.GetRight()), mm(bb.GetBottom()))
+                    if pad.GetDrillSize().x:
+                        p = pad.GetPosition()
+                        holes.append((mm(p.x), mm(p.y)))
+                    lids = [lid for lid in (pcbnew.F_Cu, pcbnew.B_Cu) if pad.IsOnLayer(lid)]
+                    pads.append((box, lids if not pad.GetDrillSize().x else [pcbnew.F_Cu, pcbnew.B_Cu]))
+                    if pad.GetNetCode() == code:
+                        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+                        e = 0.05
+                        link([(lid, x, y) for lid in lids for x, y in (
+                            (cx, cy), (box[0] + e, cy), (box[2] - e, cy), (cx, box[1] + e), (cx, box[3] - e))])
+                        for lid in lids:
+                            i = at(lid, cx, cy)
+                            if i is not None:
+                                own.setdefault(i, []).append(fp.GetReference() + "." + pad.GetNumber())
+            groups = {}
+            for i in range(len(frags)):
+                groups.setdefault(find(i), []).append(i)
+            if len(groups) <= 1:
+                return posed, []
+            main = max(groups, key=lambda g: sum(frags[i][4] for i in groups[g]))
+
+            def free(x, y):
+                if any(math.hypot(x - hx, y - hy) < 1.0 for hx, hy in holes):
+                    return False
+                return not any(x1 - rv - 0.1 < x < x2 + rv + 0.1 and y1 - rv - 0.1 < y < y2 + rv + 0.1
+                               for (x1, y1, x2, y2), _ in pads)
+
+            def whole(i, x, y):
+                _, polys, k, _, _ = frags[i]
+                return all(polys.Contains(pt(x + dx, y + dy), k) for dx, dy in ring)
+
+            added = 0
+            for g, members in sorted(groups.items(), key=lambda kv: -sum(frags[i][4] for i in kv[1])):
+                if g == main:
+                    continue
+                best = None
+                for i in members:
+                    lid, polys, k, (x1, y1, x2, y2), _ = frags[i]
+                    other = pcbnew.B_Cu if lid == pcbnew.F_Cu else pcbnew.F_Cu
+                    nx, ny = int((x2 - x1) / step), int((y2 - y1) / step)
+                    for iy in range(1, ny + 1):
+                        for ix in range(1, nx + 1):
+                            x, y = x1 + ix * step, y1 + iy * step
+                            if not polys.Contains(pt(x, y), k):
+                                continue
+                            j = at(other, x, y)
+                            if j is None or find(j) != main or not free(x, y) or not whole(i, x, y) or not whole(j, x, y):
+                                continue
+                            # Le plus au cœur du morceau : loin de ses bords.
+                            depth = min(x - x1, x2 - x, y - y1, y2 - y)
+                            if best is None or depth > best[0]:
+                                best = (depth, x, y)
+                if best is not None:
+                    _, x, y = best
+                    self.via(net, round(x - self.ox, 3), round(y - self.oy, 3))
+                    holes.append((x, y))
+                    added += 1
+            posed += added
+            if not added:
+                break
+        left = []
+        for g, members in groups.items():
+            if g != main:
+                i = max(members, key=lambda m: frags[m][4])
+                x1, y1, x2, y2 = frags[i][3]
+                # Points du cuivre principal autour du groupe, un peu en dedans de ses bords.
+                near, e = [], 0.2
+                for lid, name in ((pcbnew.F_Cu, "F.Cu"), (pcbnew.B_Cu, "B.Cu")):
+                    for iy in range(int((y2 - y1 + 2 * reach) / step) + 1):
+                        for ix in range(int((x2 - x1 + 2 * reach) / step) + 1):
+                            x, y = x1 - reach + ix * step, y1 - reach + iy * step
+                            j = at(lid, x, y)
+                            if j is not None and find(j) == main and all(
+                                    frags[j][1].Contains(pt(x + dx, y + dy), frags[j][2])
+                                    for dx, dy in ((e, 0), (-e, 0), (0, e), (0, -e))):
+                                near.append((name, round(x - self.ox, 3), round(y - self.oy, 3)))
+                left.append(dict(face="avant" if frags[i][0] == pcbnew.F_Cu else "dos",
+                                 box=(round(x1 - self.ox, 1), round(y1 - self.oy, 1), round(x2 - self.ox, 1), round(y2 - self.oy, 1)),
+                                 area=round(sum(frags[m][4] for m in members) / 1e12, 1),
+                                 pads=sorted(r for m in members for r in own.get(m, [])), near=near))
+        if not quiet:
+            for g in left:
+                print(f"plan de {net} resté isolé : face {g['face']}, x {g['box'][0]} à {g['box'][2]}, y {g['box'][1]} à {g['box'][3]}, "
+                      f"{g['area']} mm², pastilles {' '.join(g['pads']) or 'aucune'}")
+        return posed, left
+
+    def trim(self, skip=("GND",)):
+        """Ébarbe le cuivre laissé sans emploi. La structure est tracée avant le routage :
+        elle propose des accès (un via au bout d'une voie, une sortie devant une pastille à
+        pas fin) que le routeur n'utilise pas tous. C'est KiCad qui désigne ce qui est
+        pendant, par le test de son contrôle des règles ; ici on le corrige.
+
+        Une piste dont un bout ne touche rien est raccourcie jusqu'à son dernier raccord, ou
+        retirée si elle n'en a pas. Un via relié sur une seule face est retiré ; les pistes
+        qui finissaient dans sa pastille sans atteindre son centre y sont d'abord
+        prolongées, car c'est son cuivre qui les reliait. Les réseaux de `skip` ont un
+        plan : leurs bouts de piste y finissent, on n'y touche pas.
+        Rend (pistes raccourcies, pistes retirées, vias retirés)."""
+        skipped = set(self._net(n).GetNetCode() for n in skip)
+        cut = gone = vias = 0
+
+        def d2(a, c):
+            return (a.x - c.x) ** 2 + (a.y - c.y) ** 2
+
+        for _ in range(30):
+            self.board.BuildConnectivity()
+            conn = self.board.GetConnectivity()
+            items = [t for t in self.board.GetTracks() if t.GetNetCode() not in skipped]
+            todo = []
+            for t in items:
+                where = pcbnew.VECTOR2I(0, 0)
+                if conn.TestTrackEndpointDangling(t, True, where):
+                    todo.append((t, pcbnew.VECTOR2I(where.x, where.y)))
+            if not todo:
+                break
+            removed = set()
+            for t, where in todo:
+                if id(t) in removed:
+                    continue
+                same = [o for o in items if o.GetNetCode() == t.GetNetCode() and o is not t and id(o) not in removed]
+                if t.GetClass() == "PCB_VIA":
+                    c, r = t.GetPosition(), t.GetWidth(pcbnew.F_Cu) // 2
+                    for o in same:
+                        if o.GetClass() == "PCB_VIA":
+                            continue
+                        for q in (o.GetStart(), o.GetEnd()):
+                            reach = r + o.GetWidth() // 2
+                            if 0 < d2(q, c) <= reach * reach:
+                                link = pcbnew.PCB_TRACK(self.board)
+                                link.SetStart(pcbnew.VECTOR2I(q.x, q.y))
+                                link.SetEnd(pcbnew.VECTOR2I(c.x, c.y))
+                                link.SetWidth(o.GetWidth())
+                                link.SetLayer(o.GetLayer())
+                                link.SetNetCode(o.GetNetCode())
+                                self.board.Add(link)
+                    self.board.Remove(t)
+                    removed.add(id(t))
+                    vias += 1
+                    continue
+                a, e, lid = t.GetStart(), t.GetEnd(), t.GetLayer()
+                base = e if d2(where, a) < d2(where, e) else a          # le bout qui tient
+                spots = []                                              # raccords le long de la piste
+                for o in same:
+                    if o.GetClass() == "PCB_VIA":
+                        if t.HitTest(o.GetPosition(), o.GetWidth(lid) // 2):
+                            spots.append(o.GetPosition())
+                    elif o.GetLayer() == lid:
+                        spots += [q for q in (o.GetStart(), o.GetEnd()) if t.HitTest(q, o.GetWidth() // 2)]
+                for fp in self.board.GetFootprints():
+                    for pad in fp.Pads():
+                        if pad.GetNetCode() == t.GetNetCode() and pad.IsOnLayer(lid) and t.HitTest(pad.GetPosition()):
+                            spots.append(pad.GetPosition())
+                vx, vy = e.x - a.x, e.y - a.y
+                length2 = float(vx * vx + vy * vy)
+                best = None
+                if length2:
+                    for q in spots:
+                        k = ((q.x - a.x) * vx + (q.y - a.y) * vy) / length2
+                        k = min(1.0, max(0.0, k))
+                        on = pcbnew.VECTOR2I(int(round(a.x + k * vx)), int(round(a.y + k * vy)))
+                        # Un raccord utile est entre les deux bouts, ni sur l'un ni sur l'autre.
+                        if d2(on, base) > 1000 ** 2 and d2(on, where) > 1000 ** 2 and (best is None or d2(on, base) > d2(best, base)):
+                            best = on
+                if best is None:
+                    self.board.Remove(t)
+                    removed.add(id(t))
+                    gone += 1
+                elif base is a:
+                    t.SetEnd(best)
+                    cut += 1
+                else:
+                    t.SetStart(best)
+                    cut += 1
+        return cut, gone, vias
+
     def keepout(self, x1, y1, x2, y2, layers=("F.Cu", "B.Cu"), name="interdit"):
         """Zone interdite au cuivre : ni piste, ni via, ni plan. Sert sous l'antenne du
         module, où Espressif demande une carte sans cuivre sur toutes les couches."""
@@ -361,6 +610,30 @@ class Board:
         for bx1, by1, bx2, by2 in (self.extent(ref),):
             x1, y1, x2, y2 = min(x1, bx1), min(y1, by1), max(x2, bx2), max(y2, by2)
         return (round(x1, 3), round(y1, 3), round(x2, 3), round(y2, 3))
+
+    def courtyard_boxes(self, ref):
+        """Zone de garde de `ref` en rectangles. Presque toutes sont un rectangle. Celle du
+        module radio a la forme d'un T : le boîtier, puis la zone de l'antenne, plus large
+        que la carte. Son rectangle englobant interdirait tout le coin de la carte ; on la
+        découpe donc suivant ses propres arêtes."""
+        fp = self.fps[ref]
+        fp.BuildCourtyardCaches()
+        poly = fp.GetCourtyard(pcbnew.B_CrtYd if fp.IsFlipped() else pcbnew.F_CrtYd)
+        if poly.OutlineCount() != 1:
+            return [self.courtyard(ref)]
+        o = poly.Outline(0)
+        pts = [(o.CPoint(i).x, o.CPoint(i).y) for i in range(o.PointCount())]
+        droit = all(a[0] == c[0] or a[1] == c[1] for a, c in zip(pts, pts[1:] + pts[:1]))
+        if len(pts) <= 4 or not droit:
+            return [self.courtyard(ref)]
+        xs, ys = sorted(set(p[0] for p in pts)), sorted(set(p[1] for p in pts))
+        out = []
+        for x1, x2 in zip(xs, xs[1:]):
+            for y1, y2 in zip(ys, ys[1:]):
+                if poly.Contains(pcbnew.VECTOR2I((x1 + x2) // 2, (y1 + y2) // 2)):
+                    out.append((round(pcbnew.ToMM(x1) - self.ox, 3), round(pcbnew.ToMM(y1) - self.oy, 3),
+                                round(pcbnew.ToMM(x2) - self.ox, 3), round(pcbnew.ToMM(y2) - self.oy, 3)))
+        return out
 
     def move(self, ref, x, y):
         """Déplace un composant déjà posé : son origine va en (x, y)."""

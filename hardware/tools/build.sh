@@ -22,6 +22,10 @@ rm -rf "$OUT"; mkdir -p "$FAB/gerbers"
 # dans KiCad, dont la désactivation d'un contrôle, et la construction passerait à tort
 # (défaut trouvé par la revue du 17 novembre 2026, cas « controle_desactive » du banc).
 rm -f "$P/$P.kicad_pro" "$P/$P.kicad_prl" "$P/$P.kicad_sch" "$P/$P.kicad_pcb"
+# Un verrou resté d'une session KiCad interrompue fait passer le projet pour ouvert ailleurs :
+# KiCad n'écrit alors plus le fichier de projet, et la carte échoue à l'écriture des classes
+# de réseaux (rencontré le 18 novembre 2026, verrou d'un conteneur disparu la veille).
+rm -f "$P/~$P.kicad_pro.lck" "$P/~$P.kicad_pcb.lck" "$P/~$P.kicad_sch.lck"
 step() { printf '\n== %s\n' "$*"; }
 
 step "Bibliothèque du projet"

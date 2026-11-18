@@ -15,7 +15,7 @@ La spécification de la carte v0 et la méthode sont dans la collection Luciole�
 | `tools/` | La chaîne d'outils, commune à toutes les cartes |
 | `lib/` | Les symboles et empreintes absents de la bibliothèque de KiCad, ou dont le brochage diffère. `build_lib.py` les écrit à partir des cotes des fiches techniques |
 | `essai/` | Carte d'essai : trois LED entre deux connecteurs Grove, une pastille de test et un condensateur au dos. Elle a servi à valider la chaîne et la pose chez JLCPCB, et reste le banc de la chaîne |
-| `v0/` | Carte v0, en cours. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. Tous les composants sont posés ; la structure du routage est tracée et passe le contrôle des règles. Le routeur sur grille laisse encore entre 23 et 34 liaisons courtes : aucun tracé n'est figé |
+| `v0/` | Carte v0, 122 × 28 mm, deux couches. La liste de connexions voulue et le schéma, révision 0.5, concordent : 159 composants, 85 réseaux. La carte est tracée en entier depuis le 18 novembre 2026 : `tools/build.sh v0` va au bout, sans liaison manquante ni alerte hors dérogations. Le tracé est figé dans `v0/routage.json`. Restent la revue du routage et le contrôle de la pose chez JLCPCB |
 | `fiches/` | Fiches techniques des fabricants et pièces de preuve. Gardées en local, non suivies par git ; `fiches/README.md` donne leurs sources |
 
 ## Les quatre fichiers d'une carte
@@ -49,7 +49,7 @@ La pose d'une empreinte s'arrête aussi dans trois cas. Une pastille numérotée
 
 Deux constructions de suite donnent les mêmes fichiers, à la date près dans les en-têtes.
 
-Les fichiers KiCad du projet sont supprimés au début de chaque construction, fichier de projet compris. Un réglage fait à la main dans KiCad, comme la désactivation d'un contrôle, ne survit donc pas.
+Les fichiers KiCad du projet sont supprimés au début de chaque construction, fichier de projet compris. Un réglage fait à la main dans KiCad, comme la désactivation d'un contrôle, ne survit donc pas. Les verrous (`~projet.kicad_pro.lck`) sont supprimés aussi : un verrou resté d'une session interrompue fait croire à KiCad que le projet est ouvert ailleurs, il n'écrit alors plus le fichier de projet et la carte échoue à l'écriture des classes de réseaux.
 
 ## Routage
 
@@ -66,7 +66,20 @@ Les liaisons courtes qui restent, autour de chaque bloc, sont tracées par le ro
 
 La construction normale rejoue ce fichier. Sa signature dit pour quelle carte il a été calculé : après un changement de placement ou de structure, la construction s'arrête et demande de relancer le routeur.
 
-Le routeur sur grille applique nos règles d'isolement, sur une grille de 0,05 mm, à 45 degrés, sur deux faces. Quand une liaison ne passe pas, il défait les pistes qu'il a lui-même tracées et qui la barrent, la trace, puis retrace les réseaux défaits. Il ne touche jamais aux pistes tracées par script. Il redonne toujours le même tracé. Il signale les alimentations qu'il a dû tracer plus fin que leur classe. Il ne route pas la masse : les plans la relient, et `Router.stitch()` raccorde par un via les pastilles que le plan de leur face n'atteint pas.
+Le routeur sur grille applique nos règles d'isolement, sur une grille de 0,05 mm, à 45 degrés, sur deux faces. Quand une liaison ne passe pas, il défait les pistes qu'il a lui-même tracées et qui la barrent, la trace, puis retrace les réseaux défaits. Il ne touche jamais aux pistes tracées par script. Il redonne toujours le même tracé. Il signale les alimentations qu'il a dû tracer plus fin que leur classe. Une pastille ni rectangulaire ni ronde (pont de soudure, pastille aux coins arrondis) est prise avec son contour exact : une piste arrêtée dans un coin de son rectangle englobant n'y est pas reliée, pour KiCad.
+
+Une fois la carte tracée, `carte.py` fait deux finitions, à chaque construction.
+
+La masse d'abord. Sur deux couches, chaque piste coupe un plan, et les deux plans finissent en morceaux. `Board.stitch_zones()` regroupe les morceaux déjà reliés entre eux, puis pose un via là où un morceau isolé recouvre le plan principal de l'autre face. Un morceau sans recouvrement est enfermé entre des pistes : `Router.tie()` relie alors une de ses pastilles au cuivre de masse principal, comme le routeur trace un signal, par l'une ou l'autre face. Ce qui reste isolé après cela est affiché, avec ses pastilles : c'est une poche sans issue, qui se règle dans la structure, en donnant un via de masse au composant avant le routage.
+
+L'ébarbage ensuite. La structure propose des accès que le routeur n'utilise pas tous : un via au bout d'une voie, une sortie devant une pastille à pas fin. `Board.trim()` demande à KiCad quels bouts de piste et quels vias sont pendants, par le test de son propre contrôle. Il raccourcit la piste jusqu'à son dernier raccord, ou la retire. Avant de retirer un via relié sur une seule face, il prolonge jusqu'à son centre les pistes qui finissaient dans sa pastille : c'est le cuivre du via qui les reliait. `--sans-ebarbage` saute cette étape, pour regarder la carte avant.
+
+Pour voir un blocage, `tools/vue.py` dessine une zone de la carte avec le nom du réseau sur chaque pastille :
+
+    tools/kicad python3 tools/vue.py v0/v0.kicad_pcb 92 13 117 28 --face=F --reseaux=PORT_PU,IO2
+    tools/kicad python3 tools/vue.py v0/v0.kicad_pcb 19 19 40 28 --face=B --plans
+
+`--reseaux` met ces réseaux en couleurs vives, `--plans` dessine le cuivre des plans de masse : un morceau isolé s'y voit tout de suite.
 
 Pour comparer des variantes sans toucher au projet, `v0/carte.py` accepte des options d'essai. Avec l'une d'elles, la carte et son tracé s'écrivent dans `v0/out/`, sous un nom qui dit la variante ; plusieurs essais peuvent tourner en même temps.
 
@@ -88,6 +101,13 @@ Pour comparer des variantes sans toucher au projet, `v0/carte.py` accepte des op
 - Retirer les boutons internes ne change rien. Lever le surcoût du dos non plus : les blocs qui coincent sont là où le dos est déjà pris. Un écart du poseur de 0,35 ou 0,5 mm fait moins bien que 0,2 mm.
 - Lancer le routeur avec une douzaine de graines dit où chercher. Une liaison qui échoue à un endroit différent selon la graine relève de l'ordre de passage. Un réseau qui échoue à toutes les graines désigne une erreur de structure : une piste tracée par script qui enferme d'autres signaux. La commande du convertisseur, tracée en face avant devant le module, enfermait ainsi la donnée des LED et les sorties de la colonne de gauche ; elle passe maintenant au dos, dans le faisceau.
 - Une protection à deux pastilles par ligne (USBLC6) se relie sous son boîtier, par script. Laissé seul, le routeur y croisait les deux lignes.
+- Le poseur ne remplace pas un plan de bloc. Il met chaque composant au plus près de son cuivre, sans voir l'ordre dans lequel les signaux arrivent. Autour d'un transistor ou d'un circuit, les broches se suivent toujours dans le même sens : si les pistes arrivent dans l'autre, il faut un croisement, donc un via, et il n'y a pas toujours la place. Les blocs où plusieurs signaux se partagent quelques composants sont donc posés et reliés par script : port côté module, USB, protecteur du port, résistances du chargeur, ponts de mesure. Le lot de douze graines est passé de zéro tracé complet à douze sur douze, et de vingt minutes à trois.
+- Des voies qui remontent côte à côte forment un nid : de l'intérieur, seule la plus intérieure est accessible. Chaque voie du faisceau finit maintenant là où est son composant.
+- Entre deux lignes qui traversent un composant, ce qui est au milieu est enfermé. Pour un protecteur USBLC6, c'est sa broche de masse d'un côté et sa broche d'alimentation de l'autre : il leur faut un via chacune, à un endroit où l'autre face est libre.
+- L'USB-C et le Grove sont dos à dos : entre eux, presque aucun via n'est possible. Le bloc de l'USB est tracé pour s'en passer, et les broches CC passent sous la coque du connecteur.
+- Une piste d'alimentation tracée en face avant coupe la bande qu'elle traverse. Les signaux qui doivent la franchir passent par le dos ; il faut donc y garder un passage libre, et y ranger les voies au ras du faisceau.
+- La zone de garde du module radio a la forme d'un T, boîtier puis zone d'antenne. Prise pour un rectangle, elle interdisait tout le coin de la carte au poseur : `Board.courtyard_boxes()` la découpe suivant ses arêtes.
+- La largeur de 28 mm a libéré deux zones que les régions du poseur, écrites pour 22 mm, n'utilisaient pas : sous le coin du module, sur les deux faces, et le milieu de la bande du bas.
 
 ### Ce que les essais du 17 novembre 2026 sur la carte v0 ont appris
 

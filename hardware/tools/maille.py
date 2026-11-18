@@ -213,13 +213,21 @@ class Router:
                     continue
                 net = self._id(name)
                 layers = [L for L in (0, 1) if pad.IsOnLayer(pcbnew.F_Cu if L == 0 else pcbnew.B_Cu)]
-                round_pad = pad.GetShape(pcbnew.F_Cu if 0 in layers else pcbnew.B_Cu) == pcbnew.PAD_SHAPE_CIRCLE
+                lid = pcbnew.F_Cu if 0 in layers else pcbnew.B_Cu
+                shape = pad.GetShape(lid)
+                round_pad = shape == pcbnew.PAD_SHAPE_CIRCLE
+                # Une pastille ni rectangulaire ni ronde (pont de soudure, pastille oblongue) a
+                # moins de cuivre que son rectangle englobant. On garde son contour exact : une
+                # piste arrêtée dans un coin du rectangle n'y est pas reliée, pour KiCad.
+                poly = None
+                if not round_pad and shape != getattr(pcbnew, "PAD_SHAPE_RECTANGLE", getattr(pcbnew, "PAD_SHAPE_RECT", None)):
+                    poly = (pcbnew.SHAPE_POLY_SET(pad.GetEffectivePolygon(lid, pcbnew.ERROR_INSIDE)), ox, oy)
                 for L in layers:
                     self._rect(L, net, x1, y1, x2, y2)
                 # Pas de via dans une pastille ni contre elle, même du même réseau.
                 self._ban_via(x1, y1, x2, y2, self.via_r + (0.1 if drill == 0 else 0.5))
                 self.items.setdefault(name, []).append(
-                    dict(kind="pad", layers=layers, box=(x1, y1, x2, y2), at=(cx, cy), round=round_pad,
+                    dict(kind="pad", layers=layers, box=(x1, y1, x2, y2), at=(cx, cy), round=round_pad, poly=poly,
                          ref=fp.GetReference() + "." + pad.GetNumber()))
                 self.pads.setdefault(name, []).append((layers, (x1, y1, x2, y2)))
         for t in b.board.GetTracks():
@@ -284,7 +292,15 @@ class Router:
             x1, y1, x2, y2 = item["box"]
             if item["round"]:
                 return math.hypot(x - (x1 + x2) / 2, y - (y1 + y2) / 2) <= (x2 - x1) / 2 - tol
-            return x1 + tol <= x <= x2 - tol and y1 + tol <= y <= y2 - tol
+            if not (x1 + tol <= x <= x2 - tol and y1 + tol <= y <= y2 - tol):
+                return False
+            if item.get("poly") is None:
+                return True
+            poly, ox, oy = item["poly"]
+            if tol <= 0:
+                return poly.Contains(pcbnew.VECTOR2I(pcbnew.FromMM(x + ox), pcbnew.FromMM(y + oy)), -1, pcbnew.FromMM(-tol))
+            return all(poly.Contains(pcbnew.VECTOR2I(pcbnew.FromMM(x + ox + dx), pcbnew.FromMM(y + oy + dy)))
+                       for dx, dy in ((0, 0), (tol, 0), (-tol, 0), (0, tol), (0, -tol)))
         if item["kind"] == "via":
             return math.hypot(x - item["at"][0], y - item["at"][1]) <= item["r"] - tol
         (ax, ay), (bx, by) = item["a"], item["b"]
@@ -838,6 +854,38 @@ class Router:
             for v in self.added["vias"][before[1]:]:
                 self.b.via(v["net"], v["at"][0], v["at"][1], diameter=v["diameter"], drill=v["drill"])
         return missing
+
+    def tie(self, ref, points, name="GND", w=0.3):
+        """Relie une pastille de masse au cuivre de masse déjà relié, comme on route un
+        signal : par l'une ou l'autre face, avec un via s'il le faut. `points` : points de
+        ce cuivre, (couche, x, y), donnés par `Board.stitch_zones()`. À utiliser pour une
+        pastille enfermée entre des pistes, là où aucun via ne tient à côté d'elle. Rend
+        vrai si la liaison est faite ; elle est ajoutée à la carte."""
+        net = self._id(name)
+        n = self.nx * self.ny
+        by_ref = {i["ref"]: i for i in self.items.get(name, []) if "ref" in i}
+        item = by_ref.get(ref)
+        if item is None:
+            raise KeyError(f"{ref} n'est pas une pastille de {name}")
+        targets = set()
+        for layer, x, y in points:
+            ix, iy = int(round(x / STEP)), int(round(y / STEP))
+            if 0 <= ix < self.nx and 0 <= iy < self.ny:
+                targets.add(LAYERS.index(layer) * n + iy * self.nx + ix)
+        if not targets:
+            return False
+        ax, ay = item["at"]
+        hint = min(((x, y) for _, x, y in points), key=lambda q: abs(q[0] - ax) + abs(q[1] - ay))
+        path = self._search(net, [L * n + i for L, i in self._cells(item)], targets, w, hint)
+        if path is None:
+            return False
+        before = (len(self.added["pistes"]), len(self.added["vias"]))
+        self._emit(name, path, w)
+        for t in self.added["pistes"][before[0]:]:
+            self.b.track(t["net"], [tuple(t["a"]), tuple(t["b"])], t["width"], layer=t["layer"])
+        for v in self.added["vias"][before[1]:]:
+            self.b.via(v["net"], v["at"][0], v["at"][1], diameter=v["diameter"], drill=v["drill"])
+        return True
 
     def save(self, path, signature):
         with open(path, "w", encoding="utf-8") as f:
