@@ -2,6 +2,8 @@
 
 Le routage de la carte Luciole² v0 a été relu une première fois (consigne dans `consigne.md`). Huit corrections ont été faites. Vous vérifiez ces corrections, et rien d'autre : chacune est-elle faite comme elle est décrite, et a-t-elle créé un défaut qui n'existait pas ?
 
+Note du 18 novembre 2026 au soir : cette consigne décrit la carte au moment de la contre-relecture. Depuis, la correction T1 a été retouchée : cinq vias au lieu de six, placés entre les dépôts de pâte de la plage du chargeur. La raison est dans `hardware/README.md`, section « Ce que les retours d'expérience ont appris ».
+
 Les pièces de ce dossier décrivent la carte corrigée : `routage.md` (règles, composants, réseaux avec leurs pastilles, leurs pistes et leurs vias), les six images du cuivre et les deux rendus. `../carte.py` porte le placement et les pistes tracées par script. Cotes en millimètres depuis le coin haut gauche, face avant vue de dessus ; le dos est donné dans le même repère.
 
 Le contrôle des règles de KiCad passe sur la carte corrigée : isolements, aucune liaison manquante, carte conforme au schéma. Inutile de le refaire.
