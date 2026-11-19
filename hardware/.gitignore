@@ -28,3 +28,8 @@ v0/simu-signaux/modeles/bss138_onsemi_thermique.lib
 # Journaux bruts de ngspice
 v0/simu/resultats/journaux/
 v0/simu-signaux/sorties/
+
+# Coûts, devis et hypothèses commerciales : gardés en local, pas publiés. Le dépôt ne porte
+# que ce qui a un intérêt pour la communauté.
+tools/couts.py
+v0/couts/
