@@ -6,7 +6,7 @@ Lumières de vélo qui se parlent. Un essaim de petites unités (M5Stack NanoC6 
 |---|---|
 | `firmware/` | Firmware ESP-IDF, une image par puce, nombre de LED en configuration. Voir `firmware/README.md`. |
 | `web/` | Site public https://lucioles.limn-labs.xyz, publié par GitHub Pages à chaque push sur `main` : présentation, installation par USB depuis le navigateur (ESP Web Tools), page de mise au point `luciole/` (état en direct, graphes, réglages, enregistrement CSV, sur ordinateur et Android), simulation. |
-| `sim/` | Simulation d'un Critical Mass : 20 000 vélos, 1 000 lucioles, mêmes règles que le firmware. Un fichier HTML, à ouvrir tel quel. |
+| `sim/` | Simulation d'un Critical Mass : 20 000 vélos, 1 000 lucioles, mêmes règles que le firmware. Un fichier HTML, à ouvrir tel quel. `sim/vote/` calcule puis simule un vote par propagation, en Python seul : `modele.py` donne les lois d'échelle, `simulation.py` les vérifie. |
 | `hardware/` | Carte électronique sur mesure, en cours de conception sur la branche `carte-v0` : schéma, placement et fichiers pour JLCPCB, produits par des scripts avec KiCad. Rien n'est encore fabriqué. Voir `hardware/README.md`. |
 
 Documentation du projet : wiki Outline, collection Luciole² (journal, décisions, architecture et contrat radio, matériel).
