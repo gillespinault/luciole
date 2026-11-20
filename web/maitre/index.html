@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luciole² — maître</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0b0d12">
+<style>
+  :root { --bg:#0b0d12; --panel:#151923; --ink:#d8dde8; --dim:#8a93a6; --line:#242a38; --acc:#ffd166; --ok:#7bd88f; --warn:#ff8f6b; --bleu:#4a7dff; --orange:#ff8a1f; --jauge:#35d6d6; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
+  header h1 { font-size:17px; margin:0; } header a { color:var(--dim); font-size:13px; }
+  #id { color:var(--dim); font-size:13px; }
+  main { max-width:720px; margin:0 auto; padding:14px 16px 40px; display:grid; gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:0 0 10px; }
+  button { background:#1f2533; color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:12px 14px; cursor:pointer; font:inherit; }
+  button:hover { border-color:var(--acc); } button.acc { background:var(--acc); color:#1a1400; border-color:var(--acc); font-weight:600; }
+  button.on { border-color:var(--acc); color:var(--acc); }
+  button:disabled { opacity:.45; cursor:default; }
+  header button { padding:7px 12px; border-radius:8px; }
+  .warn { border-color:var(--warn); color:var(--warn); }
+  .note { color:var(--dim); font-size:13px; margin:8px 0 0; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#555; display:inline-block; } .dot.on { background:var(--ok); } .dot.mute { background:var(--warn); }
+  .scenes { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .scenes > button { text-align:left; }
+  .scenes .teams { grid-column:1 / -1; border:1px solid var(--line); border-radius:10px; padding:10px 14px; background:#1f2533; }
+  .scenes .teams.on { border-color:var(--acc); } .scenes .teams.on > span { color:var(--acc); }
+  .scenes .sel { display:flex; gap:8px; margin-top:8px; } .scenes .sel button { flex:1; padding:10px 0; background:#151923; }
+  .scenes small { display:block; color:var(--dim); font-size:12px; font-weight:400; }
+  #now { font-size:22px; font-weight:600; } #now-sub { color:var(--dim); font-size:14px; }
+  .bars { display:grid; grid-template-columns:auto 1fr auto; gap:8px 10px; align-items:center; font-variant-numeric:tabular-nums; }
+  .track { height:26px; background:#1f2533; border-radius:6px; overflow:hidden; } .track i { display:block; height:100%; width:0; border-radius:6px; transition:width .25s; }
+  .big { font-size:44px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .histo { display:flex; gap:3px; align-items:flex-end; height:90px; margin-top:10px; } .histo div { flex:1; text-align:center; font-size:11px; color:var(--dim); display:flex; flex-direction:column; justify-content:flex-end; height:100%; }
+  .histo i { display:block; background:var(--jauge); border-radius:3px 3px 0 0; min-height:1px; transition:height .25s; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; } .chips span { padding:8px 12px; border-radius:10px; background:#1f2533; border-left:10px solid #555; font-variant-numeric:tabular-nums; }
+  details summary { cursor:pointer; color:var(--dim); font-size:13px; }
+  #log { height:180px; overflow:auto; background:#0b0d12; border:1px solid var(--line); border-radius:8px; padding:8px; font:12px/1.4 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; color:var(--dim); margin-top:8px; }
+  #log .tx { color:var(--acc); } #log .err { color:var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Luciole² — maître</h1>
+  <span class="dot" id="dot"></span>
+  <button class="acc" id="connect">Connecter</button>
+  <button id="choose" title="choisir un autre port">…</button>
+  <button id="disconnect" disabled>Déconnecter</button>
+  <span id="id"></span>
+  <a href="../">← site</a>
+</header>
+<main>
+  <div class="card warn" id="nosupport" hidden></div>
+  <div class="card warn" id="alert" hidden></div>
+  <div class="card" id="intro">
+    <p style="margin-top:0">Branchez une luciole en USB et touchez <strong>Connecter</strong>. Elle devient le maître : la scène que vous lancez ici gagne toutes les lucioles du groupe, et cette page affiche le résultat.</p>
+    <p class="note">Android : Chrome, câble USB-C vers USB-C. Ordinateur : Chrome ou Edge. Pas d'iPhone ni d'iPad : leurs navigateurs n'ont pas accès à l'USB. La scène vit dans les lucioles : si le téléphone se débranche, rien ne s'arrête, et on reprend la main en rebranchant.</p>
+  </div>
+
+  <div class="card">
+    <h2>Scène en cours</h2>
+    <div id="now">–</div>
+    <div id="now-sub">pas de luciole connectée</div>
+  </div>
+
+  <div class="card">
+    <h2>Lancer une scène</h2>
+    <div class="scenes">
+      <button data-cmd="scene normale" id="b0" disabled>Normale<small>ambre, cœur du groupe, ondes</small></button>
+      <button data-cmd="scene vote" id="b2" disabled>Vote<small>un appui : bleu, le suivant : orange</small></button>
+      <button data-cmd="scene jauge" id="b3" disabled>Jauge<small>chaque appui monte d'un cran, puis redescend</small></button>
+      <div class="teams" id="b1"><span>Équipes<small>une couleur chacune, tirée au sort</small></span>
+        <div class="sel" id="teams-n"></div></div>
+    </div>
+    <p class="note">Relancer une scène la remet à zéro : nouveau tirage des équipes, votes effacés.</p>
+  </div>
+
+  <div class="card" id="result-card" hidden>
+    <h2 id="result-title">Résultat</h2>
+    <div id="result"></div>
+    <p class="note" id="result-note"></p>
+  </div>
+
+  <div class="card">
+    <details><summary>Journal de la liaison</summary><div id="log"></div></details>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+function log(cls, text) { const d = document.createElement('div'); d.className = cls; d.textContent = text; logEl.appendChild(d); while (logEl.childNodes.length > 200) logEl.removeChild(logEl.firstChild); logEl.scrollTop = logEl.scrollHeight; }
+const errText = e => e ? `${e.name || 'erreur'} : ${e.message || String(e)}` : 'erreur sans détail';
+
+/* ---------- Port série : la même couche que la page de mise au point ----------
+ * Web Serial natif (Chrome / Edge sur ordinateur), ou WebUSB avec une couche
+ * CDC-ACM écrite ici (Chrome sur Android, dont le Web Serial ne sait pas
+ * ouvrir un appareil USB). lien = { open(), write(bytes), read(), close() } */
+const isAndroid = /Android/i.test(navigator.userAgent), ESPRESSIF = 0x303a;
+const useSerial = !isAndroid && !!navigator.serial, useUsb = !useSerial && !!navigator.usb;
+if (!useSerial && !useUsb) { $('nosupport').hidden = false; $('nosupport').textContent = 'Ce navigateur ne donne pas accès aux ports USB. Il faut Chrome ou Edge sur un ordinateur, ou Chrome sur Android.'; $('connect').disabled = true; $('choose').disabled = true; }
+
+function serialLink(port) {
+  let reader = null, writer = null;
+  return {
+    async open() { await port.open({ baudRate: 115200 }); writer = port.writable.getWriter(); reader = port.readable.getReader(); },
+    async write(bytes) { await writer.write(bytes); },
+    async read() { const { value, done } = await reader.read(); return done ? null : value; },
+    async close() { try { reader && await reader.cancel(); } catch (e) {} try { reader && reader.releaseLock(); } catch (e) {} try { writer && writer.releaseLock(); } catch (e) {} try { await port.close(); } catch (e) {} },
+  };
+}
+function usbCdcLink(device) {
+  let ctrl = null, data = null, epIn = null, epOut = null;
+  return {
+    async open() {
+      await device.open();
+      if (!device.configuration) await device.selectConfiguration(1);
+      for (const itf of device.configuration.interfaces) {
+        const alt = itf.alternates[0];
+        if (alt.interfaceClass === 2 && !ctrl) ctrl = itf;
+        if (alt.interfaceClass === 10 && !data) { data = itf; for (const ep of alt.endpoints) if (ep.type === 'bulk') { if (ep.direction === 'in') epIn = ep.endpointNumber; else epOut = ep.endpointNumber; } }
+      }
+      if (!data || epIn == null || epOut == null) throw new Error('interface série CDC introuvable');
+      if (ctrl) { try { await device.claimInterface(ctrl.interfaceNumber); } catch (e) { log('err', 'interface de contrôle : ' + errText(e)); } }
+      await device.claimInterface(data.interfaceNumber);
+      if (ctrl) {
+        const idx = ctrl.interfaceNumber;
+        try { await device.controlTransferOut({ requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: idx }, new Uint8Array([0x00, 0xc2, 0x01, 0x00, 0, 0, 8])); } catch (e) { log('err', 'SET_LINE_CODING : ' + errText(e)); }
+        try { await device.controlTransferOut({ requestType: 'class', recipient: 'interface', request: 0x22, value: 0x03, index: idx }); } catch (e) { log('err', 'SET_CONTROL_LINE_STATE : ' + errText(e)); }
+      }
+    },
+    async write(bytes) { const r = await device.transferOut(epOut, bytes); if (r.status !== 'ok') throw new Error('transferOut ' + r.status); },
+    async read() { const r = await device.transferIn(epIn, 512); if (r.status === 'stall') { await device.clearHalt('in', epIn); return new Uint8Array(0); } if (r.status !== 'ok') throw new Error('transferIn ' + r.status); return new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength); },
+    async close() { try { await device.close(); } catch (e) {} },
+  };
+}
+async function pickLink(forceChooser) {
+  if (useSerial) {
+    const known = (await navigator.serial.getPorts()).filter(p => { try { return p.getInfo().usbVendorId === ESPRESSIF; } catch (e) { return false; } });
+    const port = (!forceChooser && known.length === 1) ? known[0] : await navigator.serial.requestPort({ filters: [{ usbVendorId: ESPRESSIF }] });
+    return serialLink(port);
+  }
+  const known = (await navigator.usb.getDevices()).filter(d => d.vendorId === ESPRESSIF);
+  const device = (!forceChooser && known.length === 1) ? known[0] : await navigator.usb.requestDevice({ filters: [{ vendorId: ESPRESSIF }] });
+  return usbCdcLink(device);
+}
+
+/* ---------- Liaison ---------- */
+let link = null, closing = false, me = {}, lastRx = 0, lastNudge = 0, restarted = false, mine = null, wake = null;
+const enc = new TextEncoder(), dec = new TextDecoder();
+const CTRL = ['disconnect', 'b0', 'b2', 'b3'];
+
+async function send(cmd) { if (!link) return; log('tx', '> ' + cmd); try { await link.write(enc.encode(cmd + '\n')); } catch (e) { log('err', 'écriture : ' + errText(e)); } }
+async function listen() { await send('log off'); await send('version'); await send('stream 500'); }
+
+async function connect(forceChooser = false) {
+  try { link = await pickLink(forceChooser); await link.open(); }
+  catch (e) { log('err', 'ouverture du port : ' + errText(e)); try { link && await link.close(); } catch (x) {} link = null; return; }
+  $('dot').classList.add('on'); $('connect').disabled = true; for (const id of CTRL) $(id).disabled = false; for (const b of $('teams-n').children) b.disabled = false;
+  $('intro').hidden = true; closing = false; lastRx = lastNudge = Date.now(); restarted = false;
+  readLoop();
+  await listen();
+  try { wake = await navigator.wakeLock.request('screen'); } catch (e) {}     /* l'écran reste allumé tant que la page est ouverte */
+}
+async function disconnect() {
+  if (!link) return; closing = true;
+  try { await send('stream off'); await send('log on'); } catch (e) {}
+  const l = link; link = null;
+  await l.close();
+  $('dot').className = 'dot'; $('connect').disabled = false; for (const id of CTRL) $(id).disabled = true; for (const b of $('teams-n').children) b.disabled = true;
+  $('id').textContent = ''; $('alert').hidden = true; $('now').textContent = '–'; $('now-sub').textContent = 'pas de luciole connectée'; $('result-card').hidden = true;
+  try { wake && await wake.release(); } catch (e) {} wake = null;
+}
+async function readLoop() {
+  let buf = ''; const l = link;
+  try {
+    while (link === l) {
+      const value = await l.read(); if (value === null) break;
+      if (!value.byteLength) continue;
+      buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i + 1); onLine(line); }
+    }
+  } catch (e) { if (!closing) log('err', 'lecture : ' + errText(e)); }
+  if (link === l) disconnect();
+}
+
+/* Garde : la console USB d'une luciole peut se figer en émission (vu le 20
+ * novembre 2026, cause non trouvée) alors qu'elle reçoit encore ses
+ * commandes. Sans nouvelles : on redemande le flux, puis on la redémarre. La
+ * scène n'est pas perdue, elle vit dans le groupe ; la luciole la retrouve en
+ * une seconde et la page lui rend son rôle de maître. */
+setInterval(() => {
+  if (!link) return;
+  const quiet = Date.now() - lastRx;
+  $('dot').className = 'dot ' + (quiet > 3000 ? 'mute' : 'on');
+  if (quiet < 3000) { $('alert').hidden = true; return; }
+  $('alert').hidden = false; $('alert').textContent = 'La luciole ne répond plus depuis ' + Math.round(quiet / 1000) + ' s. Les lucioles continuent ; la page essaie de reprendre la liaison.';
+  if (Date.now() - lastNudge < 3000) return;
+  lastNudge = Date.now();
+  if (quiet > 8000 && !restarted) { restarted = true; send('restart'); } else listen();
+}, 1000);
+
+/* ---------- Ce que dit la luciole ---------- */
+const NOMS = ['Normale', 'Équipes', 'Vote', 'Jauge'];
+const EQUIPES = [['bleu', 230], ['orange', 25], ['vert', 120], ['magenta', 300], ['cyan', 180], ['rouge', 0]];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pl = (n, mot) => n + ' ' + mot + (n > 1 ? 's' : '');
+
+function onLine(line) {
+  if (!line.startsWith('{')) { if (line.trim()) log('', line); return; }
+  let d; try { d = JSON.parse(line); } catch (e) { return; }
+  lastRx = Date.now(); restarted = false;
+  if (d.board) { me = d; $('id').textContent = `${d.mac}${d.name ? ' « ' + d.name + ' »' : ''} · firmware ${d.fw}`; return; }
+  if (d.err) { log('err', d.err); return; }
+  if (d.scene && d.mac === undefined && d.t === undefined) { render(d.scene); return; }     /* réponse à « scene … » */
+  if (d.t === undefined) return;
+  if (!d.scene) { $('now').textContent = 'Firmware trop ancien'; $('now-sub').textContent = 'Les scènes demandent le firmware 8 ou plus récent sur cette luciole.'; return; }
+  render(d.scene);
+}
+
+function render(s) {
+  /* La luciole a redémarré et retrouvé la scène dans le groupe : la page lui rend son rôle de maître. */
+  if (s.master) mine = s.epoch;
+  else if (s.known && mine === s.epoch) { mine = null; send('scene maitre'); }
+  const t = s.type;
+  $('now').textContent = !s.known ? 'Normale' : t === 1 ? `Équipes (${s.arg})` : NOMS[t] || '?';
+  $('now-sub').textContent = !s.known ? 'aucune scène lancée depuis l\'allumage du groupe'
+    : s.expired ? `la scène « ${NOMS[s.set]} » s'est effacée : son maître ne se fait plus entendre`
+    : s.master ? `scène n° ${s.epoch}, lancée d'ici` : `scène n° ${s.epoch}, lancée par une autre luciole (vue il y a ${s.age} s)`;
+  for (let k = 0; k < 4; k++) $('b' + k).classList.toggle('on', !!s.known && t === k);
+  for (const b of $('teams-n').children) b.classList.toggle('on', t === 1 && +b.textContent === s.arg);
+  const c = s.counts || [], card = $('result-card'), R = $('result');
+  card.hidden = t === 0;
+  if (t === 1) {
+    $('result-title').textContent = 'Équipes';
+    R.innerHTML = '<div class="chips">' + c.map((n, k) => `<span style="border-left-color:hsl(${EQUIPES[k][1]} 90% 55%)">${EQUIPES[k][0]} · ${n}</span>`).join('') + '</div>';
+    $('result-note').textContent = `${pl(s.n, 'luciole')} : celle-ci et celles qu'elle entend en direct. Sa propre équipe : ${EQUIPES[s.mine][0]}.`;
+  } else if (t === 2) {
+    const a = c[1] || 0, b = c[2] || 0, v = a + b, pct = x => v ? Math.round(100 * x / v) : 0;
+    $('result-title').textContent = 'Vote';
+    R.innerHTML = `<div class="bars">
+      <span>Bleu</span><div class="track"><i style="width:${pct(a)}%;background:var(--bleu)"></i></div><span>${a} · ${pct(a)} %</span>
+      <span>Orange</span><div class="track"><i style="width:${pct(b)}%;background:var(--orange)"></i></div><span>${b} · ${pct(b)} %</span></div>`;
+    $('result-note').textContent = `${pl(s.n, 'luciole')}, ${c[0] || 0} sans vote pour l'instant.` + sample(s.n);
+  } else if (t === 3) {
+    const steps = c.length - 2, lv = c.slice(1), v = lv.reduce((x, y) => x + y, 0), max = Math.max(1, ...lv);
+    const mean = v ? lv.reduce((x, n, k) => x + n * k, 0) / v / steps * 100 : null;
+    $('result-title').textContent = 'Jauge';
+    R.innerHTML = `<div class="big">${mean === null ? '–' : Math.round(mean) + ' %'}</div><div class="note" style="margin:0">moyenne ${v > 1 ? 'des ' + v + ' lucioles qui ont réglé leur jauge' : v ? 'de la luciole qui a réglé sa jauge' : ': personne n\'a encore réglé sa jauge'}</div>
+      <div class="histo">${lv.map((n, k) => `<div>${n || ''}<i style="height:${Math.round(70 * n / max)}px"></i>${Math.round(100 * k / steps)}</div>`).join('')}</div>`;
+    $('result-note').textContent = `${pl(s.n, 'luciole')}, ${c[0] || 0} sans réglage pour l'instant. Sous chaque barre, le niveau en %.` + sample(s.n);
+  }
+}
+const sample = n => n >= 256 ? ' Au-delà de 256 lucioles, le décompte porte sur 256 d\'entre elles tirées au sort : c\'est un sondage.' : '';
+
+/* ---------- Commandes ---------- */
+for (let n = 2; n <= 6; n++) { const b = document.createElement('button'); b.textContent = n; b.disabled = true; b.onclick = () => send('scene equipes ' + n); $('teams-n').appendChild(b); }
+for (const b of document.querySelectorAll('button[data-cmd]')) b.onclick = () => send(b.dataset.cmd);
+$('connect').onclick = () => connect(false);
+$('choose').onclick = async () => { await disconnect(); connect(true); };
+$('disconnect').onclick = disconnect;
+
+/* Hors ligne : la page reste en cache une fois ouverte (HTTPS, ou localhost pour les essais). */
+if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
