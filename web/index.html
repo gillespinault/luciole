@@ -53,7 +53,7 @@
 <section id="projet">
   <h2>Le projet</h2>
   <p>Une luciole est un petit boîtier avec une radio et un ruban de LED. Fixée sur un vélo, elle écoute les lucioles autour d'elle et leur parle, directement, de boîtier à boîtier. Il n'y a rien à configurer et rien à connecter : on l'allume, elle cherche ses voisines.</p>
-  <p>Seule, une luciole fait sa propre lumière. Plusieurs lucioles ensemble font ce qu'une seule ne peut pas faire : elles prennent un rythme commun, s'accordent sur une couleur, et une impulsion lancée par l'une passe de vélo en vélo. Le but est de rendre visibles les relations entre les gens qui roulent ensemble, pas de synchroniser des guirlandes.</p>
+  <p>Seule, une luciole fait sa propre lumière. Plusieurs lucioles ensemble font ce qu'une seule ne peut pas faire : elles prennent un rythme commun et une même couleur, et une impulsion lancée par l'une passe de vélo en vélo. Le but est de rendre visibles les relations entre les gens qui roulent ensemble, pas de synchroniser des guirlandes.</p>
   <p>Le projet est pensé pour des rassemblements de cyclistes, où des centaines ou des milliers de lucioles peuvent se croiser. Première sortie : la Critical Mass de Bruxelles du vendredi 30 octobre 2026, avec les Merveilleux Fous Roulants.</p>
   <h3>Principes</h3>
   <ul>
@@ -72,9 +72,10 @@
     <div class="strip" id="s-seule"></div>
     <figcaption>Seule : un arc-en-ciel calme qui défile lentement de gauche à droite. Rien ne bat.</figcaption>
     <div class="strip" id="s-ensemble"></div>
-    <figcaption>Ensemble : dès qu'une autre luciole est entendue régulièrement, le ruban prend la couleur du groupe, ambre au repos, et bat son cœur, au même instant sur tous les vélos.</figcaption>
+    <figcaption>Ensemble : dès qu'une autre luciole est entendue régulièrement, le ruban passe à l'ambre et bat le cœur du groupe, au même instant sur tous les vélos.</figcaption>
   </figure>
-  <p>Chaque luciole a un bouton. Un appui court envoie une onde : un front blanc traverse le ruban, qui garde quelques secondes la couleur de l'onde avec des paillettes, puis le cœur reprend dans cette couleur et revient peu à peu à l'ambre, la couleur de repos du groupe. L'onde gagne tout le groupe en un clin d'œil, de proche en proche. Tant qu'une onde est en cours, le bouton attend.</p>
+  <p>Chaque luciole a un bouton. Un appui court envoie une onde : un front blanc traverse le ruban, la couleur de l'onde reste quelques secondes avec des paillettes, puis l'ambre revient : cinq secondes en tout. L'onde gagne tout le groupe en un clin d'œil, de proche en proche. Tant qu'une onde est en cours, le bouton attend.</p>
+  <p>Une luciole branchée en USB à un téléphone Android ou à un ordinateur peut aussi lancer une scène pour tout le groupe : des équipes de couleurs tirées au sort, un vote en bleu ou en orange, une jauge que chacun règle avec son bouton. La scène gagne le groupe de proche en proche, et le décompte revient par le même chemin. Voir la page <a href="maitre/">Luciole maître</a>.</p>
   <p>Un appui long met la luciole en veille, ou la réveille. La veille ne vaut que pour l'état « seule » : une luciole en veille reste éteinte tant qu'elle n'entend personne, bat dès que d'autres sont à portée, et se rendort quand elles s'éloignent. Au démarrage, elle est toujours allumée.</p>
   <p>Tout cela repose sur des règles locales. Chaque luciole ne connaît que ce qu'elle entend autour d'elle, et les figures d'ensemble naissent de ces règles sans coordination centrale. La <a href="simulation/">simulation</a> montre ces règles sur un peloton de 20 000 vélos dont 1 000 lucioles.</p>
 </section>
@@ -137,6 +138,7 @@
   <ul>
     <li><a href="https://github.com/gillespinault/luciole">Code source sur GitHub</a> : firmware, cette page, la simulation.</li>
     <li><a href="luciole/">Mise au point par USB</a> : état en direct, graphes, réglages et enregistrement d'une luciole branchée, sur ordinateur ou Android.</li>
+    <li><a href="maitre/">Luciole maître</a> : lancer une scène pour tout un groupe (équipes de couleurs, vote, jauge) et lire le résultat, depuis une luciole branchée en USB, sur ordinateur ou Android.</li>
     <li><a href="simulation/">Simulation d'un Critical Mass</a> : 20 000 vélos, 1 000 lucioles, les mêmes règles que le firmware, des appuis sur les boutons au hasard ou à la souris.</li>
   </ul>
 </section>

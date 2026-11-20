@@ -1,10 +1,12 @@
 /*
- * Luciole² — firmware 7 : seule, arc-en-ciel ; ensemble, couleur commune et
- * cœur du groupe ; appui, onde inondée qui change la couleur. Contrat radio v1
- * (luciole.h), nombre de LED en configuration, une table de brochage par carte.
+ * Luciole² — firmware 8 : seule, arc-en-ciel ; ensemble, ambre et cœur du
+ * groupe ; appui, onde inondée qui colore un moment. En plus, des scènes
+ * lancées par une luciole maître reliée en USB : équipes de couleurs, vote,
+ * jauge (luciole.h). Contrat radio v1, nombre de LED en configuration, une
+ * table de brochage par carte.
  * Règles locales uniquement : aucune unité n'est configurée ni appairée, tout
- * se découvre en écoutant. Le protocole ne transporte que phase, densité,
- * teinte, ensemble/seule et ondes ; chaque kit les rend avec son propre matériel.
+ * se découvre en écoutant. Le protocole transporte phase, densité, teinte,
+ * ensemble/seule, ondes, scène et votes ; chaque kit les rend avec son matériel.
  * Pensé pour tenir en foule (milliers d'unités à portée radio) : balises
  * ralenties selon la taille de la foule, ondes inondées de proche en proche
  * avec suppression, tout est borné.
@@ -61,7 +63,7 @@ typedef struct {
     int8_t   rssi;
     int64_t  rx_us;
     uint8_t  len;
-    uint8_t  data[sizeof(l2_beacon_t) > sizeof(l2_wave_t) ? sizeof(l2_beacon_t) : sizeof(l2_wave_t)];
+    uint8_t  data[250];     /* une trame ESP-NOW au plus ; ce qui manque à une trame courte vaut 0 */
 } l2_rx_t;
 
 /* Une onde connue : où j'en suis avec elle. */
@@ -75,6 +77,25 @@ typedef struct {
     int64_t  t_first, relay_at;
     int64_t  repeat_at;     /* mes ondes : seconde émission due, -1 sinon */
 } l2_wave_rec_t;
+
+/* La scène que je suis. */
+typedef struct {
+    bool     known;         /* faux au démarrage : je prends celle du groupe */
+    bool     master;        /* c'est moi qui l'ai lancée : j'émets l'âge 0 */
+    uint8_t  type, arg;
+    uint16_t epoch, seed;
+    float    age_s;         /* depuis le dernier signe du maître */
+} l2_scene_state_t;
+
+/* Une entrée de la table du panel. */
+typedef struct {
+    bool     used, fresh;   /* fresh : apprise depuis peu, à rediffuser */
+    uint32_t ticket;        /* 24 bits */
+    uint8_t  ver, val;
+    uint8_t  echoes;        /* fois où je l'ai entendue dans les trames des autres */
+} l2_vote_rec_t;
+
+typedef struct { uint32_t id; int64_t seen_us; } l2_roster_t;   /* seen_us = 0 : case vide */
 
 static l2_neighbor_t  s_neighbors[L2_MAX_NEIGHBORS];
 static QueueHandle_t  s_rx_queue;
@@ -117,12 +138,25 @@ static int64_t  s_play_start = -1;
 static float    s_play_hue = 0;
 static int64_t  s_last_relay = -100000000;
 
+/* Scènes, équipes, votes */
+static l2_scene_state_t S;
+static l2_roster_t   s_roster[L2_ROSTER];
+static l2_vote_rec_t s_votes[L2_VOTE_K];
+static uint32_t s_my_ticket;
+static uint8_t  s_my_vote, s_my_ver;     /* ma valeur dans la scène (0 = pas voté), sa version */
+static int      s_gauge_dir = 1;         /* jauge : le prochain appui monte ou descend */
+static int      s_announce_left = 0;     /* en foule : annonces de mon vote encore dues */
+static int      s_vote_cursor = 0;       /* rattrapage : prochaine case de la table */
+static int64_t  s_votes_send_at = -1;    /* trame de votes due dans ce créneau, -1 sinon */
+static bool     s_votes_relay = false, s_votes_catchup = false;
+static int      s_table_count = 0;       /* voisines en table */
+
 /* ------------------------------------------------------------------ */
 /* Paramètres réglables en direct (console « set »), persistants en NVS.  */
 /* Les valeurs par défaut sont celles de luciole.h ; les macros du code   */
 /* sont redirigées vers ces champs juste après la table.                  */
 typedef struct {
-    float base_hue, base_tau, hue_tau, rainbow_b, rainbow_flow, heart_bpb, heart_floor;
+    float base_hue, rainbow_b, rainbow_flow, heart_bpb, heart_floor;
     float wave_sweep, wave_trail, wave_jitter, wave_suppress, wave_relay_min;
     float beacon_rate, strip_max, strip_peak_ma, led_ma;
 } l2_params_t;
@@ -131,15 +165,13 @@ typedef struct { const char *key; size_t off; float def, min, max; const char *d
 
 #define PD(field, def, min, max, desc) { #field, offsetof(l2_params_t, field), def, min, max, desc }
 static const l2_param_desc_t PARAMS[] = {
-    PD(base_hue,       L2_BASE_HUE,                 0,    360,   "deg : couleur de base (30 = ambre), ou la teinte revient apres une onde"),
-    PD(base_tau,       L2_BASE_TAU_S,               1,    600,   "s : retour de la couleur vers la base"),
-    PD(hue_tau,        L2_HUE_TAU_S,                0.1,  60,    "s : couleur vers la moyenne des voisines"),
+    PD(base_hue,       L2_BASE_HUE,                 0,    360,   "deg : couleur de base (30 = ambre)"),
     PD(rainbow_b,      L2_RAINBOW_B,                0,    1,     "0..1 : luminosite de l'arc-en-ciel (seule)"),
     PD(rainbow_flow,   L2_RAINBOW_FLOW,             -2,   2,     "tours/s : defilement de l'arc-en-ciel"),
     PD(heart_bpb,      L2_HEART_BPB,                1,    6,     "battements par cycle de 2,5 s (3 = 72 bpm)"),
     PD(heart_floor,    L2_HEART_FLOOR,              0,    1,     "0..1 : luminosite au repos entre deux battements"),
     PD(wave_sweep,     L2_WAVE_SWEEP_US / 1000,     50,   5000,  "ms : traversee du ruban"),
-    PD(wave_trail,     L2_WAVE_TRAIL_US / 1000,     0,    20000, "ms : trainee apres le passage (= periode refractaire)"),
+    PD(wave_trail,     L2_WAVE_TRAIL_US / 1000,     0,    20000, "ms : trainee, la couleur de l'onde s'efface (traversee + trainee = periode refractaire)"),
     PD(wave_jitter,    L2_WAVE_JITTER_US / 1000,    0,    5000,  "ms : rediffusion dans 0..jitter apres la premiere copie"),
     PD(wave_suppress,  L2_WAVE_SUPPRESS,            1,    20,    "copies entendues : plus de rediffusion"),
     PD(wave_relay_min, L2_WAVE_RELAY_MIN_US / 1000, 0,    30000, "ms : entre deux rediffusions"),
@@ -154,8 +186,6 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 
 /* Le corps du code garde les noms de luciole.h : on les redirige. */
 #undef L2_BASE_HUE
-#undef L2_BASE_TAU_S
-#undef L2_HUE_TAU_S
 #undef L2_RAINBOW_B
 #undef L2_RAINBOW_FLOW
 #undef L2_HEART_BPB
@@ -170,8 +200,6 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 #undef L2_STRIP_PEAK_MA
 #undef L2_LED_MA
 #define L2_BASE_HUE           P.base_hue
-#define L2_BASE_TAU_S         P.base_tau
-#define L2_HUE_TAU_S          P.hue_tau
 #define L2_RAINBOW_B          P.rainbow_b
 #define L2_RAINBOW_FLOW       P.rainbow_flow
 #define L2_HEART_BPB          ((int)(P.heart_bpb + 0.5f))
@@ -188,6 +216,13 @@ static inline float *param_ptr(const l2_param_desc_t *d) { return (float *)((cha
 
 static int64_t s_stream_period_us = 500000, s_stream_last = 0;
 
+static void scene_hear(const l2_scene_t *o);
+static void scene_fill(l2_scene_t *o);
+static bool scene_votes(void);
+static void roster_note(const uint8_t *mac, int64_t now);
+static void vote_merge(uint32_t ticket, uint8_t ver, uint8_t val, bool in_frame);
+static void wave_emit(int64_t now, bool force);
+
 /* ------------------------------------------------------------------ */
 static inline int64_t phase_at(int64_t now) { int64_t p = (now + s_offset_us) % L2_BAR_US; return p < 0 ? p + L2_BAR_US : p; }
 static inline int64_t wrap_half(int64_t d) { while (d > L2_BAR_US / 2) d -= L2_BAR_US; while (d < -L2_BAR_US / 2) d += L2_BAR_US; return d; }
@@ -199,6 +234,12 @@ static inline bool mac_eq(const uint8_t *a, const uint8_t *b) { return memcmp(a,
 static inline bool animating(void) { return s_play_start >= 0; }
 
 static inline uint64_t gpio_bit(int g) { return g >= 0 ? 1ULL << g : 0; }   /* -1 = broche absente */
+
+/* Identifiant d'une luciole : les quatre derniers octets de sa MAC. Hachage
+ * (identifiant, tirage) : son équipe, ou son ticket pour le panel. */
+static inline uint32_t mac_id(const uint8_t *mac) { return ((uint32_t)mac[2] << 24) | ((uint32_t)mac[3] << 16) | ((uint32_t)mac[4] << 8) | mac[5]; }
+static uint32_t mix32(uint32_t h) { h ^= h >> 16; h *= 0x85ebca6bu; h ^= h >> 13; h *= 0xc2b2ae35u; h ^= h >> 16; return h; }
+static uint32_t id_hash(uint32_t id, uint16_t seed) { return mix32(id ^ mix32(0x9e3779b9u * (seed + 1u))); }
 
 static void hue_to_rgb(float h, float rgb[3])
 {
@@ -233,10 +274,14 @@ static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int le
     if (len < (int)sizeof(l2_hdr_t)) return;
     const l2_hdr_t *h = (const l2_hdr_t *)data;
     if (h->magic[0] != 'L' || h->magic[1] != '2' || h->version < L2_PROTO_MIN_VERSION) return;
-    if (h->type == L2_MSG_BEACON)    { if (len < L2_BEACON_MIN_LEN) return; if (len > (int)sizeof(l2_beacon_t)) len = sizeof(l2_beacon_t); }
-    else if (h->type == L2_MSG_WAVE) { if (len < (int)sizeof(l2_wave_t))   return; len = sizeof(l2_wave_t); }
+    if (h->type == L2_MSG_BEACON)     { if (len < L2_BEACON_MIN_LEN) return; if (len > (int)sizeof(l2_beacon_t)) len = sizeof(l2_beacon_t); }
+    else if (h->type == L2_MSG_WAVE)  { if (len < L2_WAVE_MIN_LEN)   return; if (len > (int)sizeof(l2_wave_t))   len = sizeof(l2_wave_t); }
+    else if (h->type == L2_MSG_VOTES) { if (len < L2_VOTES_HDR_LEN)  return; if (len > (int)sizeof(l2_votes_t))  len = sizeof(l2_votes_t); }
     else return;
+    /* Tout à zéro d'abord : les champs qu'une trame plus courte (firmware
+     * plus ancien) ne porte pas valent 0, dont « scène connue ». */
     l2_rx_t rx;
+    memset(&rx, 0, sizeof(rx));
     memcpy(rx.mac, info->src_addr, 6);
     rx.rssi = info->rx_ctrl ? info->rx_ctrl->rssi : -100;
     rx.rx_us = esp_timer_get_time();
@@ -323,13 +368,22 @@ static void handle_beacon(const l2_rx_t *rx)
     const l2_beacon_t *b = (const l2_beacon_t *)rx->data;
     s_heard_count++;
     crowd_note(rx->mac);
+    /* Scène, liste des présentes et vote : pour toute luciole entendue, même
+     * si la table des voisines, bornée à 16, n'a pas de place pour elle. La
+     * liste ne retient que les lucioles qui suivent les scènes (balise du
+     * firmware 8) : équilibrer des équipes avec une 7.x qui restera ambre
+     * les fausserait. */
+    if (rx->len >= L2_BEACON_V8_LEN) roster_note(rx->mac, rx->rx_us);
+    scene_hear(&b->scene);
+    if (scene_votes() && (b->scene.flags & L2_SCENE_KNOWN) && b->scene.epoch == S.epoch && b->scene.seed == S.seed)
+        vote_merge(id_hash(mac_id(rx->mac), S.seed) >> 8, b->vote_ver, b->vote, false);
     l2_neighbor_t *n = neighbor_find_or_add(rx->mac, rx->rssi, rx->rx_us);
     if (!n) return;
     n->rssi_f += L2_RSSI_ALPHA * (rx->rssi - n->rssi_f);
     n->last_rssi = rx->rssi;
     n->last_seen_us = rx->rx_us;
     n->hue = b->hue; n->coh = b->coh;
-    if (rx->len >= (int)sizeof(l2_beacon_t)) { memcpy(n->name, b->name, L2_NAME_LEN); n->name[L2_NAME_LEN - 1] = 0; }
+    memcpy(n->name, b->name, L2_NAME_LEN); n->name[L2_NAME_LEN - 1] = 0;    /* absent d'une balise courte : zéros */
 
     int64_t theirs = (int64_t)b->phase_us + L2_LINK_LATENCY_US;
     int64_t raw = wrap_half(theirs - phase_at(rx->rx_us));
@@ -407,22 +461,22 @@ static void wave_send(const l2_wave_rec_t *r, uint8_t hop)
 {
     l2_wave_t w = { .hdr = {{'L', '2'}, L2_PROTO_VERSION, L2_MSG_WAVE}, .id = r->id, .hop = hop, .hue = r->hue };
     memcpy(w.origin, r->origin, 6);
+    scene_fill(&w.scene);
     esp_err_t err = esp_now_send(BROADCAST, (const uint8_t *)&w, sizeof(w));
     if (err != ESP_OK) ESP_LOGW(TAG, "esp_now_send onde: %s", esp_err_to_name(err));
 }
 
-/* Une onde arrive (la mienne ou une entendue) : la couleur commune devient
- * celle de l'onde, et l'animation part, sauf si un front est en train de
- * traverser (on ne hache pas un front) : alors la couleur change seulement.
- * Pendant la traînée, l'animation repart : une voisine dont l'animation
- * finit 100 ms après la mienne doit jouer l'onde que je viens de lancer. */
+/* Une onde arrive (la mienne ou une entendue) : l'animation part dans sa
+ * couleur, sauf si un front est en train de traverser (on ne hache pas un
+ * front) : alors seule la couleur de la traînée change. Pendant la traînée,
+ * l'animation repart : une voisine dont l'animation finit 100 ms après la
+ * mienne doit jouer l'onde que je viens de lancer. La couleur de base ne
+ * bouge pas : l'onde la recouvre, puis s'efface. */
 static bool wave_take(const l2_wave_rec_t *r, int64_t now)
 {
-    float hue = r->hue * 360.0f / 255.0f;
-    s_hue = hue;
+    s_play_hue = r->hue * 360.0f / 255.0f;
     if (animating() && now - s_play_start < L2_WAVE_SWEEP_US) return false;
     s_play_start = now;
-    s_play_hue = hue;
     return true;
 }
 
@@ -432,6 +486,7 @@ static void handle_wave(const l2_rx_t *rx)
 {
     const l2_wave_t *w = (const l2_wave_t *)rx->data;
     if (mac_eq(w->origin, s_mac)) return;
+    scene_hear(&w->scene);
     l2_wave_rec_t *r = wave_find(w->origin, w->id, rx->rx_us);
     if (!r) {
         r = wave_add(w->origin, w->id, w->hue, w->hop, rx->rx_us);
@@ -450,9 +505,10 @@ static void handle_wave(const l2_rx_t *rx)
     if (w->hop < r->hop) r->hop = w->hop;
 }
 
-static void wave_emit(int64_t now)
+/* force : l'onde d'un changement de scène part même pendant une animation. */
+static void wave_emit(int64_t now, bool force)
 {
-    if (animating()) { ESP_LOGI(TAG, "bouton : animation en cours, appui ignore"); return; }
+    if (!force && animating()) { ESP_LOGI(TAG, "bouton : animation en cours, appui ignore"); return; }
     /* L'onde porte une couleur tirée au hasard, à plus de L2_WAVE_HUE_MIN de la
      * base pour qu'elle tranche sur l'ambre, et pour que deux appuis ne se
      * ressemblent pas. */
@@ -460,7 +516,7 @@ static void wave_emit(int64_t now)
     l2_wave_rec_t *r = wave_add(s_mac, ++s_wave_id, (uint8_t)(wave_hue * 255.0f / 360.0f), 0, now);
     r->relayed = true;
     r->repeat_at = now + L2_WAVE_REPEAT_US;
-    ESP_LOGI(TAG, "bouton : onde #%u emise, teinte %.0f -> %.0f", r->id, s_hue, wave_hue);
+    ESP_LOGI(TAG, "onde #%u emise, teinte %.0f", r->id, wave_hue);
     wave_event("emit", r, 0, 0, now);
     wave_take(r, now);
     wave_send(r, 0);
@@ -496,6 +552,257 @@ static void wave_tick(int64_t now)
 }
 
 /* ------------------------------------------------------------------ */
+/* Scènes                                                              */
+static inline bool scene_expired(void) { return S.known && !S.master && S.type != L2_SCENE_NORMAL && S.age_s > L2_SCENE_TTL_S; }
+/* La scène qui s'applique : normale tant qu'on n'en connaît pas, ou si le maître a disparu. */
+static inline int scene_type(void) { return (!S.known || scene_expired()) ? L2_SCENE_NORMAL : S.type; }
+static bool scene_votes(void) { int t = scene_type(); return t == L2_SCENE_VOTE || t == L2_SCENE_GAUGE; }
+static inline int teams_n(void) { return S.arg < 2 ? 2 : S.arg > L2_TEAMS_MAX ? L2_TEAMS_MAX : S.arg; }
+static inline int gauge_steps(void) { return S.arg < 2 ? L2_GAUGE_STEPS : S.arg > L2_GAUGE_STEPS_MAX ? L2_GAUGE_STEPS_MAX : S.arg; }
+static inline int team_of(uint32_t id, uint16_t seed, int n) { return (int)(id_hash(id, seed) % (uint32_t)n); }
+
+/* Ma scène telle qu'elle part dans une balise ou une onde. L'âge est arrondi
+ * au-dessus : arrondi au-dessous, deux lucioles se le renverraient plus
+ * jeune qu'il n'est, et la scène ne s'effacerait jamais. */
+static void scene_fill(l2_scene_t *o)
+{
+    memset(o, 0, sizeof(*o));
+    if (!S.known) return;
+    o->type = S.type; o->arg = S.arg; o->epoch = S.epoch; o->seed = S.seed;
+    float a = S.master ? 0 : ceilf(S.age_s / L2_SCENE_AGE_UNIT_S);
+    o->age = a > 254 ? 254 : (uint8_t)a;
+    o->flags = L2_SCENE_KNOWN;
+}
+
+/* Nouvelle scène : mon vote et la table repartent de zéro. J'y suis d'office,
+ * « pas encore voté », pour que le décompte dise combien nous sommes. */
+static void scene_enter(void)
+{
+    memset(s_votes, 0, sizeof(s_votes));
+    s_my_ticket = id_hash(mac_id(s_mac), S.seed) >> 8;
+    s_my_vote = 0; s_my_ver = 0; s_gauge_dir = 1;
+    s_announce_left = 0; s_vote_cursor = 0; s_votes_send_at = -1;
+    if (S.type == L2_SCENE_VOTE || S.type == L2_SCENE_GAUGE) vote_merge(s_my_ticket, 0, 0, false);
+    ESP_LOGI(TAG, "scene %d (reglage %d), numero %u, tirage %u%s", S.type, S.arg, S.epoch, S.seed, S.master ? ", maitre" : "");
+}
+
+/* Une scène entendue, dans une balise ou une onde. La même que la mienne :
+ * je garde le plus petit âge. Plus récente : je l'adopte. */
+static void scene_hear(const l2_scene_t *o)
+{
+    if (!(o->flags & L2_SCENE_KNOWN) || o->type >= L2_SCENE_TYPES) return;
+    float age = o->age * (float)L2_SCENE_AGE_UNIT_S;
+    if (S.known && o->epoch == S.epoch && o->seed == S.seed && o->type == S.type && o->arg == S.arg) {
+        if (!S.master && age < S.age_s) S.age_s = age;
+        return;
+    }
+    if (S.known) {
+        int16_t d = (int16_t)(o->epoch - S.epoch);
+        uint32_t theirs = ((uint32_t)o->seed << 16) | ((uint32_t)o->type << 8) | o->arg;
+        uint32_t mine   = ((uint32_t)S.seed << 16) | ((uint32_t)S.type << 8) | S.arg;
+        if (d < 0 || (d == 0 && theirs <= mine)) return;
+    }
+    S.known = true; S.master = false;
+    S.type = o->type; S.arg = o->arg; S.epoch = o->epoch; S.seed = o->seed; S.age_s = age;
+    scene_enter();
+}
+
+/* Les lucioles entendues en direct, pour équilibrer les équipes. */
+static void roster_note(const uint8_t *mac, int64_t now)
+{
+    uint32_t id = mac_id(mac);
+    l2_roster_t *slot = &s_roster[0];
+    for (int i = 0; i < L2_ROSTER; i++) {
+        l2_roster_t *r = &s_roster[i];
+        if (r->seen_us && r->id == id) { r->seen_us = now; return; }
+        if (r->seen_us < slot->seen_us) slot = r;       /* une case vide, sinon la plus ancienne */
+    }
+    slot->id = id; slot->seen_us = now ? now : 1;
+}
+
+/* Effectif de chaque équipe pour un tirage : moi et les lucioles entendues. */
+static int team_counts(uint16_t seed, int n, int64_t now, int *c)
+{
+    int64_t hold = 3 * beacon_interval_us(); if (hold < L2_ROSTER_HOLD_US) hold = L2_ROSTER_HOLD_US;
+    int total = 1;
+    for (int k = 0; k < n; k++) c[k] = 0;
+    c[team_of(mac_id(s_mac), seed, n)]++;
+    for (int i = 0; i < L2_ROSTER; i++) {
+        const l2_roster_t *r = &s_roster[i];
+        if (!r->seen_us || now - r->seen_us > hold) continue;
+        c[team_of(r->id, seed, n)]++; total++;
+    }
+    return total;
+}
+
+/* Le maître cherche un tirage qui équilibre les équipes : écart d'une
+ * luciole au plus entre la plus grande et la plus petite, sinon le meilleur
+ * trouvé. Les lucioles qu'il n'entend pas se répartissent au hasard. */
+static uint16_t team_seed(int n, int64_t now)
+{
+    uint16_t start = (uint16_t)esp_random(), best = start;
+    int best_spread = 1 << 30;
+    for (int i = 0; i < L2_TEAM_TRIES; i++) {
+        uint16_t seed = (uint16_t)(start + i);
+        int c[L2_TEAMS_MAX], total = team_counts(seed, n, now, c), lo = c[0], hi = c[0];
+        for (int k = 1; k < n; k++) { if (c[k] < lo) lo = c[k]; if (c[k] > hi) hi = c[k]; }
+        if (hi - lo < best_spread) { best_spread = hi - lo; best = seed; if (best_spread <= (total % n ? 1 : 0)) break; }
+    }
+    return best;
+}
+
+/* Commande du maître : la scène prend le numéro suivant, et une onde l'emporte. */
+static void scene_set(uint8_t type, uint8_t arg, int64_t now)
+{
+    S.epoch = S.known ? (uint16_t)(S.epoch + 1) : 1;
+    S.known = true; S.master = true; S.type = type; S.arg = arg; S.age_s = 0;
+    S.seed = (type == L2_SCENE_TEAMS) ? team_seed(teams_n(), now) : (uint16_t)esp_random();
+    scene_enter();
+    wave_emit(now, true);
+}
+
+/* ------------------------------------------------------------------ */
+/* Votes : la table du panel                                            */
+/* Fusion d'une entrée. in_frame : entendue dans la trame de votes d'une
+ * autre, ce qui compte pour ne pas la rediffuser moi-même. */
+static void vote_merge(uint32_t ticket, uint8_t ver, uint8_t val, bool in_frame)
+{
+    l2_vote_rec_t *slot = NULL, *largest = NULL;
+    for (int i = 0; i < L2_VOTE_K; i++) {
+        l2_vote_rec_t *r = &s_votes[i];
+        if (!r->used) { if (!slot) slot = r; continue; }
+        if (r->ticket == ticket) {
+            int8_t d = (int8_t)(ver - r->ver);
+            if (d > 0) {
+                r->ver = ver; r->val = val; r->fresh = true; r->echoes = 0;
+                /* Mon propre vote, plus récent que ce que je sais : j'ai
+                 * redémarré, le groupe me le rend. */
+                if (ticket == s_my_ticket && (int8_t)(ver - s_my_ver) > 0) { s_my_ver = ver; s_my_vote = val; }
+            } else if (d == 0 && in_frame) {
+                if (r->echoes < 255) r->echoes++;
+                if (r->echoes >= L2_VOTE_ECHOES) r->fresh = false;
+            }
+            return;
+        }
+        if (!largest || r->ticket > largest->ticket) largest = r;
+    }
+    if (!slot) {                                    /* table pleine : les plus petits tickets restent */
+        if (!largest || ticket >= largest->ticket) return;
+        slot = largest;
+    }
+    *slot = (l2_vote_rec_t){ .used = true, .fresh = true, .ticket = ticket, .ver = ver, .val = val };
+    if (ticket == s_my_ticket && (int8_t)(ver - s_my_ver) > 0) { s_my_ver = ver; s_my_vote = val; }
+}
+
+/* Je change mon vote. Petit groupe : ma balise l'annonce. En foule elle est
+ * trop rare : je l'annonce par une trame, si mon ticket peut être du panel. */
+static void vote_set(uint8_t val)
+{
+    s_my_vote = val; s_my_ver++;
+    vote_merge(s_my_ticket, s_my_ver, s_my_vote, false);
+    if (beacon_interval_us() > L2_BEAT_US && s_my_ticket / 16777216.0f < 4.0f * L2_VOTE_K / (s_crowd + 1))
+        s_announce_left = L2_VOTE_ANNOUNCES;
+    ESP_LOGI(TAG, "vote : %u (version %u)", s_my_vote, s_my_ver);
+}
+
+/* Décompte de ma table : c[v] = lucioles dont la valeur est v. Rend leur nombre. */
+static int vote_tally(int *c, int nc)
+{
+    int total = 0;
+    for (int k = 0; k < nc; k++) c[k] = 0;
+    for (int i = 0; i < L2_VOTE_K; i++) {
+        if (!s_votes[i].used) continue;
+        total++;
+        if (s_votes[i].val < nc) c[s_votes[i].val]++;
+    }
+    return total;
+}
+
+static void handle_votes(const l2_rx_t *rx)
+{
+    const l2_votes_t *v = (const l2_votes_t *)rx->data;
+    if (!scene_votes() || v->epoch != S.epoch || v->seed != S.seed) return;
+    int n = v->n, fit = (rx->len - L2_VOTES_HDR_LEN) / (int)sizeof(l2_vote_entry_t);
+    if (n > fit) n = fit;
+    for (int i = 0; i < n; i++) {
+        const l2_vote_entry_t *e = &v->e[i];
+        vote_merge(((uint32_t)e->ticket[0] << 16) | ((uint32_t)e->ticket[1] << 8) | e->ticket[2], e->ver, e->val, true);
+    }
+}
+
+/* Début d'un créneau (un temps du cycle commun) : je décide si je parle. */
+static void votes_slot(int64_t now)
+{
+    if (!scene_votes()) { s_votes_send_at = -1; return; }
+    int n = s_crowd > s_table_count ? s_crowd : s_table_count;      /* lucioles à portée */
+    if (n < 1) n = 1;
+    bool fresh = false;
+    for (int i = 0; i < L2_VOTE_K && !fresh; i++) fresh = s_votes[i].used && s_votes[i].fresh;
+    s_votes_relay = fresh && frand() < L2_VOTE_RELAYERS / n;
+    /* Pas tirée au sort : d'autres s'en chargent, et le rattrapage répare. */
+    if (fresh && !s_votes_relay) for (int i = 0; i < L2_VOTE_K; i++) s_votes[i].fresh = false;
+    s_votes_catchup = frand() < 1.0f / n;
+    if (s_votes_relay || s_votes_catchup || s_announce_left > 0)
+        s_votes_send_at = now + (int64_t)(frand() * L2_VOTE_SLOT_JITTER_US);
+}
+
+static void votes_put(l2_votes_t *f, const l2_vote_rec_t *r)
+{
+    l2_vote_entry_t *e = &f->e[f->n++];
+    e->ticket[0] = r->ticket >> 16; e->ticket[1] = r->ticket >> 8; e->ticket[2] = r->ticket;
+    e->ver = r->ver; e->val = r->val;
+}
+
+/* La trame du créneau : mon vote s'il est à annoncer, les entrées fraîches,
+ * puis une tranche de la table pour le rattrapage. */
+static void votes_send(void)
+{
+    if (!scene_votes()) return;
+    static l2_votes_t f;
+    static bool in[L2_VOTE_K];
+    memset(in, 0, sizeof(in));
+    f.hdr = (l2_hdr_t){{'L', '2'}, L2_PROTO_VERSION, L2_MSG_VOTES};
+    f.epoch = S.epoch; f.seed = S.seed; f.n = 0;
+    if (s_announce_left > 0) {
+        s_announce_left--;
+        for (int i = 0; i < L2_VOTE_K; i++) if (s_votes[i].used && s_votes[i].ticket == s_my_ticket) { votes_put(&f, &s_votes[i]); in[i] = true; break; }
+    }
+    if (s_votes_relay) for (int i = 0; i < L2_VOTE_K; i++) {
+        l2_vote_rec_t *r = &s_votes[i];
+        if (!r->used || !r->fresh) continue;
+        if (f.n < L2_VOTES_MAX && !in[i]) { votes_put(&f, r); in[i] = true; }
+        r->fresh = false;
+    }
+    if (s_votes_catchup) for (int k = 0; k < L2_VOTE_K && f.n < L2_VOTES_MAX; k++) {
+        int i = s_vote_cursor; s_vote_cursor = (s_vote_cursor + 1) % L2_VOTE_K;
+        if (s_votes[i].used && !in[i]) { votes_put(&f, &s_votes[i]); in[i] = true; }
+    }
+    if (!f.n) return;
+    esp_err_t err = esp_now_send(BROADCAST, (const uint8_t *)&f, L2_VOTES_HDR_LEN + f.n * sizeof(l2_vote_entry_t));
+    if (err != ESP_OK) ESP_LOGW(TAG, "esp_now_send votes: %s", esp_err_to_name(err));
+}
+
+/* Appui court : une onde, ou mon vote si la scène en est un. Jauge : un cran
+ * de plus à chaque appui, puis on redescend une fois en haut. */
+static void button_short(int64_t now)
+{
+    switch (scene_type()) {
+    case L2_SCENE_VOTE:
+        vote_set(s_my_vote == 1 ? 2 : 1);
+        break;
+    case L2_SCENE_GAUGE: {
+        int steps = gauge_steps(), level = s_my_vote ? s_my_vote - 1 : 0;
+        if (level >= steps) s_gauge_dir = -1; else if (level <= 0) s_gauge_dir = 1;
+        level += s_gauge_dir;
+        vote_set((uint8_t)(level + 1));
+        break;
+    }
+    default:
+        wave_emit(now, false);
+    }
+}
+
+/* ------------------------------------------------------------------ */
 static void neighbors_expire(int64_t now)
 {
     int64_t hold = neighbor_hold_us();
@@ -505,31 +812,25 @@ static void neighbors_expire(int64_t now)
     }
 }
 
-/* À chaque trame : ensemble si une voisine régulière a été entendue depuis
- * moins de HOLD ; la couleur commune glisse vers la moyenne des voisines
- * entendues. dt en secondes. */
+/* À chaque image : ensemble si une voisine régulière a été entendue depuis
+ * moins de HOLD. La couleur de base ne bouge pas. dt en secondes. */
 static void regulate(float dt, int64_t now)
 {
-    float x = 0, y = 0; int n_in = 0, near = 0; int64_t hold = neighbor_hold_us();
+    int n_in = 0, near = 0; int64_t hold = neighbor_hold_us();
     for (int i = 0; i < L2_MAX_NEIGHBORS; i++) {
         l2_neighbor_t *n = &s_neighbors[i];
         if (!n->used || now - n->last_seen_us >= hold) continue;
-        float a = n->hue * 360.0f / 255.0f * (float)M_PI / 180.0f;
-        x += cosf(a); y += sinf(a); n_in++;
+        n_in++;
         if (neighbor_near(n)) near++;
     }
-    s_near_count = near;
+    s_near_count = near; s_table_count = n_in;
     bool together = near > 0;
     if (together != s_together) { s_together = together; ESP_LOGI(TAG, "%s (%d voisine%s reguliere%s)", together ? "ensemble" : "seule", near, near > 1 ? "s" : "", near > 1 ? "s" : ""); }
     s_together_f += (dt / L2_TOGETHER_FADE_S) * ((together ? 1.0f : 0.0f) - s_together_f);
     s_together_f = clamp01(s_together_f);
-    if (n_in) {
-        float mean_hue = atan2f(y, x) * 180.0f / (float)M_PI;
-        s_hue = norm_deg(s_hue + dt / L2_HUE_TAU_S * wrap_deg(mean_hue - s_hue));
-    }
-    /* Retour vers la base. Même base, même constante partout : le groupe
-     * revient ensemble, et la moyenne des voisines gomme les écarts. */
-    s_hue = norm_deg(s_hue + dt / L2_BASE_TAU_S * wrap_deg(L2_BASE_HUE - s_hue));
+    s_hue = norm_deg(L2_BASE_HUE);
+    /* La scène vieillit tant que le maître ne se fait pas entendre. */
+    if (S.known && !S.master && S.age_s < 1e6f) S.age_s += dt;
     s_rainbow_pos = fmodf(s_rainbow_pos + L2_RAINBOW_FLOW * dt, 1.0f);
     s_awake_f += (dt / L2_VEILLE_TAU_S) * ((s_veille ? 0.0f : 1.0f) - s_awake_f);
 }
@@ -543,8 +844,9 @@ static void log_bar(int64_t now)
         pos += snprintf(buf + pos, sizeof(buf) - pos, " %02x%02x:%ddBm/%.0f%s", n->mac[4], n->mac[5], n->last_rssi,
                         n->hue * 360.0f / 255.0f, n->near ? "*" : "");
     }
-    ESP_LOGI(TAG, "cycle | decalage=%lld ms | teinte=%.0f %s (%d reguliere%s) | foule %d, balises %.1f/s, intervalle %.1f s | ruban %d mA%s |%s",
-             (long long)(s_offset_us / 1000), s_hue, s_together ? "ensemble" : "seule", s_near_count, s_near_count > 1 ? "s" : "",
+    ESP_LOGI(TAG, "cycle | decalage=%lld ms | %s (%d reguliere%s) | scene %d #%u%s | foule %d, balises %.1f/s, intervalle %.1f s | ruban %d mA%s |%s",
+             (long long)(s_offset_us / 1000), s_together ? "ensemble" : "seule", s_near_count, s_near_count > 1 ? "s" : "",
+             scene_type(), S.epoch, S.master ? " maitre" : scene_expired() ? " effacee" : "",
              s_crowd, s_heard_rate, beacon_interval_us() / 1000000.0f, s_est_ma, s_limiter < 0.999f ? " (limite)" : "", buf[0] ? buf : " personne");
 }
 
@@ -556,6 +858,8 @@ static void send_beacon(int64_t now)
         .phase_us = (uint32_t)phase_at(now), .seq = s_seq++,
     };
     memcpy(b.name, s_nick, L2_NAME_LEN);
+    scene_fill(&b.scene);
+    b.vote = scene_votes() ? s_my_vote : 0; b.vote_ver = s_my_ver;
     esp_err_t err = esp_now_send(BROADCAST, (const uint8_t *)&b, sizeof(b));
     if (err != ESP_OK) ESP_LOGW(TAG, "esp_now_send: %s", esp_err_to_name(err));
 }
@@ -621,6 +925,22 @@ static void param_print(const l2_param_desc_t *d)
     printf("{\"k\":\"%s\",\"v\":%g,\"def\":%g,\"min\":%g,\"max\":%g,\"d\":\"%s\"}", d->key, *param_ptr(d), d->def, d->min, d->max, d->desc);
 }
 
+/* La scène et son décompte : "scene":{…}. type est la scène qui s'applique
+ * (0 si le maître a disparu), set celle qui a été lancée. counts : équipes,
+ * l'effectif de chacune parmi les lucioles entendues ; vote : pas voté, bleu,
+ * orange ; jauge : pas voté, puis une case par cran de 0 à N. */
+static void scene_print(int64_t now)
+{
+    int c[L2_GAUGE_STEPS_MAX + 2] = {0}, nc = 0, total = 0, mine = 0, st = scene_type();
+    if (st == L2_SCENE_TEAMS) { nc = teams_n(); total = team_counts(S.seed, nc, now, c); mine = team_of(mac_id(s_mac), S.seed, nc); }
+    else if (st == L2_SCENE_VOTE || st == L2_SCENE_GAUGE) { nc = st == L2_SCENE_VOTE ? 3 : gauge_steps() + 2; total = vote_tally(c, nc); mine = s_my_vote; }
+    printf("\"scene\":{\"type\":%d,\"set\":%d,\"arg\":%d,\"epoch\":%u,\"seed\":%u,\"known\":%s,\"master\":%s,\"age\":%d,\"expired\":%s,\"mine\":%d,\"n\":%d,\"counts\":[",
+           st, S.type, S.arg, S.epoch, S.seed, S.known ? "true" : "false", S.master ? "true" : "false",
+           (int)S.age_s, scene_expired() ? "true" : "false", mine, total);
+    for (int k = 0; k < nc; k++) printf("%s%d", k ? "," : "", c[k]);
+    printf("]}");
+}
+
 /* État complet en une ligne JSON (commande « status » et flux « stream »). */
 static void status_print(int64_t now)
 {
@@ -640,7 +960,9 @@ static void status_print(int64_t now)
         first = false;
     }
     int nw = 0; for (int i = 0; i < L2_WAVE_RECORDS; i++) if (s_waves[i].used) nw++;
-    printf("],\"waves\":%d}\n", nw);
+    printf("],\"waves\":%d,", nw);
+    scene_print(now);
+    printf("}\n");
 }
 
 static bool config_save_leds(int leds)
@@ -656,7 +978,7 @@ static bool config_save_leds(int leds)
  * de stdin dans la boucle de rendu. */
 static void console_help(void)
 {
-    printf("commandes : get [cle] | set cle valeur | reset [cle] | status | stream on|off|ms | log on|off | leds [N] | name [surnom] | test off|white|black|chase|px N | onde | veille [on|off|toggle] | version | restart | help\n");
+    printf("commandes : get [cle] | set cle valeur | reset [cle] | status | stream on|off|ms | log on|off | leds [N] | name [surnom] | test off|white|black|chase|px N | onde | clic | veille [on|off|toggle] | scene [normale | equipes N | vote | jauge [N] | maitre] | version | restart | help\n");
 }
 
 static void console_exec(char *line, int64_t now)
@@ -676,7 +998,28 @@ static void console_exec(char *line, int64_t now)
         }
         printf("{\"leds\":%d,\"strip_max\":%d}\n", s_leds, L2_STRIP_MAX_BRIGHTNESS);
     } else if (strcmp(line, "onde") == 0) {
-        wave_emit(now);
+        wave_emit(now, false);
+    } else if (strcmp(line, "clic") == 0) {
+        button_short(now);
+    } else if (strncmp(line, "scene", 5) == 0 && (line[5] == 0 || line[5] == ' ')) {
+        /* Lancer une scène fait de cette luciole le maître. « maitre » reprend
+         * la scène en cours sans la changer (après un redémarrage du maître). */
+        const char *arg = line + 5; while (*arg == ' ') arg++;
+        int n = 0; const char *sp = strchr(arg, ' '); if (sp) n = atoi(sp + 1);
+        if (strncmp(arg, "normal", 6) == 0) scene_set(L2_SCENE_NORMAL, 0, now);
+        else if (strncmp(arg, "equipes", 7) == 0) {
+            if (n < 2 || n > L2_TEAMS_MAX) { printf("{\"err\":\"equipes : entre 2 et %d\"}\n", L2_TEAMS_MAX); return; }
+            scene_set(L2_SCENE_TEAMS, (uint8_t)n, now);
+        } else if (strncmp(arg, "vote", 4) == 0) scene_set(L2_SCENE_VOTE, 0, now);
+        else if (strncmp(arg, "jauge", 5) == 0) {
+            if (!n) n = L2_GAUGE_STEPS;
+            if (n < 2 || n > L2_GAUGE_STEPS_MAX) { printf("{\"err\":\"jauge : entre 2 et %d crans\"}\n", L2_GAUGE_STEPS_MAX); return; }
+            scene_set(L2_SCENE_GAUGE, (uint8_t)n, now);
+        } else if (strcmp(arg, "maitre") == 0) {
+            if (!S.known) { printf("{\"err\":\"aucune scene a reprendre\"}\n"); return; }
+            S.master = true; S.age_s = 0;
+        } else if (*arg) { printf("{\"err\":\"scene : normale | equipes N | vote | jauge [N] | maitre\"}\n"); return; }
+        printf("{"); scene_print(now); printf("}\n");
     } else if (strncmp(line, "veille", 6) == 0 && (line[6] == 0 || line[6] == ' ')) {
         const char *arg = line + 6; while (*arg == ' ') arg++;
         if (strcmp(arg, "on") == 0) s_veille = true; else if (strcmp(arg, "off") == 0) s_veille = false;
@@ -760,19 +1103,36 @@ static void render(int64_t now, float px[L2_STRIP_LEDS_MAX][3])
     float x = phase_at(now) / (float)L2_BAR_US;
     float f = s_together_f;
 
-    /* Seule : arc-en-ciel qui défile, luminosité fixe. Ensemble : couleur
-     * commune qui bat le cœur. Entre les deux, fondu. */
     float heart = heart_level(x);
-    float solid[3]; hue_to_rgb(s_hue, solid);
-    for (int p = 0; p < N; p++) {
-        float u = p / (float)N;
-        float rain[3]; hue_to_rgb(360.0f * (u - s_rainbow_pos), rain);
-        for (int k = 0; k < 3; k++) px[p][k] = rain[k] * L2_RAINBOW_B * (1 - f) + solid[k] * heart * f;
+    int st = scene_type();
+    if (st == L2_SCENE_NORMAL) {
+        /* Seule : arc-en-ciel qui défile, luminosité fixe. Ensemble : ambre
+         * qui bat le cœur. Entre les deux, fondu. */
+        float solid[3]; hue_to_rgb(s_hue, solid);
+        for (int p = 0; p < N; p++) {
+            float u = p / (float)N;
+            float rain[3]; hue_to_rgb(360.0f * (u - s_rainbow_pos), rain);
+            for (int k = 0; k < 3; k++) px[p][k] = rain[k] * L2_RAINBOW_B * (1 - f) + solid[k] * heart * f;
+        }
+        /* Veille : seule, le fond s'éteint ; ensemble, il bat quand même. Une onde
+         * reste visible dans tous les cas : c'est un acte, pas un état. */
+        float lit = f + (1 - f) * clamp01(s_awake_f);
+        if (lit < 0.999f) for (int p = 0; p < N; p++) for (int k = 0; k < 3; k++) px[p][k] *= lit;
+    } else {
+        /* Scène : une couleur dit mon équipe ou mon vote, seule ou ensemble,
+         * et le cœur du groupe continue de battre. Blanc : pas encore voté.
+         * Jauge : la part allumée du ruban, depuis le pixel 0. */
+        static const float hues[L2_TEAMS_MAX] = L2_TEAM_HUES;
+        float col[3] = {1, 1, 1}, level = heart, lit_px = N;
+        if (st == L2_SCENE_TEAMS) hue_to_rgb(hues[team_of(mac_id(s_mac), S.seed, teams_n())], col);
+        else if (!s_my_vote) level = heart * L2_UNVOTED_B;
+        else if (st == L2_SCENE_VOTE) hue_to_rgb(s_my_vote == 1 ? L2_VOTE_HUE_A : L2_VOTE_HUE_B, col);
+        else { hue_to_rgb(L2_GAUGE_HUE, col); lit_px = (s_my_vote - 1) / (float)gauge_steps() * N; }
+        for (int p = 0; p < N; p++) {
+            float w = clamp01(lit_px - p);              /* le pixel de la frontière s'allume en partie */
+            for (int k = 0; k < 3; k++) px[p][k] = col[k] * (level * w + L2_GAUGE_OFF_B * (1 - w));
+        }
     }
-    /* Veille : seule, le fond s'éteint ; ensemble, il bat quand même. Une onde
-     * reste visible dans tous les cas : c'est un acte, pas un état. */
-    float lit = f + (1 - f) * clamp01(s_awake_f);
-    if (lit < 0.999f) for (int p = 0; p < N; p++) for (int k = 0; k < 3; k++) px[p][k] *= lit;
     /* Onde : front blanc qui traverse, halo dans la couleur de l'onde, puis le
      * ruban entier reste dans cette couleur et s'éteint lentement avec des
      * paillettes ; le rendu normal revient à mesure. Pendant le passage, il
@@ -846,23 +1206,31 @@ static void show(float px[L2_STRIP_LEDS_MAX][3])
 }
 
 /* ------------------------------------------------------------------ */
-static void luciole_task(void *arg)
+/* Un pas de la boucle, toutes les L2_RENDER_MS. Séparé de la tâche pour que
+ * la simulation (firmware/simulation) déroule le même code sur l'ordinateur. */
+static int     s_last_beat = -1;
+static int64_t s_tick_off = -1, s_send_due = 0;
+static int     s_btn_low_ms = 0;
+static bool    s_btn_pressed = false, s_btn_long = false;
+
+static void luciole_start(void)
 {
-    int last_beat = -1;
-    int64_t tick_off = -1, send_due = esp_timer_get_time() + esp_random() % L2_BEAT_US;
+    int64_t now = esp_timer_get_time();
+    s_send_due = now + esp_random() % L2_BEAT_US;
+    s_heard_window = s_crowd_window = now;
+}
+
+static void luciole_step(int64_t now)
+{
     const float dt = L2_RENDER_MS / 1000.0f;
     static float px[L2_STRIP_LEDS_MAX][3];
-    int btn_low_ms = 0; bool btn_pressed = false, btn_long = false;
-    s_heard_window = s_crowd_window = esp_timer_get_time();
-
-    while (true) {
-        int64_t now = esp_timer_get_time();
-
-        l2_rx_t rx;
+    {
+        static l2_rx_t rx;
         while (xQueueReceive(s_rx_queue, &rx, 0) == pdTRUE) {
             const l2_hdr_t *h = (const l2_hdr_t *)rx.data;
             if (h->type == L2_MSG_BEACON) handle_beacon(&rx);
             else if (h->type == L2_MSG_WAVE) handle_wave(&rx);
+            else if (h->type == L2_MSG_VOTES) handle_votes(&rx);
         }
         wave_tick(now);
         crowd_tick(now);
@@ -877,33 +1245,45 @@ static void luciole_task(void *arg)
         /* Appui court (relâché avant L2_BUTTON_LONG_MS) : onde au relâchement.
          * Appui long : veille basculée dès le seuil atteint, pas d'onde. */
         if (gpio_get_level(L2_BUTTON_GPIO) == 0) {
-            btn_low_ms += L2_RENDER_MS;
-            if (!btn_pressed && btn_low_ms >= L2_BUTTON_DEBOUNCE_MS) btn_pressed = true;
-            if (btn_pressed && !btn_long && btn_low_ms >= L2_BUTTON_LONG_MS) {
-                btn_long = true; s_veille = !s_veille;
+            s_btn_low_ms += L2_RENDER_MS;
+            if (!s_btn_pressed && s_btn_low_ms >= L2_BUTTON_DEBOUNCE_MS) s_btn_pressed = true;
+            if (s_btn_pressed && !s_btn_long && s_btn_low_ms >= L2_BUTTON_LONG_MS) {
+                s_btn_long = true; s_veille = !s_veille;
                 ESP_LOGI(TAG, "bouton : appui long, %s", s_veille ? "veille (eteinte quand seule)" : "reveil");
             }
         } else {
-            if (btn_pressed && !btn_long) wave_emit(now);
-            btn_low_ms = 0; btn_pressed = false; btn_long = false;
+            if (s_btn_pressed && !s_btn_long) button_short(now);
+            s_btn_low_ms = 0; s_btn_pressed = false; s_btn_long = false;
         }
 
+        /* Un temps du cycle commun commence : c'est aussi un créneau pour les
+         * trames de votes, le même instant pour tout le groupe. */
         int beat = (int)(phase_at(now) / L2_BEAT_US);
-        if (beat != last_beat) {
-            last_beat = beat;
+        if (beat != s_last_beat) {
+            s_last_beat = beat;
             if (beat == 0) { neighbors_expire(now); log_bar(now); }
+            votes_slot(now);
         }
+        if (s_votes_send_at >= 0 && now >= s_votes_send_at) { s_votes_send_at = -1; votes_send(); }
         /* Balise : à un instant tiré dans ±50 % de l'intervalle, sans lien avec
          * le cycle (voir luciole.h). */
-        if (now >= send_due) { int64_t iv = beacon_interval_us(); send_beacon(now); send_due = now + iv / 2 + esp_random() % (iv + 1); }
+        if (now >= s_send_due) { int64_t iv = beacon_interval_us(); send_beacon(now); s_send_due = now + iv / 2 + esp_random() % (iv + 1); }
         /* LED bleue : un éclair à chaque battement du cœur. */
         int hb = (int)(phase_at(now) / (float)L2_BAR_US * L2_HEART_BPB);
-        if (hb != s_heart_beat) { s_heart_beat = hb; if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 1); tick_off = now + L2_TICK_US; }
-        if (tick_off >= 0 && now >= tick_off) { if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 0); tick_off = -1; }
+        if (hb != s_heart_beat) { s_heart_beat = hb; if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 1); s_tick_off = now + L2_TICK_US; }
+        if (s_tick_off >= 0 && now >= s_tick_off) { if (L2_BLUE_LED_GPIO >= 0) gpio_set_level(L2_BLUE_LED_GPIO, 0); s_tick_off = -1; }
 
         regulate(dt, now);
         render(now, px);
         show(px);
+    }
+}
+
+static void luciole_task(void *arg)
+{
+    luciole_start();
+    while (true) {
+        luciole_step(esp_timer_get_time());
         vTaskDelay(pdMS_TO_TICKS(L2_RENDER_MS));
     }
 }
@@ -965,7 +1345,7 @@ static void radio_init(void)
 
 void app_main(void)
 {
-    s_rx_queue = xQueueCreate(64, sizeof(l2_rx_t));
+    s_rx_queue = xQueueCreate(48, sizeof(l2_rx_t));
     /* Console USB : avec le pilote, la lecture non bloquante de stdin marche
      * (sans lui, le VFS ne rend rien et l'hôte bloque à l'écriture) ; les
      * écritures restent bornées dans le temps quand aucun hôte n'écoute. */
@@ -985,5 +1365,5 @@ void app_main(void)
              s_name, L2_FW_VERSION, L2_BOARD, L2_PROTO_VERSION, L2_PROTO_MIN_VERSION, L2_WIFI_CHANNEL, L2_BEATS_PER_BAR, L2_BEAT_MS, L2_BASE_HUE, s_leds, L2_STRIP_MAX_BRIGHTNESS, L2_STRIP_PEAK_MA);
     if (s_nick[0]) ESP_LOGI(TAG, "surnom : %s", s_nick);
     console_help();
-    xTaskCreate(luciole_task, "luciole", 6144, NULL, 5, NULL);
+    xTaskCreate(luciole_task, "luciole", 8192, NULL, 5, NULL);
 }

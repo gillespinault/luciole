@@ -11,18 +11,32 @@
  *                pleine amplitude, au même instant sur tous les vélos (le cycle
  *                commun de 2,5 s sert de métronome). Fondu d'une seconde
  *                entre les deux états.
- *  - onde      : appui court → front qui traverse le ruban, le ruban garde la
- *                couleur de l'onde avec des paillettes, puis le cœur reprend
- *                dans cette couleur et revient en une demi-minute à l'ambre,
- *                la couleur de base : l'appui colore le groupe un moment, pas
- *                pour de bon. L'onde gagne tout le groupe tout de suite
- *                (inondation). Période réfractaire : pas d'appui tant qu'une
- *                animation est en cours, qu'elle vienne de moi ou d'une autre.
- *                Une onde entendue pendant la traînée relance l'animation ;
- *                pendant le front, elle ne change que la couleur.
+ *  - onde      : appui court → front qui traverse le ruban, puis le ruban
+ *                garde la couleur de l'onde avec des paillettes et revient à
+ *                la couleur de base, environ 5 s en tout : l'appui colore le
+ *                groupe un moment, pas pour de bon. L'onde gagne tout le
+ *                groupe tout de suite (inondation). Période réfractaire : pas
+ *                d'appui tant qu'une animation est en cours, qu'elle vienne
+ *                de moi ou d'une autre. Une onde entendue pendant la traînée
+ *                relance l'animation ; pendant le front, elle ne change que
+ *                la couleur.
  *  - veille    : appui long → la luciole seule est éteinte (ou rallumée) ;
  *                avec des voisines elle bat quand même, et une onde reste
  *                visible. Pas enregistré : allumée au démarrage.
+ *
+ * Scènes (firmware 8). Une luciole maître, celle qui reçoit une commande
+ * « scene » par USB, fait passer tout le groupe dans une scène. La scène
+ * change deux choses : la couleur de base et le rôle du bouton.
+ *  - normale   : ce qui précède.
+ *  - équipes   : chaque luciole prend l'une de N couleurs, tirée de son
+ *                identifiant et d'un tirage commun. Le bouton lance une onde.
+ *  - vote      : blanc tant qu'on n'a pas voté ; un appui : bleu, le suivant :
+ *                orange, et ainsi de suite.
+ *  - jauge     : chaque appui allume un cran de plus du ruban, jusqu'en haut,
+ *                puis les appuis redescendent jusqu'à zéro.
+ * La scène voyage dans les balises et dans les ondes : une luciole adopte la
+ * plus récente qu'elle entend (contagion). Les votes voyagent de proche en
+ * proche, et toute luciole peut donner le décompte. Voir « Scènes » plus bas.
  *
  * Deux numéros de version, indépendants :
  *  - L2_FW_VERSION    : le firmware (rendu, réglages, cartes). Change souvent.
@@ -34,7 +48,7 @@
 #include <stdint.h>
 #include "sdkconfig.h"
 
-#define L2_FW_VERSION       "7.2.0"
+#define L2_FW_VERSION       "8.0.0"
 
 /* ------------------------------------------------------------------ */
 /* Cartes supportées : une table de brochage par cible. -1 = absent.   */
@@ -93,13 +107,15 @@
 #define L2_PHASE_DEADBAND_US 5000
 
 /* Voisines : la table garde les 16 plus fortes ; toute luciole entendue y est
- * (en longue portée le récepteur descend vers -105 dBm) et compte pour la
- * couleur commune. Une voisine est oubliée après HOLD sans balise, ou 2,5
- * intervalles de balise si c'est plus long (en foule les balises sont rares :
- * une balise perdue ne doit pas nous rendre seules). Le RSSI lissé ne sert
- * qu'au journal et à choisir qui remplacer quand la table est pleine. */
+ * (en longue portée le récepteur descend vers -105 dBm). Une voisine est
+ * oubliée après HOLD sans balise, ou 2,5 intervalles de balise si c'est plus
+ * long (en foule les balises sont rares : une balise perdue ne doit pas nous
+ * rendre seules). HOLD valait 3 s jusqu'en 7.2.0 : six balises perdues de
+ * suite suffisaient à oublier une voisine posée à côté, qui repartait alors
+ * d'un taux de réception nul (voir « Ensemble »). Le RSSI lissé ne sert qu'au
+ * journal et à choisir qui remplacer quand la table est pleine. */
 #define L2_MAX_NEIGHBORS    16
-#define L2_NEIGHBOR_HOLD_US 3000000
+#define L2_NEIGHBOR_HOLD_US 10000000
 #define L2_NEIGHBOR_HOLD_INTERVALS 2.5f
 #define L2_NEIGHBOR_REPLACE_DB 3    /* une inconnue ne remplace la plus faible que si elle est plus forte d'autant */
 #define L2_RSSI_ALPHA       0.3f
@@ -118,23 +134,28 @@
  * « ensemble » au rythme des balises d'une luciole lointaine ; un seuil de
  * proximité (7.0.0, -92/-99) coupait à 7 m en intérieur. Le taux de
  * réception, lui, tombe net au bord de la portée : à côté, presque toutes
- * les balises arrivent ; au loin, une sur trois ou moins. */
+ * les balises arrivent ; au loin, une sur trois ou moins.
+ * Entrer est strict, sortir est lent (8.0.0) : jusqu'en 7.2.0 on sortait
+ * sous 50 %, et avec une seule voisine à 20 % de pertes la luciole retombait
+ * en arc-en-ciel 9 fois par heure, 4 s à chaque fois (calcul du 20
+ * novembre). Sous 25 %, une voisine proche ne sort plus jusqu'à 30 % de
+ * pertes, et une luciole lointaine, dont une balise sur cinq arrive, n'entre
+ * toujours pas. Le prix : quand une voisine s'en va pour de bon,
+ * l'arc-en-ciel revient après HOLD, 10 s au lieu de 3. */
 #define L2_NEAR_ALPHA       0.15f
 #define L2_NEAR_ENTER       0.7f
-#define L2_NEAR_LEAVE       0.5f
+#define L2_NEAR_LEAVE       0.25f
 #define L2_TOGETHER_FADE_S  0.35f   /* constante de temps du fondu seule ↔ ensemble (~1 s) */
 
-/* Couleur commune, degrés. Au repos, l'ambre (L2_BASE_HUE) : chaud comme un
- * cœur, mais pas rouge, qui est la couleur d'un feu arrière et se noie dans
- * ceux des autres vélos ; deux canaux allumés, donc plus visible que le rouge
- * aux faibles niveaux. Chaque onde l'emporte avec une teinte tirée au hasard
- * à plus de L2_WAVE_HUE_MIN de la base, puis la teinte revient vers la base
- * (constante de temps L2_BASE_TAU_S) tout en suivant la moyenne circulaire
- * des voisines entendues (L2_HUE_TAU_S), ce qui garde le groupe accordé
- * pendant le retour. Pas de dérive. */
+/* Couleur de base, degrés : l'ambre (L2_BASE_HUE), chaud comme un cœur, mais
+ * pas rouge, qui est la couleur d'un feu arrière et se noie dans ceux des
+ * autres vélos ; deux canaux allumés, donc plus visible que le rouge aux
+ * faibles niveaux. Une onde porte une teinte tirée au hasard à plus de
+ * L2_WAVE_HUE_MIN de la base. Depuis 8.0.0 elle ne change plus la couleur
+ * de base : elle la recouvre le temps de son animation, puis s'efface.
+ * Jusqu'en 7.2.0 la teinte du groupe revenait vers l'ambre en une
+ * demi-minute, en faisant le tour du cercle des couleurs. */
 #define L2_BASE_HUE         30.0f
-#define L2_BASE_TAU_S       10.0f
-#define L2_HUE_TAU_S        3.0f
 #define L2_WAVE_HUE_MIN     60.0f
 
 /* Arc-en-ciel (seule) : dégradé plein spectre sur le ruban, qui défile à
@@ -163,7 +184,7 @@
  * directe se perd même à 30 cm, et un groupe serré ne rediffuse que deux
  * fois. La seconde copie de l'origine ne compte pas pour la suppression. */
 #define L2_WAVE_SWEEP_US    500000  /* traversée du ruban */
-#define L2_WAVE_TRAIL_US    3000000 /* traînée après le passage */
+#define L2_WAVE_TRAIL_US    4500000 /* traînée après le passage : la couleur de l'onde s'efface, 5 s en tout */
 #define L2_WAVE_REPEAT_US   70000   /* seconde émission par l'origine */
 #define L2_WAVE_JITTER_US   150000  /* rediffusion dans 0…JITTER après la première copie */
 #define L2_WAVE_SUPPRESS    3       /* copies entendues au-delà desquelles on ne rediffuse pas */
@@ -175,6 +196,77 @@
 #define L2_BUTTON_DEBOUNCE_MS 30
 #define L2_BUTTON_LONG_MS   800     /* appui tenu au-delà : veille, pas d'onde */
 #define L2_VEILLE_TAU_S     0.5f    /* fondu à l'extinction et au réveil */
+
+/* ------------------------------------------------------------------ */
+/* Scènes. Une scène est (type, réglage, numéro, tirage). Le numéro croît à
+ * chaque commande du maître ; une luciole adopte la scène de numéro le plus
+ * récent qu'elle entend, dans une balise ou dans une onde. À numéro égal,
+ * le plus grand (tirage, type, réglage) l'emporte, pour que deux maîtres ne
+ * laissent pas le groupe coupé en deux. Rien n'est enregistré : au
+ * démarrage une luciole ne connaît aucune scène et prend celle du groupe.
+ * Âge : secondes depuis le dernier signe du maître. Le maître émet l'âge 0,
+ * chaque luciole garde le plus petit âge entendu et le laisse vieillir. Passé
+ * L2_SCENE_TTL_S, la scène s'efface et la luciole redevient normale : un
+ * maître éteint ou parti ne laisse pas le groupe bloqué. Elle revient si le
+ * maître reparaît. */
+#define L2_SCENE_NORMAL     0
+#define L2_SCENE_TEAMS      1       /* réglage : nombre d'équipes, 2 à L2_TEAMS_MAX */
+#define L2_SCENE_VOTE       2       /* bleu ou orange */
+#define L2_SCENE_GAUGE      3       /* réglage : nombre de crans, 2 à L2_GAUGE_STEPS_MAX */
+#define L2_SCENE_TYPES      4
+#define L2_SCENE_TTL_S      600
+#define L2_SCENE_AGE_UNIT_S 4       /* l'âge voyage sur un octet : 4 s par unité, 254 au plus */
+
+/* Équipes : équipe = hachage(identifiant, tirage) modulo N. Rien à transmettre
+ * que le tirage, donc valable à toute taille, et une luciole qui redémarre
+ * retrouve sa couleur. Le hasard seul équilibre mal un petit groupe (15
+ * lucioles en 3 équipes : 5/5/5 une fois sur vingt), alors le maître essaie
+ * des tirages jusqu'à l'équilibre sur les lucioles qu'il entend. Six teintes
+ * au plus : au-delà, on ne les distingue plus de nuit. */
+#define L2_TEAMS_MAX        6
+#define L2_TEAM_HUES        { 230, 25, 120, 300, 180, 0 }   /* bleu, orange, vert, magenta, cyan, rouge (rouge et orange voisins : cinq équipes se distinguent mieux que six) */
+#define L2_ROSTER           128     /* lucioles entendues en direct, pour équilibrer les équipes */
+#define L2_ROSTER_HOLD_US   30000000
+#define L2_TEAM_TRIES       4000    /* tirages essayés au plus */
+
+/* Vote et jauge. Valeur d'une luciole : 0 = pas encore voté ; vote : 1 bleu,
+ * 2 orange ; jauge : 1 + cran, de 0 à N crans. Bleu et orange plutôt que
+ * rouge et vert, que 8 % des hommes confondent. Tant qu'on n'a pas voté, le
+ * ruban est blanc. */
+#define L2_VOTE_HUE_A       230.0f  /* bleu */
+#define L2_VOTE_HUE_B       25.0f   /* orange */
+#define L2_GAUGE_HUE        180.0f  /* cyan */
+#define L2_GAUGE_STEPS      10
+#define L2_GAUGE_STEPS_MAX  20
+#define L2_UNVOTED_B        0.5f    /* luminosité du blanc « pas encore voté » */
+#define L2_GAUGE_OFF_B      0.04f   /* partie éteinte de la jauge */
+
+/* Décompte : le panel (étude du 19 novembre 2026). Chaque luciole a un
+ * ticket, hachage de son identifiant et du tirage de la scène, et garde la
+ * table des L2_VOTE_K plus petits tickets qu'elle connaît, avec la valeur et
+ * la version de chaque vote. Fusion : pour un ticket, la version la plus
+ * haute ; si la table est pleine, les plus petits tickets. Ni l'ordre ni les
+ * doublons ne changent le résultat, et toutes les lucioles finissent avec la
+ * même table. Jusqu'à K lucioles le décompte est exact ; au-delà c'est un
+ * échantillon tiré au hasard, un sondage.
+ * Trois chemins, du plus lent au plus rapide :
+ *  - la balise porte le vote de son émettrice : les voisines directes
+ *    l'apprennent sans trame de plus ;
+ *  - relais : au début de chaque temps du cycle commun (créneaux de 0,5 s
+ *    partagés par tout le groupe), une luciole qui vient d'apprendre des
+ *    votes les rediffuse avec une probabilité de L2_VOTE_RELAYERS sur le
+ *    nombre de lucioles à portée, sauf ceux déjà entendus L2_VOTE_ECHOES fois
+ *    dans les trames des autres ;
+ *  - rattrapage : à chaque créneau, une luciole sur celles à portée rediffuse
+ *    une tranche de sa table. Une trame perdue est ainsi réparée, sans accusé.
+ * En foule (balises espacées de plus d'un temps), une luciole annonce son
+ * propre vote par une trame, deux fois, si son ticket est assez petit pour
+ * prétendre au panel : sous 4·K sur le nombre de lucioles à portée. */
+#define L2_VOTE_K           256
+#define L2_VOTE_RELAYERS    6.0f
+#define L2_VOTE_ECHOES      2
+#define L2_VOTE_SLOT_JITTER_US 300000   /* les trames partent dans les 300 premières ms du créneau */
+#define L2_VOTE_ANNOUNCES   2
 
 /* Rendu */
 #define L2_RENDER_MS        10
@@ -224,6 +316,18 @@
 #define L2_PROTO_MIN_VERSION 1
 #define L2_MSG_BEACON    0
 #define L2_MSG_WAVE      2
+#define L2_MSG_VOTES     4      /* firmware 8 : ignorée par les lucioles plus anciennes */
+
+/* Scène, telle qu'elle voyage en fin de balise et en fin d'onde (firmware 8). */
+#define L2_SCENE_KNOWN   0x01
+typedef struct __attribute__((packed)) {
+    uint8_t  type;          /* L2_SCENE_* */
+    uint8_t  arg;           /* équipes : leur nombre ; jauge : ses crans */
+    uint16_t epoch;         /* numéro de la scène : le plus récent l'emporte */
+    uint16_t seed;          /* tirage commun : équipes, tickets du vote */
+    uint8_t  age;           /* depuis le dernier signe du maître, en L2_SCENE_AGE_UNIT_S */
+    uint8_t  flags;         /* L2_SCENE_KNOWN : les champs valent ; sinon l'émettrice ne connaît aucune scène */
+} l2_scene_t;
 
 typedef struct __attribute__((packed)) {
     uint8_t  magic[2];      /* 'L' '2' */
@@ -245,13 +349,41 @@ typedef struct __attribute__((packed)) {
     uint32_t seq;           /* compteur d'émission */
     /* ---- ajouts après le contrat v1 (firmware 6.2.0) ---- */
     char     name[L2_NAME_LEN]; /* surnom, ASCII, complété de zéros ; vide = pas de surnom */
+    /* ---- firmware 8.0.0 ---- */
+    l2_scene_t scene;       /* la scène que suit l'émettrice */
+    uint8_t  vote;          /* sa valeur dans cette scène, 0 = pas encore voté */
+    uint8_t  vote_ver;      /* croît à chaque changement */
 } l2_beacon_t;
+#define L2_BEACON_V8_LEN ((int)sizeof(l2_beacon_t))
 
-/* Onde : « (origin, id) passe par ici, saut hop ». Diffusée à toutes. 14 octets. */
+/* Onde : « (origin, id) passe par ici, saut hop ». Diffusée à toutes. 14 octets
+ * dans le contrat v1, que toute luciole comprend et rediffuse. Le firmware 8
+ * ajoute en fin la scène de l'émettrice : un changement de scène gagne ainsi
+ * le groupe à la vitesse d'une onde. Une luciole plus ancienne rediffuse
+ * l'onde sans cet ajout ; les balises le rattrapent. */
+#define L2_WAVE_MIN_LEN 14
 typedef struct __attribute__((packed)) {
     l2_hdr_t hdr;
     uint8_t  origin[6];     /* MAC de l'unité qui a appuyé */
     uint16_t id;            /* compteur de l'origine : (origin, id) identifie l'onde */
     uint8_t  hop;           /* sauts radio depuis l'origine */
     uint8_t  hue;           /* teinte de l'onde, 0-255 */
+    /* ---- firmware 8.0.0 ---- */
+    l2_scene_t scene;
 } l2_wave_t;
+
+/* Votes : des entrées de la table du panel, pour la scène (epoch, seed). */
+typedef struct __attribute__((packed)) {
+    uint8_t  ticket[3];     /* 24 bits, poids fort d'abord */
+    uint8_t  ver;
+    uint8_t  val;
+} l2_vote_entry_t;
+#define L2_VOTES_MAX 48     /* 9 + 48 × 5 = 249 octets, sous les 250 d'une trame ESP-NOW */
+typedef struct __attribute__((packed)) {
+    l2_hdr_t hdr;
+    uint16_t epoch;
+    uint16_t seed;
+    uint8_t  n;
+    l2_vote_entry_t e[L2_VOTES_MAX];
+} l2_votes_t;
+#define L2_VOTES_HDR_LEN 9

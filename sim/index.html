@@ -79,9 +79,9 @@ for (const id of ids) {
   el.addEventListener('input', () => { upd(); if (['bikes','lucioles','peloton'].includes(id)) reset(); });
   upd();
 }
-const F = { sweep:0.5, trail:3, late:2, forget:60, repeat:0.07, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, baseHue:30, baseTau:10, hueTau:3, waveHueMin:60, togetherFade:0.35,
+const F = { sweep:0.5, trail:4.5, late:2, forget:60, repeat:0.07, rainbowB:0.7, rainbowFlow:0.10, bar:2.5, baseHue:30, waveHueMin:60, togetherFade:0.35,
             heartBpb:3, heartFloor:0.25, heartTau:0.12, heartDub:0.6, heartGap:0.18, maxNeighbors:16, rssiFar:-100, beaconMax:30, beat:0.5,
-            nearAlpha:0.15, nearHyst:0.2, hold:3, holdIntervals:2.5 };
+            nearAlpha:0.15, nearHyst:0.45, hold:10, holdIntervals:2.5 };   /* firmware 8 : on sort sous 25 %, voisine gardée 10 s */
 
 /* ---------- Utilitaires ---------- */
 const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
@@ -174,12 +174,12 @@ function send(l, origin, id, hop, hue) {
     receive(o, l, r, origin, id, hop, hue);
   }
 }
-/* Une onde arrive : la couleur commune devient la sienne ; l'animation part si rien n'est en cours. */
+/* Une onde arrive : l'animation part dans sa couleur si rien n'est en cours. La couleur de base ne bouge pas (firmware 8). */
 function take(l, hue, key) {
-  l.hue = hue;
   const w = waves.get(key); if (w) { w.reached++; w.tLast = t; const ds = Math.min(Math.abs(bikeArr.s[l.bike] - w.s0), C - Math.abs(bikeArr.s[l.bike] - w.s0)); w.reach = Math.max(w.reach, ds); }
+  l.playHue = hue;
   if (l.playStart >= 0 && t - l.playStart < F.sweep) return;   /* front en cours : couleur seulement ; pendant la traînée, on relance */
-  l.playStart = t; l.playHue = hue;
+  l.playStart = t;
 }
 function receive(l, from, r, origin, id, hop, hue) {
   if (origin === l.name) return;
@@ -215,10 +215,7 @@ const dueKeyParts = key => { const i = key.lastIndexOf('#'); return [parseInt(ke
 
 /* ---------- Régulation (couleur, ensemble) ---------- */
 function regulate(l, dt) {
-  let x = 0, y = 0, n = 0;
-  for (const { o } of l.nb) { const a = o.hue * Math.PI / 180; x += Math.cos(a); y += Math.sin(a); n++; }
-  if (n) { const mean = Math.atan2(y, x) * 180 / Math.PI; l.hue = normDeg(l.hue + dt / F.hueTau * wrapDeg(mean - l.hue)); }
-  l.hue = normDeg(l.hue + dt / F.baseTau * wrapDeg(F.baseHue - l.hue));   /* retour vers l'ambre */
+  l.hue = F.baseHue;   /* l'ambre : une onde le recouvre le temps de son animation, puis s'efface */
   l.tf += dt / F.togetherFade * ((l.together ? 1 : 0) - l.tf); l.tf = clamp01(l.tf);
   if (l.playStart >= 0 && t - l.playStart >= F.sweep + F.trail) l.playStart = -1;   /* fin de l'animation : période réfractaire levée (ici, pas dans le rendu) */
   l.rpos = (l.rpos + F.rainbowFlow * dt) % 1;
